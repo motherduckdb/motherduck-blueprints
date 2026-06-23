@@ -2,7 +2,9 @@
 
 ## 1. Create the Repository
 
-Create an empty GitHub repository named `motherduck-blueprints`, then push this folder to it.
+For a customer-owned repo, prefer creating a new repository from the MotherDuck Blueprints template. See [customer-onboarding.md](customer-onboarding.md) for the full template-copy flow.
+
+If you are pushing from a local copy manually, create an empty GitHub repository named `motherduck-blueprints`, then push this folder to it.
 
 ```bash
 git init

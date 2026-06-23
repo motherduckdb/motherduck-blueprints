@@ -23,7 +23,7 @@ This repository is designed as the GitHub home for deployable MotherDuck Bluepri
    - Require review from Code Owners after you update `.github/CODEOWNERS`.
    - Require status checks for the workflows you register.
 
-See [docs/github-setup.md](docs/github-setup.md) for the click-path version.
+See [docs/customer-onboarding.md](docs/customer-onboarding.md) for the full customer setup flow and [docs/github-setup.md](docs/github-setup.md) for the shorter GitHub setup reference.
 
 ## Repository Layout
 
