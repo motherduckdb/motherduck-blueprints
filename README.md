@@ -199,4 +199,7 @@ make new-dive <dive-name>
 make new-flight <flight-name>
 make validate-flight <flight-name>
 make validate-bundle <bundle-name>
+make mock-test
 ```
+
+`make mock-test` shadows `duckdb` with a local fake CLI and exercises the Wikipedia bundle preview deploy, production deploy, and cleanup flow without contacting MotherDuck.

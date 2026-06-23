@@ -51,6 +51,10 @@ validate-bundle: ## Validate a bundle without contacting MotherDuck
 	@test -n "$(ARG)" || { echo "Usage: make validate-bundle <bundle-name>"; exit 1; }
 	./scripts/validate-bundle.sh "$(ARG)"
 
+.PHONY: mock-test
+mock-test: ## Run local mock deployment tests without contacting MotherDuck
+	./scripts/mock-test.sh
+
 # -- Help ---------------------------------------------------------------------
 
 .PHONY: help
