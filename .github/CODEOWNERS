@@ -1,0 +1,9 @@
+# Replace these examples with your GitHub users or teams, then enable
+# "Require review from Code Owners" in the main branch protection rule.
+#
+# /dives/                 @your-org/motherduck-owners
+# /flights/               @your-org/motherduck-owners
+# /context/               @your-org/motherduck-owners
+# /scripts/               @your-org/motherduck-owners
+# /.github/workflows/     @your-org/motherduck-owners
+

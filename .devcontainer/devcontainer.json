@@ -1,0 +1,16 @@
+{
+  "name": "Blessed Dives",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "containerEnv": {
+    "DUCKDB_VERSION": "v1.4.4"
+  },
+  "postCreateCommand": "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/NiclasHaderer/duckdb-version-manager/main/install.sh)\" && duckman install ${DUCKDB_VERSION} && duckman default ${DUCKDB_VERSION} && make setup",
+  "forwardPorts": [5173],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

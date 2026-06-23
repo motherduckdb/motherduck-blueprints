@@ -1,0 +1,29 @@
+{
+  "name": "wikipedia-pageviews",
+  "title": "Wikipedia Pageviews",
+  "description": "Loads public Wikimedia pageview data with a Flight and visualizes it in a Dive.",
+  "preview": {
+    "enabled": true,
+    "cleanup": true
+  },
+  "flights": [
+    {
+      "name": "wikipedia-pageviews",
+      "path": "flights/wikipedia-pageviews",
+      "runBeforeDives": true,
+      "waitForShares": [
+        {
+          "production": "wikipedia_pageviews",
+          "preview": "wikipedia_pageviews_preview_${BRANCH_SLUG}"
+        }
+      ]
+    }
+  ],
+  "dives": [
+    {
+      "name": "wikipedia-pageviews",
+      "path": "dives/wikipedia-pageviews"
+    }
+  ]
+}
+
