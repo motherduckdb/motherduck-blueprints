@@ -1,13 +1,13 @@
 # MotherDuck Blueprints
 
-Version-controlled MotherDuck Blueprints for:
+Canonical, version-controlled MotherDuck Blueprints for:
 
-- `dives/` - React/SQL Dives deployed through the same PR preview and main-branch deploy flow as MotherDuck's blessed Dives example.
+- `dives/` - React/SQL Dives deployed through PR preview and main-branch production workflows.
 - `flights/` - Python Flight definitions validated on PRs, optionally previewed on PRs, and deployed to MotherDuck after merge.
 - `bundles/` - orchestration manifests for Flight + Dive combinations that need ordered deployment.
 - `context/` - reserved Blueprint area for the context layer once the production API and deploy surface are available.
 
-This repository is designed as the GitHub home for deployable MotherDuck Blueprints. Changes land through pull requests, reviewers approve the diff, GitHub Actions validates or previews the change, and production deployment runs from `main`.
+This repository is the GitHub home for deployable MotherDuck Blueprints. Changes land through pull requests, reviewers approve the diff, GitHub Actions validates or previews the change, and production deployment runs from `main`.
 
 ## Required GitHub Setup
 
@@ -63,7 +63,7 @@ make setup
 make preview <dive-name>
 ```
 
-The preview uses the committed `.dive-preview/` Vite app from MotherDuck's starter repo. Copy `.dive-preview/.env.example` to `.dive-preview/.env` and set `VITE_MOTHERDUCK_TOKEN` before previewing.
+The preview uses the committed `.dive-preview/` Vite app in this repository. Copy `.dive-preview/.env.example` to `.dive-preview/.env` and set `VITE_MOTHERDUCK_TOKEN` before previewing.
 
 ## Creating a Dive
 
