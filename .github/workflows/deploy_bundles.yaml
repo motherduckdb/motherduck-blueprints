@@ -4,6 +4,12 @@ permissions:
   contents: read
   pull-requests: write
 
+# Cancel superseded preview runs for the same PR, but never cancel an
+# in-flight production (main) or manually dispatched deploy.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   workflow_dispatch:
   push:

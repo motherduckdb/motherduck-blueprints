@@ -10,7 +10,6 @@
     {
       "name": "wikipedia-pageviews",
       "path": "flights/wikipedia-pageviews",
-      "runBeforeDives": true,
       "waitForShares": [
         {
           "production": "wikipedia_pageviews",

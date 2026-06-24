@@ -49,11 +49,15 @@ context/
   schemas/
 
 scripts/
-  deploy-bundle.sh
-  cleanup-preview-bundle.sh
   deploy-dive.sh
   deploy-flight.sh
+  deploy-bundle.sh
   validate-flight.sh
+  validate-bundle.sh
+  cleanup-preview-dive.sh
+  cleanup-preview-flight.sh
+  cleanup-preview-bundle.sh
+  mock-test.sh
 ```
 
 ## Local Dive Preview
