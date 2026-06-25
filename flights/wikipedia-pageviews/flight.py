@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     "share_visibility": "DISCOVERABLE",
     "user_agent": (
         "motherduck-blueprints-wikipedia-pageviews/1.0 "
-        "(https://github.com/your-org/motherduck-blueprints)"
+        "(https://github.com/motherduckdb/motherduck-blueprints)"
     ),
 }
 
