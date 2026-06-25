@@ -67,7 +67,9 @@ if [ -z "$PREVIEW_FLIGHT_IDS" ]; then
 else
   while IFS= read -r FLIGHT_ID; do
     echo "Deleting preview Flight ${FLIGHT_ID} (${PREVIEW_NAME})"
-    duckdb md: -csv -noheader -c "FROM MD_DELETE_FLIGHT('${FLIGHT_ID}'::UUID);"
+    if ! duckdb md: -csv -noheader -c "FROM MD_DELETE_FLIGHT(\"flight_id\" => '${FLIGHT_ID}'::UUID);"; then
+      echo "Preview Flight ${FLIGHT_ID} was already deleted or could not be deleted"
+    fi
   done <<< "$PREVIEW_FLIGHT_IDS"
 fi
 
@@ -95,7 +97,9 @@ if [ "$CLEANUP_SHARE" = "true" ] && [ -n "$SHARE_NAME" ]; then
   SHARE_URL=$(duckdb md: -csv -noheader -c "SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = $(sql_string_literal "$SHARE_NAME")")
   if [ -n "$SHARE_URL" ]; then
     echo "Dropping preview share ${SHARE_NAME}"
-    duckdb md: -csv -noheader -c "FROM MD_DROP_DATABASE_SHARE($(sql_string_literal "$SHARE_NAME"));"
+    if ! duckdb md: -csv -noheader -c "FROM MD_DROP_DATABASE_SHARE($(sql_string_literal "$SHARE_NAME"));"; then
+      echo "Preview share ${SHARE_NAME} was already dropped or could not be dropped"
+    fi
   else
     echo "No preview share found for '${SHARE_NAME}'"
   fi
