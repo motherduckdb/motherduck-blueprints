@@ -72,11 +72,11 @@ CONFIG_SQL=$(jq -r \
   def template:
     gsub("\\$\\{PREVIEW_BRANCH\\}"; $preview_branch)
     | gsub("\\$\\{BRANCH_SLUG\\}"; $branch_slug);
-  if $preview_mode == "true" then
+  (if $preview_mode == "true" then
     ((.config // {}) + (.preview.config // {}))
   else
     (.config // {})
-  end as $config
+  end) as $config
   | if ($config | length) == 0 then
       "map([]::VARCHAR[], []::VARCHAR[])"
     else
