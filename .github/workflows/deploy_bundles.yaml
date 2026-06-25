@@ -54,11 +54,6 @@ jobs:
               - bundles/wikipedia-pageviews/**
               - flights/wikipedia-pageviews/**
               - dives/wikipedia-pageviews/**
-              - scripts/deploy-bundle.sh
-              - scripts/validate-bundle.sh
-              - scripts/deploy-flight.sh
-              - scripts/deploy-dive.sh
-              - scripts/validate-flight.sh
             __no_registered_bundles: .github/never-match/**
 
   validate:
@@ -159,4 +154,3 @@ jobs:
             echo "Deploying bundle ${b}..."
             ./scripts/deploy-bundle.sh "$b"
           done
-
