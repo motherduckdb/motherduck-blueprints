@@ -31,6 +31,7 @@ set -euo pipefail
 query="$*"
 state_dir="${MOCK_DUCKDB_STATE_DIR:?MOCK_DUCKDB_STATE_DIR is required}"
 flight_state="${state_dir}/flight_id"
+run_state="${state_dir}/run_number"
 dive_state="${state_dir}/dive_id"
 share_url="md:_share/mock/00000000-0000-0000-0000-000000000003"
 
@@ -38,6 +39,16 @@ echo "$query" >> "${state_dir}/queries.log"
 
 if [[ "$query" == *"MD_LIST_DATABASE_SHARES"* ]]; then
   echo "$share_url"
+elif [[ "$query" == *"MD_LIST_FLIGHT_RUNS"* ]]; then
+  if [[ "$query" == *"COALESCE(MAX(run_number)"* ]]; then
+    if [ -f "$run_state" ]; then
+      cat "$run_state"
+    else
+      echo "0"
+    fi
+  elif [ -f "$run_state" ]; then
+    echo "$(cat "$run_state")|RUN_STATUS_SUCCEEDED|0"
+  fi
 elif [[ "$query" == *"MD_LIST_FLIGHTS"* ]]; then
   if [ -f "$flight_state" ]; then
     cat "$flight_state"
@@ -47,9 +58,15 @@ elif [[ "$query" == *"MD_CREATE_FLIGHT"* ]]; then
 elif [[ "$query" == *"MD_UPDATE_FLIGHT"* ]]; then
   echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
 elif [[ "$query" == *"MD_RUN_FLIGHT"* ]]; then
+  current_run_number=0
+  if [ -f "$run_state" ]; then
+    current_run_number="$(cat "$run_state")"
+  fi
+  echo "$((current_run_number + 1))" > "$run_state"
   exit 0
 elif [[ "$query" == *"MD_DELETE_FLIGHT"* ]]; then
   rm -f "$flight_state"
+  rm -f "$run_state"
 elif [[ "$query" == *"MD_DROP_DATABASE_SHARE"* ]]; then
   exit 0
 elif [[ "$query" == *"DROP DATABASE IF EXISTS"* ]]; then
@@ -107,6 +124,12 @@ grep -q "Wikipedia Pageviews:feature/mock-test (Preview)" "${TMP_DIR}/preview.ou
 echo "==> Mock deploying production bundle"
 ./scripts/deploy-bundle.sh wikipedia-pageviews > "${TMP_DIR}/production.out"
 
+echo "==> Verifying empty access token is not sent"
+if grep -q "\"access_token_name\" => ''" "${TMP_DIR}/queries.log"; then
+  echo "Empty access_token_name argument was sent to MotherDuck" >&2
+  exit 1
+fi
+
 echo "==> Mock cleaning preview bundle"
 ./scripts/cleanup-preview-bundle.sh wikipedia-pageviews feature/mock-test > "${TMP_DIR}/cleanup.out"
 grep -q "Deleting preview Dive" "${TMP_DIR}/cleanup.out"
@@ -122,4 +145,3 @@ if find . -name __pycache__ -o -name '*.pyc' | grep -q .; then
 fi
 
 echo "Mock test passed."
-

@@ -159,6 +159,10 @@ SCHEDULE_CRON_SQL=$(sql_string_literal "$SCHEDULE_CRON")
 ACCESS_TOKEN_NAME_SQL=$(sql_string_literal "$ACCESS_TOKEN_NAME")
 SOURCE_FILE_SQL=$(sql_string_literal "$SOURCE_FILE")
 REQUIREMENTS_FILE_SQL=$(sql_string_literal "$REQUIREMENTS_FILE")
+ACCESS_TOKEN_NAME_ARG=""
+if [ -n "$ACCESS_TOKEN_NAME" ]; then
+  ACCESS_TOKEN_NAME_ARG="\"access_token_name\" => ${ACCESS_TOKEN_NAME_SQL}, "
+fi
 UPDATE_SCHEDULE_ARG=""
 if [ -n "$SCHEDULE_CRON" ]; then
   UPDATE_SCHEDULE_ARG="\"schedule_cron\" => ${SCHEDULE_CRON_SQL}, "
@@ -176,11 +180,11 @@ REQUIREMENTS_TXT_SQL="(SELECT content FROM read_text(${REQUIREMENTS_FILE_SQL}))"
 
 if (( EXISTING_FLIGHT_COUNT == 0 )); then
   echo "  Creating new flight '${NAME}'..." >&2
-  duckdb md: -csv -noheader -c "SET VARIABLE source_code = ${SOURCE_CODE_SQL}; SET VARIABLE requirements_txt = ${REQUIREMENTS_TXT_SQL}; FROM MD_CREATE_FLIGHT(\"schedule_cron\" => ${SCHEDULE_CRON_SQL}, \"flight_secret_names\" => ${SECRET_NAMES_SQL}, \"config\" => ${CONFIG_SQL}, \"access_token_name\" => ${ACCESS_TOKEN_NAME_SQL}, \"name\" => ${NAME_SQL}, \"source_code\" => getvariable('source_code'), \"requirements_txt\" => getvariable('requirements_txt'));"
+  duckdb md: -csv -noheader -c "SET VARIABLE source_code = ${SOURCE_CODE_SQL}; SET VARIABLE requirements_txt = ${REQUIREMENTS_TXT_SQL}; FROM MD_CREATE_FLIGHT(\"schedule_cron\" => ${SCHEDULE_CRON_SQL}, \"flight_secret_names\" => ${SECRET_NAMES_SQL}, \"config\" => ${CONFIG_SQL}, ${ACCESS_TOKEN_NAME_ARG}\"name\" => ${NAME_SQL}, \"source_code\" => getvariable('source_code'), \"requirements_txt\" => getvariable('requirements_txt'));"
   FLIGHT_ID=$(duckdb md: -csv -noheader -c "SELECT flight_id FROM MD_LIST_FLIGHTS(\"offset\" => 0::UINTEGER, \"limit\" => 1000::UINTEGER) WHERE flight_name = ${NAME_SQL}")
 elif (( EXISTING_FLIGHT_COUNT == 1 )); then
   echo "  Updating existing flight '${NAME}' (${EXISTING_FLIGHT_ID})..." >&2
-  duckdb md: -csv -noheader -c "SET VARIABLE source_code = ${SOURCE_CODE_SQL}; SET VARIABLE requirements_txt = ${REQUIREMENTS_TXT_SQL}; FROM MD_UPDATE_FLIGHT(\"flight_id\" => '${EXISTING_FLIGHT_ID}'::UUID, ${UPDATE_SCHEDULE_ARG}\"access_token_name\" => ${ACCESS_TOKEN_NAME_SQL}, \"name\" => ${NAME_SQL}, \"config\" => ${CONFIG_SQL}, \"source_code\" => getvariable('source_code'), \"flight_secret_names\" => ${SECRET_NAMES_SQL}, \"requirements_txt\" => getvariable('requirements_txt'));"
+  duckdb md: -csv -noheader -c "SET VARIABLE source_code = ${SOURCE_CODE_SQL}; SET VARIABLE requirements_txt = ${REQUIREMENTS_TXT_SQL}; FROM MD_UPDATE_FLIGHT(\"flight_id\" => '${EXISTING_FLIGHT_ID}'::UUID, ${UPDATE_SCHEDULE_ARG}${ACCESS_TOKEN_NAME_ARG}\"name\" => ${NAME_SQL}, \"config\" => ${CONFIG_SQL}, \"source_code\" => getvariable('source_code'), \"flight_secret_names\" => ${SECRET_NAMES_SQL}, \"requirements_txt\" => getvariable('requirements_txt'));"
   FLIGHT_ID="${EXISTING_FLIGHT_ID}"
 else
   echo "Error: found ${EXISTING_FLIGHT_COUNT} flights with name '${NAME}'. Expected 0 or 1." >&2
