@@ -1,0 +1,14 @@
+schemaVersion: 1
+name: simple-dive
+title: Simple Dive
+resources:
+  dives:
+    example:
+      title: Simple Dive
+      source: src/dive.tsx
+      requiredResources:
+        - url: md:_share/simple/00000000-0000-0000-0000-000000000000
+          alias: simple
+      targets:
+        preview:
+          title: Simple Dive:${target.branch} (Preview)

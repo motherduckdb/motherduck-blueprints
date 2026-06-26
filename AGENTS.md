@@ -1,44 +1,72 @@
 # Agent Guide
 
-This repository contains the versioned MotherDuck Blueprints for Dives, Flights, and future context-layer assets.
+This repository contains versioned MotherDuck Blueprints for Dives, Flights, shares, and future context-layer assets.
 
 ## Token Handling
 
 Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.dive-preview/.env`, which is ignored by Git. CI uses the `MOTHERDUCK_TOKEN` repository secret. Shared repositories should use a MotherDuck service account token so deployments are not tied to a personal account.
 
-## Dives
+## Project Layout
 
-Each Dive lives in `dives/<dive-name>/` and contains:
+`motherduck.yml` is the canonical repository manifest. It includes `blueprints/*/blueprint.yml`, defines shared variables, and declares the `preview` and `prod` targets. It is a catalog and policy file, not the deployable project boundary.
 
-- `<dive-name>.tsx` - React component with a default export.
-- `dive_metadata.json` - title, description, and required MotherDuck resources.
+Each deployable project lives in `blueprints/<blueprint-name>/`:
 
-The `title` in metadata is the stable production matching key. If `PREVIEW_BRANCH` is set, `scripts/deploy-dive.sh` deploys the Dive as `<Title>:<branch> (Preview)`.
+- `blueprint.yml` - resource manifest.
+- `src/flight.py` - optional Flight source.
+- `src/requirements.txt` - optional Flight dependencies.
+- `src/dive.tsx` - optional Dive source.
+- `README.md` - blueprint-specific notes.
 
-Keep `export const REQUIRED_DATABASES = ...` on one line in Dive source when using it for local preview. The deploy script strips that export and passes `requiredResources` from metadata to MotherDuck. A required resource can use `url` for a known `md:_share/...` URL or `shareName` when CI should resolve a generated share URL from `MD_LIST_DATABASE_SHARES()`. For PR previews, use `previewUrl` or `previewShareName` to point preview Dives at branch-scoped resources.
+Do not add deployable resources under top-level `dives/`, `flights/`, or `bundles/`; deployable work belongs in blueprint packages. Use lowercase slug names for blueprints (`a-z`, `0-9`, and `-`) so paths, selectors, and rendered resource names stay predictable.
 
-Register every deployable Dive in `.github/workflows/deploy_dives.yaml`.
+Treat a blueprint package as one logical project or data product. Do not split or group packages by MotherDuck organization, service account, user, or database ownership. Databases are resources inside a project package; service accounts are target or resource identity choices.
 
-## Flights
+Use `make new-blueprint <blueprint-name>` as the starting example for new projects. The generated package should stay deployable: its Flight creates starter data and a share, and its Dive reads that share.
 
-Each Flight lives in `flights/<flight-name>/` and contains:
+## Resources
 
-- `flight.py` - Python source code for the Flight.
-- `flight_metadata.json` - name, schedule, access token name, secret names, and string config.
-- `requirements.txt` - Python dependencies sent with the Flight.
+Declare resources in `blueprint.yml`:
 
-The `name` in metadata is the stable production matching key. Pull requests validate changed Flights; production deploys happen only from `main` through the `motherduck-production` GitHub Environment.
+- `resources.shares` names produced data products and their preview cleanup behavior.
+- `resources.flights` deploys MotherDuck Flights from Python source and requirements files.
+- `resources.dives` deploys Dives and required resources.
+- `resources.context` validates future context-layer files but must use `deploy: false` until MotherDuck exposes a deployment API.
 
-Use `"runOnDeploy": true` when a Flight should be started once immediately after deployment. Use `.preview.enabled: true` only for Flights that are safe to run from pull requests; preview Flights run without schedules and should write to branch-scoped preview databases/shares.
+For Dives, keep `export const REQUIRED_DATABASES = ...` on one line in source when using local preview. The deploy engine strips that export and passes rendered `requiredResources` from `blueprint.yml`.
 
-Register every deployable Flight in `.github/workflows/deploy_flights.yaml`.
+## Targets
 
-## Bundles
+Preview deployments are branch-scoped. Preview share/database names that may be cleaned up must include `${target.branch_slug}`. Production names are stable and deploy through the `motherduck-production` GitHub Environment.
 
-Bundles live in `bundles/<bundle-name>/blueprint.json`. Use a bundle when one or more Flights must run before one or more Dives deploy. Bundle deployment runs Flights first, waits for declared shares, then deploys Dives. Preview bundle cleanup should delete preview Dives before preview Flights so data resources are dropped last.
+Preview Flight schedules are disabled by target policy. Use `runOnDeploy: true` when a preview or production deploy should start an immediate run. Use `waitForRun: success` when dependent Dives should wait for the Flight run to succeed before resolving shares.
 
-Register every deployable bundle in `.github/workflows/deploy_bundles.yaml`. Do not also register its component Flight or Dive in the standalone workflows unless you intentionally want independent deployments.
+## Commands
 
-## Context
+Use these commands before opening PRs:
 
-Use `context/` for versioning proposed context-layer files until MotherDuck exposes a deployable API. Keep files structured and documented so a future workflow can treat this directory as the canonical Blueprint set.
+```bash
+make validate
+make mock-test
+```
+
+When a blueprint includes a Dive, also run:
+
+```bash
+make preview-smoke <blueprint-name>
+```
+
+Use these for local iteration:
+
+```bash
+make setup
+make preview <blueprint-name>
+make preview-smoke <blueprint-name>
+make render-preview <blueprint-name>
+```
+
+CI calls `tools/md_blueprints` directly for change detection, validation, preview/prod deployment, and preview cleanup.
+
+## Changelog
+
+Update `CHANGELOG.md` in every pull request. Keep entries under `Unreleased` until the change is released or merged into a customer template.

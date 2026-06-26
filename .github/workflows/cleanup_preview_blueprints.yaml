@@ -1,0 +1,34 @@
+name: Cleanup Preview Blueprints
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types:
+      - closed
+  delete:
+
+jobs:
+  cleanup:
+    name: Delete Preview Blueprints for Branch
+    if: github.event_name == 'pull_request' || github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opt-nc/setup-duckdb-action@v1.2.8
+        with:
+          version: v1.5.3
+      - name: Cleanup preview blueprints
+        shell: bash
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          DELETED_BRANCH: ${{ github.event.ref }}
+        run: |
+          BRANCH_NAME="${PR_BRANCH:-$DELETED_BRANCH}"
+          if [ -z "$BRANCH_NAME" ]; then
+            echo "No branch name available for cleanup"
+            exit 0
+          fi
+          ./tools/md_blueprints cleanup --target preview --branch "$BRANCH_NAME"

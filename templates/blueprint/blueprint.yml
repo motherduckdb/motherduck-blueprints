@@ -1,0 +1,61 @@
+schemaVersion: 1
+name: __BLUEPRINT_NAME__
+title: __BLUEPRINT_NAME__
+description: Starter project that publishes a small metrics dataset and reads it from a Dive.
+
+variables:
+  database:
+    description: MotherDuck database that stores this project's data.
+    default: __DATABASE_NAME__
+  share:
+    description: MotherDuck share published by the loader Flight.
+    default: __DATABASE_NAME__
+  schema:
+    description: Schema that contains the starter tables and views.
+    default: main
+
+resources:
+  shares:
+    data:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    loader:
+      name: __BLUEPRINT_NAME__
+      source: src/flight.py
+      requirements: src/requirements.txt
+      scheduleCron: ""
+      runOnDeploy: true
+      waitForRun: success
+      config:
+        database: ${resources.shares.data.database}
+        schema: ${var.schema}
+        share: ${resources.shares.data.name}
+        share_access: ${resources.shares.data.access}
+        share_visibility: ${resources.shares.data.visibility}
+      targets:
+        preview:
+          name: __BLUEPRINT_NAME__:${target.branch} (Preview)
+
+  dives:
+    dashboard:
+      title: __BLUEPRINT_NAME__
+      source: src/dive.tsx
+      requiredResources:
+        - share: data
+          alias: __BLUEPRINT_NAME__
+      targets:
+        preview:
+          title: __BLUEPRINT_NAME__:${target.branch} (Preview)

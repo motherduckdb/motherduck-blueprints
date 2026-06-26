@@ -1,0 +1,20 @@
+schemaVersion: 1
+repository:
+  name: complex-fixture
+include:
+  - blueprints/*/blueprint.yml
+variables:
+  preview_suffix:
+    default: _preview_${target.branch_slug}
+targets:
+  preview:
+    mode: preview
+    default: true
+    policies:
+      disableSchedules: true
+      cleanup: true
+      requireBranchSlugInDataResources: true
+  prod:
+    mode: production
+    policies:
+      serviceAccountRecommended: true

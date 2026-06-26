@@ -1,6 +1,8 @@
 # Customer Onboarding
 
-This repository is intended to act as a reusable MotherDuck Blueprints template. Customers copy it into their own GitHub organization, connect it to their MotherDuck organization with a service account token, and then customize or add their own Dives, Flights, Bundles, and future context assets.
+This repository is intended to act as a reusable MotherDuck Blueprints template. Customers copy it into their own GitHub organization, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
+
+Blueprints are project-level packages. Each package should represent one logical project or data product, not an entire organization, service account, user, or database owner. Do not create top-level `dives/`, `flights/`, or `bundles/` directories in customer repos.
 
 ## 1. Copy the Template Repo
 
@@ -36,8 +38,9 @@ gh repo create <customer-org>/motherduck-blueprints --private --source . --remot
 In the customer's MotherDuck organization:
 
 1. Create a service account for CI deployments.
-2. Generate a read/write token.
-3. Store the token somewhere secure long enough to add it to GitHub.
+2. Grant it the minimum database privileges needed by the blueprints.
+3. Generate a read/write token.
+4. Store the token somewhere secure long enough to add it to GitHub.
 
 Use a service account token rather than a personal token so deployed Dives, Flights, tables, and shares are owned by a shared automation identity.
 
@@ -73,19 +76,28 @@ Recommended settings:
 - Require review from Code Owners after `.github/CODEOWNERS` is updated.
 - Require the relevant workflow checks after the first PR has run them.
 
-## 6. Run the Local Mock Test
+## 6. Run Local Validation
 
 Before touching MotherDuck, run:
 
 ```bash
+make validate
 make mock-test
 ```
 
-This shadows `duckdb` with a local fake CLI and exercises the Wikipedia bundle preview deploy, production deploy, and cleanup paths without contacting MotherDuck.
+`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises preview deploy, production deploy, cleanup, and failed-run reporting without contacting MotherDuck.
+
+If the customer keeps a Dive in the repo, also run a finite local preview build:
+
+```bash
+make preview-smoke <blueprint-name>
+```
+
+PR validation still runs if `MOTHERDUCK_TOKEN` has not been added yet, but live preview deployment is skipped until the secret exists.
 
 ## 7. Run a Preview PR
 
-Create a branch in the customer repo and make a small change, for example edit the Wikipedia bundle docs or metadata.
+Create a branch in the customer repo and make a small change, for example edit the Wikipedia blueprint docs or metadata.
 
 ```bash
 git checkout -b test/wikipedia-blueprint
@@ -96,12 +108,13 @@ gh pr create --fill
 
 Expected preview flow:
 
-1. `Deploy Bundles` validates the bundle.
-2. The preview Flight is deployed with schedules disabled.
-3. The preview Flight runs once if `preview.runOnDeploy` is true.
-4. The preview database and share are created with the branch slug.
-5. The preview Dive is deployed after the preview share is available.
-6. A PR comment lists the preview Flight, share, and Dive links.
+1. `Deploy Blueprints` validates manifests.
+2. The changed blueprint packages are discovered from `motherduck.yml`.
+3. Preview Flights deploy with schedules disabled.
+4. Preview Flights run when `runOnDeploy` is true.
+5. Preview databases and shares are created with the branch slug.
+6. Dives deploy after required shares are resolvable.
+7. A PR comment lists preview Flight, share, and Dive links.
 
 ## 8. Verify Cleanup
 
@@ -109,10 +122,12 @@ Close the PR or delete the branch.
 
 Expected cleanup flow:
 
-1. Preview Dive is deleted.
-2. Preview Flight is deleted.
-3. Preview share is dropped.
-4. Preview database is dropped when `cleanupDatabase` is true.
+1. Preview Dives are deleted.
+2. Preview Flights are deleted.
+3. Preview shares are dropped.
+4. Preview databases are dropped when `dropDatabase: true`.
+
+Cleanup refuses to drop share/database names that do not include the branch slug.
 
 ## 9. Deploy to Production
 
@@ -120,20 +135,20 @@ Merge the PR to `main`.
 
 Expected production flow:
 
-1. `Deploy Bundles` runs on `main`.
+1. `Deploy Blueprints` runs on `main`.
 2. GitHub waits for approval in `motherduck-production`.
-3. The production Flight deploys.
-4. The Flight runs if `runOnDeploy` is true.
-5. The production share is updated.
-6. The production Dive deploys after the share is available.
+3. Production Flights deploy.
+4. Flights run when `runOnDeploy` is true.
+5. Required shares are resolved.
+6. Production Dives deploy.
 
 ## 10. Customize the Blueprints
 
 Customers can then:
 
-- Replace the Wikipedia example with their own Bundle.
-- Add standalone Dives or Flights and register them in the standalone workflows.
-- Add new Bundles and register them in `.github/workflows/deploy_bundles.yaml`.
+- Scaffold a starter package with `make new-blueprint <blueprint-name>`. The generated Flight creates a tiny metrics table and share, and the generated Dive reads that share.
+- Replace the Wikipedia example with their own blueprint package.
+- Add standalone Dives or Flights as one-resource blueprints.
+- Add paired Flight + Dive packages that declare shared data products in `resources.shares`.
+- Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.
 - Update `.github/CODEOWNERS`.
-- Add context-layer assets under `context/` once the deployment surface exists.
-

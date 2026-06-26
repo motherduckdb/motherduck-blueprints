@@ -1,0 +1,787 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require "open3"
+require "pathname"
+require "set"
+require "yaml"
+
+module MDBlueprints
+  class ValidationError < StandardError; end
+  class CommandError < StandardError; end
+
+  module Util
+    module_function
+
+    def branch_slug(branch)
+      slug = branch.to_s.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/^_+|_+$/, "").gsub(/_+/, "_")[0, 48]
+      slug.empty? ? "preview" : slug
+    end
+
+    def deep_merge(left, right)
+      return left unless right.is_a?(Hash)
+
+      merged = left.is_a?(Hash) ? left.dup : {}
+      right.each do |key, value|
+        merged[key] = if merged[key].is_a?(Hash) && value.is_a?(Hash)
+                        deep_merge(merged[key], value)
+                      else
+                        value
+                      end
+      end
+      merged
+    end
+
+    def load_yaml(path)
+      YAML.safe_load(File.read(path), aliases: false) || {}
+    rescue Psych::Exception => e
+      raise ValidationError, "Invalid YAML in #{path}: #{e.message}"
+    end
+
+    def sql_string(value)
+      "'#{value.to_s.gsub("'", "''")}'"
+    end
+
+    def sql_array(values)
+      inner = values.map { |value| sql_string(value) }.join(", ")
+      "[#{inner}]::VARCHAR[]"
+    end
+
+    def sql_map(hash)
+      return "map([]::VARCHAR[], []::VARCHAR[])" if hash.empty?
+
+      keys = hash.keys.map { |key| sql_string(key) }.join(", ")
+      values = hash.values.map { |value| sql_string(value) }.join(", ")
+      "map([#{keys}], [#{values}])"
+    end
+
+    def quote_ident(value)
+      unless value.to_s.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+        raise ValidationError, "Unsafe SQL identifier: #{value.inspect}"
+      end
+
+      %("#{value}")
+    end
+
+    def run_command(*argv, stdin_data: nil)
+      stdout, stderr, status = Open3.capture3(*argv, stdin_data: stdin_data)
+      return stdout if status.success?
+
+      raise CommandError, "#{argv.join(' ')} failed: #{stderr.strip}"
+    end
+  end
+
+  class SchemaValidator
+    def initialize(root)
+      schema_root = File.directory?(File.join(root, "schemas")) ? root : File.expand_path("..", __dir__)
+      @schemas = {
+        "motherduck-root.schema.json" => JSON.parse(File.read(File.join(schema_root, "schemas/motherduck-root.schema.json"))),
+        "blueprint.schema.json" => JSON.parse(File.read(File.join(schema_root, "schemas/blueprint.schema.json")))
+      }
+    end
+
+    def validate(data, schema_name)
+      schema = @schemas.fetch(schema_name)
+      validate_node(data, schema, "$", schema)
+    end
+
+    private
+
+    def validate_node(data, schema, path, root_schema)
+      return if schema.nil? || schema == true || schema.empty?
+
+      if schema["$ref"]
+        return validate_node(data, resolve_ref(schema["$ref"], root_schema), path, root_schema)
+      end
+
+      if schema.key?("const") && data != schema["const"]
+        raise ValidationError, "#{path} must equal #{schema["const"].inspect}"
+      end
+
+      if schema.key?("enum") && !schema["enum"].include?(data)
+        raise ValidationError, "#{path} must be one of #{schema["enum"].map(&:inspect).join(', ')}"
+      end
+
+      if schema["anyOf"]
+        errors = []
+        matched = false
+        schema["anyOf"].each do |candidate|
+          begin
+            validate_node(data, candidate, path, root_schema)
+            matched = true
+            break
+          rescue ValidationError => e
+            errors << e.message
+          end
+        end
+        raise ValidationError, "#{path} did not match any allowed shape: #{errors.join('; ')}" unless matched
+      end
+
+      validate_type(data, schema["type"], path) if schema["type"]
+      validate_string(data, schema, path) if data.is_a?(String)
+      validate_array(data, schema, path, root_schema) if data.is_a?(Array)
+      validate_object(data, schema, path, root_schema) if data.is_a?(Hash)
+    end
+
+    def resolve_ref(ref, root_schema)
+      unless ref.start_with?("#/")
+        raise ValidationError, "Unsupported schema ref #{ref}"
+      end
+
+      ref.delete_prefix("#/").split("/").reduce(root_schema) do |node, segment|
+        node.fetch(segment)
+      end
+    end
+
+    def validate_type(data, expected, path)
+      types = Array(expected)
+      return if types.any? { |type| matches_type?(data, type) }
+
+      raise ValidationError, "#{path} must be #{types.join(' or ')}"
+    end
+
+    def matches_type?(data, type)
+      case type
+      when "object" then data.is_a?(Hash)
+      when "array" then data.is_a?(Array)
+      when "string" then data.is_a?(String)
+      when "integer" then data.is_a?(Integer) && !data.is_a?(TrueClass) && !data.is_a?(FalseClass)
+      when "number" then data.is_a?(Numeric) && !data.is_a?(TrueClass) && !data.is_a?(FalseClass)
+      when "boolean" then data == true || data == false
+      when "null" then data.nil?
+      else
+        raise ValidationError, "Unsupported schema type #{type}"
+      end
+    end
+
+    def validate_string(data, schema, path)
+      if schema["minLength"] && data.length < schema["minLength"]
+        raise ValidationError, "#{path} must have length >= #{schema["minLength"]}"
+      end
+      if schema["pattern"] && !data.match?(Regexp.new(schema["pattern"]))
+        raise ValidationError, "#{path} must match #{schema["pattern"]}"
+      end
+    end
+
+    def validate_array(data, schema, path, root_schema)
+      if schema["minItems"] && data.length < schema["minItems"]
+        raise ValidationError, "#{path} must contain at least #{schema["minItems"]} item(s)"
+      end
+      data.each_with_index do |item, index|
+        validate_node(item, schema["items"], "#{path}[#{index}]", root_schema) if schema["items"]
+      end
+    end
+
+    def validate_object(data, schema, path, root_schema)
+      Array(schema["required"]).each do |key|
+        raise ValidationError, "#{path}.#{key} is required" unless data.key?(key)
+      end
+
+      properties = schema["properties"] || {}
+      data.each do |key, value|
+        if properties.key?(key)
+          validate_node(value, properties[key], "#{path}.#{key}", root_schema)
+        elsif schema["additionalProperties"] == false
+          raise ValidationError, "#{path}.#{key} is not allowed"
+        elsif schema["additionalProperties"].is_a?(Hash)
+          validate_node(value, schema["additionalProperties"], "#{path}.#{key}", root_schema)
+        end
+      end
+    end
+  end
+
+  class Template
+    def self.render(value, context)
+      case value
+      when String
+        value.gsub(/\$\{([^}]+)\}/) { lookup(Regexp.last_match(1), context).to_s }
+      when Array
+        value.map { |item| render(item, context) }
+      when Hash
+        value.each_with_object({}) { |(key, item), out| out[render(key, context)] = render(item, context) }
+      else
+        value
+      end
+    end
+
+    def self.lookup(path, context)
+      path.split(".").reduce(context) do |node, segment|
+        if node.is_a?(Hash) && node.key?(segment)
+          node[segment]
+        else
+          raise ValidationError, "Unknown template reference ${#{path}}"
+        end
+      end
+    end
+  end
+
+  Blueprint = Struct.new(:name, :title, :path, :dir, :raw, keyword_init: true)
+  RenderedBlueprint = Struct.new(:name, :title, :description, :shares, :flights, :dives, :contexts, keyword_init: true)
+
+  class Project
+    attr_reader :root, :manifest, :blueprints
+
+    def initialize(root)
+      @root = File.expand_path(root)
+      @manifest_path = File.join(@root, "motherduck.yml")
+      raise ValidationError, "motherduck.yml not found in #{@root}" unless File.file?(@manifest_path)
+
+      @schema = SchemaValidator.new(@root)
+      @manifest = Util.load_yaml(@manifest_path)
+      @schema.validate(@manifest, "motherduck-root.schema.json")
+      @blueprints = load_blueprints
+    end
+
+    def validate!(targets: %w[preview prod])
+      raise ValidationError, "No blueprints found from include globs" if @blueprints.empty?
+
+      targets.each do |target|
+        branch = target == "preview" ? "feature/mock-test" : nil
+        rendered = render_all(target, branch: branch)
+        validate_uniqueness!(target, rendered)
+        rendered.each { |blueprint| validate_rendered_blueprint!(target, branch, blueprint) }
+      end
+
+      true
+    end
+
+    def render_all(target, branch: nil, names: nil)
+      selected = select_blueprints(names)
+      selected.map { |blueprint| render_blueprint(blueprint, target, branch: branch) }
+    end
+
+    def all_blueprint_names
+      @blueprints.map(&:name)
+    end
+
+    def changed_blueprints(base:, head:)
+      all_names = all_blueprint_names
+      return all_names if base.to_s.empty? || base.to_s.match?(/\A0+\z/)
+
+      diff = Util.run_command("git", "-C", @root, "diff", "--name-only", "#{base}...#{head}").lines.map(&:strip)
+      return [] if diff.empty?
+
+      changed = []
+      global_patterns = [
+        "motherduck.yml",
+        "schemas/",
+        "tools/",
+        "scripts/",
+        "templates/",
+        ".github/workflows/deploy_blueprints.yaml",
+        ".github/workflows/cleanup_preview_blueprints.yaml"
+      ]
+
+      return all_names if diff.any? { |file| global_patterns.any? { |pattern| file == pattern || file.start_with?(pattern) } }
+
+      @blueprints.each do |blueprint|
+        rel_dir = Pathname.new(blueprint.dir).relative_path_from(Pathname.new(@root)).to_s
+        changed << blueprint.name if diff.any? { |file| file == rel_dir || file.start_with?("#{rel_dir}/") }
+      end
+      changed.uniq.sort
+    rescue CommandError
+      all_names
+    end
+
+    private
+
+    def load_blueprints
+      paths = @manifest.fetch("include").flat_map { |pattern| Dir.glob(File.join(@root, pattern)) }.sort
+      paths.map do |path|
+        raw = Util.load_yaml(path)
+        @schema.validate(raw, "blueprint.schema.json")
+        dir = File.dirname(path)
+        Blueprint.new(name: raw.fetch("name"), title: raw.fetch("title"), path: path, dir: dir, raw: raw)
+      end
+    end
+
+    def select_blueprints(names)
+      return @blueprints if names.nil? || names.empty?
+
+      wanted = names.to_set
+      selected = @blueprints.select { |blueprint| wanted.include?(blueprint.name) }
+      missing = wanted.to_a - selected.map(&:name)
+      raise ValidationError, "Unknown blueprint(s): #{missing.join(', ')}" unless missing.empty?
+
+      selected
+    end
+
+    def render_blueprint(blueprint, target, branch: nil)
+      target_config = @manifest.fetch("targets").fetch(target) { raise ValidationError, "Unknown target #{target}" }
+      if target == "preview" && branch.to_s.empty?
+        raise ValidationError, "Preview target requires --branch"
+      end
+
+      context = {
+        "repository" => @manifest.fetch("repository"),
+        "target" => {
+          "name" => target,
+          "branch" => branch.to_s,
+          "branch_slug" => Util.branch_slug(branch.to_s)
+        },
+        "var" => {},
+        "resources" => { "shares" => {} }
+      }
+
+      raw_variables = {}
+      raw_variables.merge!(extract_variable_values(@manifest["variables"] || {}))
+      raw_variables.merge!(extract_variable_values(target_config["variables"] || {}))
+      raw_variables.merge!(extract_variable_values(blueprint.raw["variables"] || {}))
+      raw_variables.merge!(extract_variable_values(blueprint.raw.dig("targets", target, "variables") || {}))
+      context["var"] = render_variables(raw_variables, context)
+
+      resources = blueprint.raw.fetch("resources")
+      shares = render_resources(resources["shares"] || {}, target, context)
+      shares.each_value do |share|
+        share["access"] ||= "ORGANIZATION"
+        share["visibility"] ||= "DISCOVERABLE"
+      end
+      shares.each { |key, value| context["resources"]["shares"][key] = value }
+
+      flights = render_resources(resources["flights"] || {}, target, context).transform_values do |flight|
+        flight["sourcePath"] = absolute_resource_path(blueprint.dir, flight.fetch("source"))
+        flight["requirementsPath"] = absolute_resource_path(blueprint.dir, flight.fetch("requirements"))
+        if target_config.dig("policies", "disableSchedules") == true && target == "preview"
+          flight["scheduleCron"] = ""
+        end
+        flight["config"] = stringify_map(flight["config"] || {})
+        flight["secrets"] ||= []
+        flight["accessTokenName"] ||= ""
+        flight["scheduleCron"] ||= ""
+        flight["runOnDeploy"] = flight.fetch("runOnDeploy", false)
+        flight["waitForRun"] = flight.fetch("waitForRun", false)
+        flight
+      end
+
+      dives = render_resources(resources["dives"] || {}, target, context).transform_values do |dive|
+        dive["sourcePath"] = absolute_resource_path(blueprint.dir, dive.fetch("source"))
+        dive["description"] ||= ""
+        dive
+      end
+
+      contexts = render_resources(resources["context"] || {}, target, context).transform_values do |ctx|
+        ctx["sourcePath"] = absolute_resource_path(blueprint.dir, ctx.fetch("source"))
+        ctx["deploy"] = ctx.fetch("deploy", false)
+        ctx
+      end
+
+      RenderedBlueprint.new(
+        name: blueprint.name,
+        title: Template.render(blueprint.title, context),
+        description: Template.render(blueprint.raw["description"] || "", context),
+        shares: shares,
+        flights: flights,
+        dives: dives,
+        contexts: contexts
+      )
+    end
+
+    def render_resources(resources, target, context)
+      resources.each_with_object({}) do |(key, raw), out|
+        merged = Util.deep_merge(raw.reject { |field, _| field == "targets" }, raw.dig("targets", target) || {})
+        out[key] = Template.render(merged, context)
+      end
+    end
+
+    def extract_variable_values(variables)
+      variables.each_with_object({}) do |(key, value), out|
+        out[key] = value.is_a?(Hash) && value.key?("default") ? value["default"] : value
+      end
+    end
+
+    def render_variables(variables, context)
+      rendered = variables.dup
+      5.times do
+        context["var"] = rendered
+        rendered = Template.render(rendered, context)
+      end
+      stringify_map(rendered)
+    end
+
+    def stringify_map(hash)
+      hash.transform_values { |value| value.to_s }
+    end
+
+    def absolute_resource_path(base_dir, path)
+      File.expand_path(path, base_dir)
+    end
+
+    def validate_uniqueness!(target, rendered_blueprints)
+      {
+        "Flight name" => rendered_blueprints.flat_map { |bp| bp.flights.values.map { |flight| flight.fetch("name") } },
+        "Dive title" => rendered_blueprints.flat_map { |bp| bp.dives.values.map { |dive| dive.fetch("title") } },
+        "Share name" => rendered_blueprints.flat_map { |bp| bp.shares.values.map { |share| share.fetch("name") } }
+      }.each do |label, values|
+        duplicates = values.group_by(&:itself).select { |_, list| list.length > 1 }.keys
+        raise ValidationError, "#{label} duplicates in #{target}: #{duplicates.join(', ')}" unless duplicates.empty?
+      end
+    end
+
+    def validate_rendered_blueprint!(target, branch, blueprint)
+      branch_slug = Util.branch_slug(branch.to_s)
+
+      blueprint.shares.each do |key, share|
+        %w[name database].each { |field| require_nonempty!(share[field], "shares.#{key}.#{field}") }
+        if share.fetch("visibility", "DISCOVERABLE") == "HIDDEN" && share.fetch("access", "ORGANIZATION") != "RESTRICTED"
+          raise ValidationError, "hidden share #{blueprint.name}.#{key} must use RESTRICTED access"
+        end
+        if target == "preview" && @manifest.dig("targets", target, "policies", "requireBranchSlugInDataResources")
+          unless share.fetch("name").include?(branch_slug)
+            raise ValidationError, "preview share #{blueprint.name}.#{key} must include branch slug #{branch_slug}"
+          end
+          if share.fetch("dropDatabase", false) && !share.fetch("database").include?(branch_slug)
+            raise ValidationError, "preview database #{blueprint.name}.#{key} must include branch slug #{branch_slug}"
+          end
+        end
+      end
+
+      blueprint.flights.each do |key, flight|
+        %w[name sourcePath requirementsPath].each { |field| require_nonempty!(flight[field], "flights.#{key}.#{field}") }
+        require_file!(flight["sourcePath"])
+        require_file!(flight["requirementsPath"])
+        validate_python!(flight["sourcePath"])
+        if flight["scheduleCron"].to_s != "" && flight["scheduleCron"].to_s.split.length != 5
+          raise ValidationError, "flights.#{key}.scheduleCron must be a 5-field UTC cron expression"
+        end
+        if target == "preview" && @manifest.dig("targets", target, "policies", "disableSchedules") && flight["scheduleCron"].to_s != ""
+          raise ValidationError, "preview flight #{blueprint.name}.#{key} must render with schedule disabled"
+        end
+      end
+
+      blueprint.dives.each do |key, dive|
+        %w[title sourcePath].each { |field| require_nonempty!(dive[field], "dives.#{key}.#{field}") }
+        require_file!(dive["sourcePath"])
+        resources = dive.fetch("requiredResources")
+        raise ValidationError, "dives.#{key}.requiredResources must not be empty" if resources.empty?
+
+        resources.each_with_index do |resource, index|
+          require_nonempty!(resource["alias"], "dives.#{key}.requiredResources[#{index}].alias")
+          if resource["share"]
+            unless blueprint.shares.key?(resource["share"])
+              raise ValidationError, "dives.#{key}.requiredResources[#{index}] references missing share #{resource["share"]}"
+            end
+          elsif resource["url"].to_s.empty?
+            raise ValidationError, "dives.#{key}.requiredResources[#{index}] must set share or url"
+          end
+        end
+      end
+
+      blueprint.contexts.each do |key, ctx|
+        require_file!(ctx["sourcePath"])
+        if ctx["deploy"]
+          raise ValidationError, "context resource #{blueprint.name}.#{key} cannot deploy until MotherDuck exposes the context API"
+        end
+      end
+    end
+
+    def require_nonempty!(value, label)
+      raise ValidationError, "#{label} is required" if value.to_s.empty?
+    end
+
+    def require_file!(path)
+      raise ValidationError, "Required file not found: #{path}" unless File.file?(path)
+    end
+
+    def validate_python!(path)
+      script = "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(), filename=sys.argv[1])"
+      _stdout, stderr, status = Open3.capture3("python3", "-c", script, path)
+      raise ValidationError, "Python syntax error in #{path}: #{stderr.strip}" unless status.success?
+    end
+  end
+
+  class Deployer
+    def initialize(project)
+      @project = project
+    end
+
+    def deploy(target:, branch:, names:)
+      @project.validate!(targets: [target])
+      rendered = @project.render_all(target, branch: branch, names: names)
+      rendered.each do |blueprint|
+        deploy_blueprint(blueprint, target)
+      end
+    end
+
+    def cleanup(target:, branch:, names:)
+      raise ValidationError, "cleanup is only supported for preview target" unless target == "preview"
+
+      @project.validate!(targets: [target])
+      branch_slug = Util.branch_slug(branch)
+      rendered = @project.render_all(target, branch: branch, names: names)
+      rendered.each do |blueprint|
+        cleanup_blueprint(blueprint, branch_slug)
+      end
+    end
+
+    private
+
+    def deploy_blueprint(blueprint, target)
+      $stderr.puts "Deploying blueprint '#{blueprint.name}' to #{target}..."
+      flight_rows = []
+      share_rows = []
+      dive_rows = []
+
+      blueprint.flights.each do |key, flight|
+        $stderr.puts "Deploying Flight #{blueprint.name}.#{key}..."
+        flight_rows << deploy_flight(flight, target)
+      end
+
+      blueprint.shares.each do |_key, share|
+        url = wait_for_share(share.fetch("name"))
+        share_rows << "| #{share.fetch("name")} | [Open Share](#{url}) |" if target == "preview"
+      end
+
+      blueprint.dives.each do |key, dive|
+        $stderr.puts "Deploying Dive #{blueprint.name}.#{key}..."
+        dive_rows << deploy_dive(dive, blueprint.shares, target)
+      end
+
+      return unless target == "preview"
+
+      puts "#### #{blueprint.title}"
+      puts
+      print_section("Flights", "| Flight | ID | Run started |", "|--------|----|-------------|", flight_rows)
+      print_section("Shares", "| Share | Link |", "|-------|------|", share_rows)
+      print_section("Dives", "| Dive | Link |", "|------|------|", dive_rows)
+    end
+
+    def print_section(title, header, separator, rows)
+      return if rows.compact.empty?
+
+      puts "##### #{title}"
+      puts
+      puts header
+      puts separator
+      rows.compact.each { |row| puts row }
+      puts
+    end
+
+    def deploy_flight(flight, target)
+      name = flight.fetch("name")
+      name_sql = Util.sql_string(name)
+      existing_ids = sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{name_sql})).lines.map(&:strip).reject(&:empty?)
+      config_sql = Util.sql_map(flight.fetch("config", {}))
+      source_sql = "(SELECT content FROM read_text(#{Util.sql_string(flight.fetch("sourcePath"))}))"
+      requirements_sql = "(SELECT content FROM read_text(#{Util.sql_string(flight.fetch("requirementsPath"))}))"
+      common_args = [
+        %("schedule_cron" => #{Util.sql_string(flight.fetch("scheduleCron", ""))}),
+        %("flight_secret_names" => #{Util.sql_array(flight.fetch("secrets", []))}),
+        %("config" => #{config_sql}),
+        %("name" => #{name_sql}),
+        %("source_code" => getvariable('source_code')),
+        %("requirements_txt" => getvariable('requirements_txt'))
+      ]
+      access_token_name = flight.fetch("accessTokenName", "")
+      common_args.insert(3, %("access_token_name" => #{Util.sql_string(access_token_name)})) unless access_token_name.empty?
+      common_args = common_args.join(", ")
+
+      flight_id = case existing_ids.length
+                  when 0
+                    $stderr.puts "  Creating new flight '#{name}'..."
+                    sql(%(SET VARIABLE source_code = #{source_sql}; SET VARIABLE requirements_txt = #{requirements_sql}; FROM MD_CREATE_FLIGHT(#{common_args});))
+                    sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{name_sql})).strip
+                  when 1
+                    $stderr.puts "  Updating existing flight '#{name}' (#{existing_ids.first})..."
+                    sql(%(SET VARIABLE source_code = #{source_sql}; SET VARIABLE requirements_txt = #{requirements_sql}; FROM MD_UPDATE_FLIGHT("flight_id" => '#{existing_ids.first}'::UUID, #{common_args});))
+                    existing_ids.first
+                  else
+                    raise ValidationError, "Found #{existing_ids.length} flights named #{name}; expected 0 or 1"
+                  end
+
+      run_started = false
+      if flight.fetch("runOnDeploy", false)
+        $stderr.puts "  Starting flight run for '#{name}'..."
+        sql(%(FROM MD_RUN_FLIGHT('#{flight_id}'::UUID, #{config_sql});))
+        run_started = true
+        wait_for_flight_run_success(flight_id) if flight.fetch("waitForRun", false) == "success"
+      end
+
+      target == "preview" ? "| #{name} | #{flight_id} | #{run_started} |" : nil
+    end
+
+    def wait_for_flight_run_success(flight_id)
+      attempts = ENV.fetch("FLIGHT_RUN_POLL_ATTEMPTS", "60").to_i
+      sleep_seconds = ENV.fetch("FLIGHT_RUN_POLL_SLEEP_SECONDS", "10").to_i
+      attempts = 1 if attempts < 1
+
+      attempts.times do |index|
+        row = sql(%(SELECT run_number || '|' || status FROM MD_LIST_FLIGHT_RUNS(flight_id := '#{flight_id}'::UUID) ORDER BY run_number DESC LIMIT 1)).strip
+        run_number, status = row.split("|", 2)
+        case status
+        when "RUN_STATUS_SUCCEEDED"
+          return
+        when "RUN_STATUS_FAILED", "RUN_STATUS_CANCELLED"
+          logs = sql(%(SELECT logs FROM MD_GET_FLIGHT_LOGS(flight_id := '#{flight_id}'::UUID, run_number := #{run_number.to_i}))).strip
+          raise CommandError, "Flight run #{run_number} ended with #{status}. Log tail: #{logs}"
+        end
+        sleep sleep_seconds if index < attempts - 1
+      end
+
+      raise CommandError, "Timed out waiting for flight #{flight_id} to succeed"
+    end
+
+    def wait_for_share(share_name)
+      attempts = ENV.fetch("SHARE_RESOLVE_ATTEMPTS", "18").to_i
+      sleep_seconds = ENV.fetch("SHARE_RESOLVE_SLEEP_SECONDS", "10").to_i
+      attempts = 1 if attempts < 1
+
+      attempts.times do |index|
+        url = sql(%(SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = #{Util.sql_string(share_name)})).strip
+        return url unless url.empty?
+
+        $stderr.puts "  Waiting for share '#{share_name}' (#{index + 1}/#{attempts})..." if index < attempts - 1
+        sleep sleep_seconds if index < attempts - 1
+      end
+
+      raise CommandError, "Timed out waiting for share '#{share_name}'"
+    end
+
+    def deploy_dive(dive, shares, target)
+      title = dive.fetch("title")
+      required_resources_sql = required_resources_sql(dive.fetch("requiredResources"), shares)
+      content_sql = "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') FROM read_text(#{Util.sql_string(dive.fetch("sourcePath"))}))"
+      title_sql = Util.sql_string(title)
+      description_sql = Util.sql_string(dive.fetch("description", ""))
+      existing_ids = sql(%(SELECT id FROM MD_LIST_DIVES() WHERE title = #{title_sql})).lines.map(&:strip).reject(&:empty?)
+
+      dive_id = case existing_ids.length
+                when 0
+                  $stderr.puts "  Creating new dive '#{title}'..."
+                  sql(%(SET VARIABLE content = #{content_sql}; SELECT id FROM MD_CREATE_DIVE(title = #{title_sql}, content = getvariable('content'), description = #{description_sql}, api_version = 1, required_resources = #{required_resources_sql}))).strip
+                when 1
+                  $stderr.puts "  Updating existing dive '#{title}' (#{existing_ids.first})..."
+                  sql(%(SET VARIABLE content = #{content_sql}; FROM MD_UPDATE_DIVE_CONTENT(id = '#{existing_ids.first}'::UUID, content = getvariable('content'), api_version = 1, required_resources = #{required_resources_sql}); FROM MD_UPDATE_DIVE_METADATA(id = '#{existing_ids.first}'::UUID, title = #{title_sql}, description = #{description_sql});))
+                  existing_ids.first
+                else
+                  raise ValidationError, "Found #{existing_ids.length} dives titled #{title}; expected 0 or 1"
+                end
+
+      $stderr.puts "  Deployed: https://app.motherduck.com/dives/#{dive_id}"
+      target == "preview" ? "| #{title} | [Open Dive](https://app.motherduck.com/dives/#{dive_id}) |" : nil
+    end
+
+    def required_resources_sql(resources, shares)
+      expressions = resources.map do |resource|
+        url = if resource["share"]
+                wait_for_share(shares.fetch(resource.fetch("share")).fetch("name"))
+              else
+                resource.fetch("url")
+              end
+        "{'url': #{Util.sql_string(url)}, 'alias': #{Util.sql_string(resource.fetch("alias"))}}"
+      end
+      "[#{expressions.join(', ')}]"
+    end
+
+    def cleanup_blueprint(blueprint, branch_slug)
+      $stderr.puts "Cleaning preview blueprint '#{blueprint.name}'..."
+
+      blueprint.dives.each_value do |dive|
+        title = dive.fetch("title")
+        ids = sql(%(SELECT id FROM MD_LIST_DIVES() WHERE title = #{Util.sql_string(title)})).lines.map(&:strip).reject(&:empty?)
+        if ids.empty?
+          puts "No preview Dive found for '#{title}'"
+        else
+          ids.each do |id|
+            puts "Deleting preview Dive #{id} (#{title})"
+            sql(%(FROM MD_DELETE_DIVE(id='#{id}'::UUID)))
+          end
+        end
+      end
+
+      blueprint.flights.each_value do |flight|
+        name = flight.fetch("name")
+        ids = sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{Util.sql_string(name)})).lines.map(&:strip).reject(&:empty?)
+        if ids.empty?
+          puts "No preview Flight found for '#{name}'"
+        else
+          ids.each do |id|
+            puts "Deleting preview Flight #{id} (#{name})"
+            sql(%(FROM MD_DELETE_FLIGHT('#{id}'::UUID);))
+          end
+        end
+      end
+
+      blueprint.shares.each_value do |share|
+        next unless share.fetch("cleanup", true)
+
+        share_name = share.fetch("name")
+        database_name = share.fetch("database")
+        unless share_name.include?(branch_slug)
+          raise ValidationError, "Refusing to drop preview share without branch slug: #{share_name}"
+        end
+        share_url = sql(%(SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = #{Util.sql_string(share_name)})).strip
+        if share_url.empty?
+          puts "No preview share found for '#{share_name}'"
+        else
+          puts "Dropping preview share #{share_name}"
+          sql(%(FROM MD_DROP_DATABASE_SHARE(#{Util.sql_string(share_name)});))
+        end
+
+        next unless share.fetch("dropDatabase", false)
+
+        unless database_name.include?(branch_slug)
+          raise ValidationError, "Refusing to drop preview database without branch slug: #{database_name}"
+        end
+        puts "Dropping preview database #{database_name}"
+        sql(%(DROP DATABASE IF EXISTS #{Util.quote_ident(database_name)};))
+      end
+    end
+
+    def sql(statement)
+      Util.run_command("duckdb", "md:", "-csv", "-noheader", "-c", statement).strip
+    end
+  end
+
+  class CLI
+    def self.run(argv)
+      command = argv.shift
+      options = parse_options(argv)
+      project = Project.new(options.fetch(:root))
+
+      case command
+      when "validate"
+        targets = options[:target] ? [options[:target]] : %w[preview prod]
+        project.validate!(targets: targets)
+        puts "Validation passed for #{project.all_blueprint_names.length} blueprint(s)."
+      when "render"
+        target = options[:target] || "prod"
+        rendered = project.render_all(target, branch: options[:branch], names: options[:blueprints])
+        puts JSON.pretty_generate(rendered.map { |blueprint| blueprint.to_h })
+      when "changed"
+        changed = project.changed_blueprints(base: options[:base], head: options[:head] || "HEAD")
+        puts(options[:json] ? JSON.generate(changed) : changed.join("\n"))
+      when "deploy"
+        target = options[:target] || "prod"
+        Deployer.new(project).deploy(target: target, branch: options[:branch], names: options[:blueprints])
+      when "cleanup"
+        target = options[:target] || "preview"
+        Deployer.new(project).cleanup(target: target, branch: options[:branch], names: options[:blueprints])
+      else
+        warn "Usage: tools/md_blueprints <validate|render|changed|deploy|cleanup> [options]"
+        exit 2
+      end
+    rescue ValidationError, CommandError, KeyError => e
+      warn "Error: #{e.message}"
+      exit 1
+    end
+
+    def self.parse_options(argv)
+      options = { root: Dir.pwd }
+      parser = OptionParser.new do |opts|
+        opts.on("--root PATH") { |value| options[:root] = value }
+        opts.on("--target TARGET") { |value| options[:target] = value }
+        opts.on("--branch BRANCH") { |value| options[:branch] = value }
+        opts.on("--blueprints LIST") { |value| options[:blueprints] = value.to_s.split(",").map(&:strip).reject(&:empty?) }
+        opts.on("--base REF") { |value| options[:base] = value }
+        opts.on("--head REF") { |value| options[:head] = value }
+        opts.on("--json") { options[:json] = true }
+      end
+      parser.parse!(argv)
+      options
+    end
+  end
+end
+
+MDBlueprints::CLI.run(ARGV)

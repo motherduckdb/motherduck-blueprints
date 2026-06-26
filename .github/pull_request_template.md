@@ -2,14 +2,17 @@
 
 - [ ] Dives
 - [ ] Flights
+- [ ] Shares
 - [ ] Context layer
 - [ ] CI or scripts
 - [ ] Docs only
 
 ## Deployment notes
 
-- [ ] New or renamed assets are registered in the relevant workflow filter block.
-- [ ] Dives list required resources in `dive_metadata.json`.
-- [ ] Flights compile with `make validate-flight <flight-name>`.
+- [ ] New or renamed assets are declared in `blueprints/<name>/blueprint.yml`.
+- [ ] Dives list required resources in `blueprint.yml`.
+- [ ] Preview shares/databases that can be cleaned up include `${target.branch_slug}`.
+- [ ] Blueprints validate with `make validate`.
+- [ ] Dives build with `make preview-smoke <blueprint-name>` when changed.
+- [ ] `CHANGELOG.md` is updated.
 - [ ] Production deploy has an owner/reviewer.
-

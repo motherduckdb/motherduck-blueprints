@@ -1,0 +1,42 @@
+schemaVersion: 1
+name: flight-dive
+title: Flight Dive
+variables:
+  database:
+    default: flight_dive
+resources:
+  shares:
+    data:
+      name: ${var.database}
+      database: ${var.database}
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.database}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          dropDatabase: true
+  flights:
+    loader:
+      name: flight-dive-loader
+      source: src/flight.py
+      requirements: src/requirements.txt
+      scheduleCron: 0 6 * * *
+      runOnDeploy: true
+      waitForRun: false
+      config:
+        database: ${resources.shares.data.database}
+        share: ${resources.shares.data.name}
+      targets:
+        preview:
+          name: flight-dive-loader:${target.branch} (Preview)
+  dives:
+    dashboard:
+      title: Flight Dive
+      source: src/dive.tsx
+      requiredResources:
+        - share: data
+          alias: flight_dive
+      targets:
+        preview:
+          title: Flight Dive:${target.branch} (Preview)

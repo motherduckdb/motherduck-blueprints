@@ -1,0 +1,155 @@
+{
+  "$id": "blueprint.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "name", "title", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "variables": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/variable" }
+    },
+    "targets": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shares": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/share" }
+        },
+        "flights": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/flight" }
+        },
+        "dives": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/dive" }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/context" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "variable": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "required": ["default"],
+          "properties": {
+            "description": { "type": "string" },
+            "default": {}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "targetOverride": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "share": {
+      "type": "object",
+      "required": ["name", "database"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "database": { "type": "string", "minLength": 1 },
+        "access": { "type": "string" },
+        "visibility": { "type": "string" },
+        "cleanup": { "type": "boolean" },
+        "dropDatabase": { "type": "boolean" },
+        "targets": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+        }
+      }
+    },
+    "flight": {
+      "type": "object",
+      "required": ["name", "source", "requirements"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "requirements": { "type": "string", "minLength": 1 },
+        "scheduleCron": { "type": "string" },
+        "accessTokenName": { "type": "string" },
+        "runOnDeploy": { "type": "boolean" },
+        "waitForRun": {
+          "enum": ["success", false]
+        },
+        "secrets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+        }
+      }
+    },
+    "dive": {
+      "type": "object",
+      "required": ["title", "source", "requiredResources"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "requiredResources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/requiredResource" }
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+        }
+      }
+    },
+    "requiredResource": {
+      "type": "object",
+      "required": ["alias"],
+      "anyOf": [
+        { "required": ["share"] },
+        { "required": ["url"] }
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "share": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "alias": { "type": "string", "minLength": 1 }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "deploy": { "type": "boolean" },
+        "targets": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+        }
+      }
+    }
+  }
+}

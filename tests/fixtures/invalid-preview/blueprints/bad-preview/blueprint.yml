@@ -1,0 +1,25 @@
+schemaVersion: 1
+name: bad-preview
+title: Bad Preview
+resources:
+  shares:
+    data:
+      name: bad_preview
+      database: bad_preview
+      cleanup: true
+      dropDatabase: true
+      targets:
+        preview:
+          name: bad_preview_without_branch
+          database: bad_preview_without_branch
+          dropDatabase: true
+  dives:
+    dashboard:
+      title: Bad Preview
+      source: src/dive.tsx
+      requiredResources:
+        - share: data
+          alias: bad_preview
+      targets:
+        preview:
+          title: Bad Preview:${target.branch} (Preview)

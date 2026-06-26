@@ -1,0 +1,71 @@
+schemaVersion: 1
+name: operations
+title: Operations
+description: Multi-resource fixture with shared variables and non-deploying context resources.
+variables:
+  base_database:
+    default: operations
+resources:
+  shares:
+    raw:
+      name: ${var.base_database}_raw
+      database: ${var.base_database}_raw
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.base_database}_raw${var.preview_suffix}
+          database: ${var.base_database}_raw${var.preview_suffix}
+          dropDatabase: true
+    marts:
+      name: ${var.base_database}_marts
+      database: ${var.base_database}_marts
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.base_database}_marts${var.preview_suffix}
+          database: ${var.base_database}_marts${var.preview_suffix}
+          dropDatabase: true
+  flights:
+    ingest:
+      name: operations-ingest
+      source: src/ingest.py
+      requirements: src/requirements.txt
+      scheduleCron: 0 * * * *
+      runOnDeploy: true
+      waitForRun: false
+      config:
+        database: ${resources.shares.raw.database}
+        share: ${resources.shares.raw.name}
+      targets:
+        preview:
+          name: operations-ingest:${target.branch} (Preview)
+    transform:
+      name: operations-transform
+      source: src/transform.py
+      requirements: src/requirements.txt
+      scheduleCron: 15 * * * *
+      runOnDeploy: true
+      waitForRun: false
+      config:
+        source_database: ${resources.shares.raw.database}
+        database: ${resources.shares.marts.database}
+        share: ${resources.shares.marts.name}
+      targets:
+        preview:
+          name: operations-transform:${target.branch} (Preview)
+  dives:
+    dashboard:
+      title: Operations Dashboard
+      source: src/dive.tsx
+      requiredResources:
+        - share: marts
+          alias: operations_marts
+      targets:
+        preview:
+          title: Operations Dashboard:${target.branch} (Preview)
+  context:
+    policy:
+      source: context/policy.md
+      deploy: false
