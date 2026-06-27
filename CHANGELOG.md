@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented here.
 
-Update this file in every pull request. Add entries under `Unreleased` until the change is released or merged into a customer template.
+Update this file in every pull request. Add entries under `Unreleased` until the change is released or merged into a reusable template.
 
 ## Unreleased
 
@@ -18,7 +18,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 - Migrated the Wikipedia Pageviews example into `blueprints/wikipedia-pageviews/`.
 - Skipped production deployment and preview cleanup workflows when `MOTHERDUCK_TOKEN` is not configured.
-- Simplified the README into a customer-facing quickstart and moved detailed repository mechanics into `docs/repository-reference.md`.
+- Reworked setup language for self-service use in your own repository.
+- Simplified the README into a self-service quickstart and moved detailed repository mechanics into `docs/repository-reference.md`.
 - Reworded blueprint documentation to describe the project-first layout without external product comparisons.
 - Replaced type-first Dives, Flights, and bundles documentation with project-level blueprint guidance.
 - Documented that blueprint packages represent one logical project or data product, not an organization, service account, user, or database owner.

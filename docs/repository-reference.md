@@ -38,7 +38,7 @@ context/
 
 A `blueprints/<name>/` package represents one logical project or data product that should be reviewed, previewed, deployed, rolled back, and understood as a unit.
 
-Use a blueprint package for examples like `customer-360`, `revenue-ops`, `support-insights`, or `wikipedia-pageviews`. Do not use a blueprint package for an entire organization, all databases owned by a user, all resources owned by a service account, or all production assets across unrelated projects.
+Use a blueprint package for examples like `account-360`, `revenue-ops`, `support-insights`, or `wikipedia-pageviews`. Do not use a blueprint package for an entire organization, all databases owned by a user, all resources owned by a service account, or all production assets across unrelated projects.
 
 A single MotherDuck user or service account can own many databases, and one project can occasionally involve more than one service account. That does not change the package boundary:
 
