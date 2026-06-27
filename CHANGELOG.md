@@ -8,6 +8,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Added
 
+- Added a complete `blueprint.yml` field reference for agents, LLM crawlers, and blueprint authors.
 - Introduced project-first blueprint packages under `blueprints/<name>/`.
 - Added the root `motherduck.yml` repository manifest, JSON schemas, and `tools/md_blueprints`.
 - Added a deployable starter scaffold through `make new-blueprint <blueprint-name>`.
