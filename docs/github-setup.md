@@ -2,7 +2,7 @@
 
 ## 1. Create the Repository
 
-For a customer-owned repo, prefer creating a new repository from the MotherDuck Blueprints template. See [customer-onboarding.md](customer-onboarding.md) for the full template-copy flow.
+Prefer creating your repository from the MotherDuck Blueprints template. See [setup-your-repository.md](setup-your-repository.md) for the full template-copy flow.
 
 If you are pushing from a local copy manually, create an empty GitHub repository named `motherduck-blueprints`, then push this folder to it.
 
@@ -11,7 +11,7 @@ git init
 git add .
 git commit -m "Initial MotherDuck Blueprints repo"
 git branch -M main
-git remote add origin git@github.com:<owner>/motherduck-blueprints.git
+git remote add origin git@github.com:<your-org>/motherduck-blueprints.git
 git push -u origin main
 ```
 
@@ -24,7 +24,7 @@ In GitHub:
 3. Create a repository secret named `MOTHERDUCK_TOKEN`.
 4. Paste a MotherDuck read/write token.
 
-Use a service account token for shared repositories so deployed resources are owned by automation rather than by an individual user.
+Use a service account token so deployed resources are owned by automation rather than by an individual user.
 
 ## 3. Add Production Environment Approval
 

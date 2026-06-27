@@ -69,4 +69,4 @@ CI calls `tools/md_blueprints` directly for change detection, validation, previe
 
 ## Changelog
 
-Update `CHANGELOG.md` in every pull request. Keep entries under `Unreleased` until the change is released or merged into a customer template.
+Update `CHANGELOG.md` in every pull request. Keep entries under `Unreleased` until the change is released or merged into a reusable template.

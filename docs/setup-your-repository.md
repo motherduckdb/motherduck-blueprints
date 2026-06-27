@@ -1,26 +1,26 @@
-# Customer Onboarding
+# Set Up Your Repository
 
-This repository is intended to act as a reusable MotherDuck Blueprints template. Customers copy it into their own GitHub organization, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
+This repository is a reusable MotherDuck Blueprints template. Copy it into your GitHub organization, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
 
-Blueprints are project-level packages. Each package should represent one logical project or data product, not an entire organization, service account, user, or database owner. Do not create top-level `dives/`, `flights/`, or `bundles/` directories in customer repos.
+Blueprints are project-level packages. Each package should represent one logical project or data product, not an entire organization, service account, user, or database owner. Do not create top-level `dives/`, `flights/`, or `bundles/` directories in your repo.
 
 ## 1. Copy the Template Repo
 
-Create a customer-owned repository from the template.
+Create your repository from the template.
 
 Recommended GitHub flow once `motherduckdb/motherduck-blueprints` is public:
 
 1. Open the template repository.
 2. Click "Use this template".
-3. Select the customer's GitHub organization.
+3. Select your GitHub organization.
 4. Name the new repository, for example `motherduck-blueprints`.
-5. Create the repository as private unless the customer explicitly wants it public.
+5. Create the repository as private unless you want it public.
 
 CLI alternative:
 
 ```bash
-gh repo create <customer-org>/motherduck-blueprints --private --template motherduckdb/motherduck-blueprints
-git clone git@github.com:<customer-org>/motherduck-blueprints.git
+gh repo create <your-org>/motherduck-blueprints --private --template motherduckdb/motherduck-blueprints
+git clone git@github.com:<your-org>/motherduck-blueprints.git
 cd motherduck-blueprints
 ```
 
@@ -30,12 +30,12 @@ If GitHub template mode is not enabled yet, copy by clone and push:
 git clone git@github.com:motherduckdb/motherduck-blueprints.git motherduck-blueprints
 cd motherduck-blueprints
 git remote remove origin
-gh repo create <customer-org>/motherduck-blueprints --private --source . --remote origin --push
+gh repo create <your-org>/motherduck-blueprints --private --source . --remote origin --push
 ```
 
 ## 2. Create a MotherDuck Service Account Token
 
-In the customer's MotherDuck organization:
+In your MotherDuck organization:
 
 1. Create a service account for CI deployments.
 2. Grant it the minimum database privileges needed by the blueprints.
@@ -46,7 +46,7 @@ Use a service account token rather than a personal token so deployed Dives, Flig
 
 ## 3. Add GitHub Secrets
 
-In the customer repository:
+In your repository:
 
 1. Open Settings.
 2. Open Secrets and variables, then Actions.
@@ -87,7 +87,7 @@ make mock-test
 
 `make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises preview deploy, production deploy, cleanup, and failed-run reporting without contacting MotherDuck.
 
-If the customer keeps a Dive in the repo, also run a finite local preview build:
+If you keep a Dive in the repo, also run a finite local preview build:
 
 ```bash
 make preview-smoke <blueprint-name>
@@ -97,7 +97,7 @@ PR validation still runs if `MOTHERDUCK_TOKEN` has not been added yet, but live 
 
 ## 7. Run a Preview PR
 
-Create a branch in the customer repo and make a small change, for example edit the Wikipedia blueprint docs or metadata.
+Create a branch in your repo and make a small change, for example edit the Wikipedia blueprint docs or metadata.
 
 ```bash
 git checkout -b test/wikipedia-blueprint
@@ -144,10 +144,10 @@ Expected production flow:
 
 ## 10. Customize the Blueprints
 
-Customers can then:
+You can then:
 
 - Scaffold a starter package with `make new-blueprint <blueprint-name>`. The generated Flight creates a tiny metrics table and share, and the generated Dive reads that share.
-- Replace the Wikipedia example with their own blueprint package.
+- Replace the Wikipedia example with your own blueprint package.
 - Add standalone Dives or Flights as one-resource blueprints.
 - Add paired Flight + Dive packages that declare shared data products in `resources.shares`.
 - Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.

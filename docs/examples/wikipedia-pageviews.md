@@ -26,7 +26,7 @@ The Flight uses the Wikimedia Pageviews API:
 https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...
 ```
 
-The default article set is `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days. Wikimedia asks API clients to send a useful `User-Agent`, so update `variables.user_agent` in `blueprint.yml` before deploying this from a real customer repository.
+The default article set is `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days. Wikimedia asks API clients to send a useful `User-Agent`, so update `variables.user_agent` in `blueprint.yml` before deploying this from your repository.
 
 ## Deployment Flow
 
