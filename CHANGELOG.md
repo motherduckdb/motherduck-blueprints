@@ -17,6 +17,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ### Changed
 
 - Migrated the Wikipedia Pageviews example into `blueprints/wikipedia-pageviews/`.
+- Simplified the README into a customer-facing quickstart and moved detailed repository mechanics into `docs/repository-reference.md`.
+- Reworded blueprint documentation to describe the project-first layout without external product comparisons.
 - Replaced type-first Dives, Flights, and bundles documentation with project-level blueprint guidance.
 - Documented that blueprint packages represent one logical project or data product, not an organization, service account, user, or database owner.
 
