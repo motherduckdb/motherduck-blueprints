@@ -1,8 +1,8 @@
 .dive-preview/.env
 .dive-preview/node_modules/
 .dive-preview/src/dive.tsx
+.dive-preview/dist/
 .DS_Store
 *.log
 __pycache__/
 *.py[cod]
-

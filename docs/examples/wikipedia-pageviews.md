@@ -1,12 +1,12 @@
 # Wikipedia Pageviews Example
 
-This example pairs:
+This example is a self-contained blueprint in `blueprints/wikipedia-pageviews/`.
 
-- `flights/wikipedia-pageviews/` - loads public Wikimedia pageview data into MotherDuck and publishes a share.
-- `dives/wikipedia-pageviews/` - reads from that share through the `wikipedia_pageviews` alias.
-- `bundles/wikipedia-pageviews/` - deploys the Flight, waits for the share, then deploys the Dive.
+## What It Deploys
 
-## What the Flight Creates
+- `resources.flights.pageviews_loader` - loads public Wikimedia pageview data into MotherDuck.
+- `resources.shares.pageviews` - names the database share produced by the Flight.
+- `resources.dives.pageviews` - reads from that share through the `wikipedia_pageviews` alias.
 
 The Flight creates these MotherDuck objects if they do not already exist:
 
@@ -16,7 +16,7 @@ The Flight creates these MotherDuck objects if they do not already exist:
 - view: `main.pageviews_article_summary`
 - share: `wikipedia_pageviews`
 
-The share is created as organization-scoped and discoverable by default. After each load, the Flight runs `UPDATE SHARE "wikipedia_pageviews"` so the Dive can read the latest published snapshot.
+After each load, the Flight runs `UPDATE SHARE` so the Dive reads the latest published snapshot.
 
 ## Public Data Source
 
@@ -26,44 +26,41 @@ The Flight uses the Wikimedia Pageviews API:
 https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...
 ```
 
-The default article set is `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days. Wikimedia asks API clients to send a useful `User-Agent`, so update `user_agent` in `flight_metadata.json` before deploying this in a real repository.
+The default article set is `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days. Wikimedia asks API clients to send a useful `User-Agent`, so update `variables.user_agent` in `blueprint.yml` before deploying this from a real customer repository.
 
 ## Deployment Flow
 
-The bundle is registered in `.github/workflows/deploy_bundles.yaml` with the bundle path and both component asset paths. The standalone Flight and Dive workflows remain available for standalone assets, but this example is intentionally deployed through the bundle workflow to preserve ordering.
+The root `motherduck.yml` includes `blueprints/*/blueprint.yml`, so this blueprint is discovered automatically. No workflow path-filter registration is required.
 
-The Flight has `"runOnDeploy": true`, so CI starts a run immediately after deploying it. That first run creates the tables and share. The Dive metadata uses:
+On pull requests:
 
-```json
-{
-  "shareName": "wikipedia_pageviews",
-  "previewShareName": "wikipedia_pageviews_preview_${BRANCH_SLUG}",
-  "alias": "wikipedia_pageviews"
-}
-```
+1. `.github/workflows/deploy_blueprints.yaml` computes changed blueprint packages.
+2. `tools/md_blueprints validate` validates all manifests and rendered targets.
+3. `tools/md_blueprints deploy --target preview --branch <branch>` deploys changed blueprints.
+4. The preview Flight name and Dive title include the branch name.
+5. The preview database and share include `${target.branch_slug}`.
+6. The Flight runs once, waits for success, waits for the share URL, and deploys the Dive.
+7. A PR comment lists preview Flights, shares, and Dives.
 
-During Dive deployment, `scripts/deploy-dive.sh` resolves `shareName` to the generated `md:_share/...` URL by reading `MD_LIST_DATABASE_SHARES()`. During PR preview deployment, it resolves `previewShareName` instead, so the preview Dive reads the preview Flight's branch-scoped share.
-
-The bundle workflow handles bootstrap ordering with `scripts/deploy-bundle.sh`: Flight, share wait, then Dive. That avoids hardcoding generated share URLs and avoids manually rerunning the Dive after the first Flight run.
+On merge to `main`, production deployment runs through the protected `motherduck-production` environment and uses stable names.
 
 ## Preview Behavior
 
-`flight_metadata.json` opts into preview Flights:
+The `preview` target disables schedules and requires cleanup-sensitive data resources to include the branch slug. The rendered preview share for branch `feature/mock-test` is:
 
-```json
-{
-  "preview": {
-    "enabled": true,
-    "runOnDeploy": true,
-    "cleanupShare": true,
-    "cleanupDatabase": true,
-    "config": {
-      "database": "wikipedia_pageviews_preview_${BRANCH_SLUG}",
-      "share": "wikipedia_pageviews_preview_${BRANCH_SLUG}",
-      "share_visibility": "HIDDEN"
-    }
-  }
-}
+```text
+wikipedia_pageviews_preview_feature_mock_test
 ```
 
-On a pull request, the preview Flight is named `<Flight>:<branch> (Preview)`, has no schedule, runs once, and writes to the preview database/share. The preview Dive resolves `previewShareName` and reads that branch-scoped share. Cleanup deletes the preview Flight and drops the preview share/database when the PR closes or the branch is deleted.
+Preview cleanup deletes the Dive first, then the Flight, then the preview share and database. The cleanup guard refuses to drop preview data resources whose names do not include the rendered branch slug.
+
+## Local Checks
+
+```bash
+make validate
+make render-preview wikipedia-pageviews
+make preview-smoke wikipedia-pageviews
+make mock-test
+```
+
+`make preview-smoke` builds the Dive through the local Vite preview harness without starting a long-running development server.

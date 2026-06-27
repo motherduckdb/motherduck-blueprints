@@ -1,0 +1,190 @@
+name: Deploy Blueprints
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Deployment target.
+        required: true
+        default: prod
+        type: choice
+        options:
+          - preview
+          - prod
+      branch:
+        description: Preview branch name for manual preview deploys.
+        required: false
+        type: string
+      blueprints:
+        description: Optional comma-separated blueprint names. Defaults to all.
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - "motherduck.yml"
+      - "blueprints/**"
+      - "schemas/**"
+      - "tools/**"
+      - "scripts/**"
+      - "templates/**"
+      - ".github/workflows/deploy_blueprints.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "motherduck.yml"
+      - "blueprints/**"
+      - "schemas/**"
+      - "tools/**"
+      - "scripts/**"
+      - "templates/**"
+      - ".github/workflows/deploy_blueprints.yaml"
+
+jobs:
+  compute_changes:
+    name: Identify Changed Blueprints
+    runs-on: ubuntu-latest
+    outputs:
+      changed_blueprints: ${{ steps.changed.outputs.changed_blueprints }}
+      changed_csv: ${{ steps.changed.outputs.changed_csv }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute changed blueprints
+        id: changed
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          INPUT_BLUEPRINTS: ${{ inputs.blueprints }}
+        run: |
+          if [ -n "$INPUT_BLUEPRINTS" ]; then
+            CHANGED="$(jq -cn --arg list "$INPUT_BLUEPRINTS" '$list | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$PR_BASE_REF"
+            CHANGED="$(./tools/md_blueprints changed --base "origin/${PR_BASE_REF}" --head HEAD --json)"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            CHANGED="$(./tools/md_blueprints changed --base "$PUSH_BEFORE" --head HEAD --json)"
+          else
+            CHANGED="$(./tools/md_blueprints changed --base "" --head HEAD --json)"
+          fi
+
+          CSV="$(jq -r 'join(",")' <<< "$CHANGED")"
+          echo "changed_blueprints=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "changed_csv=${CSV}" >> "$GITHUB_OUTPUT"
+
+  validate:
+    name: Validate Blueprints
+    needs: compute_changes
+    if: needs.compute_changes.outputs.changed_blueprints != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests
+        shell: bash
+        run: |
+          ./tools/md_blueprints validate
+
+  deploy-preview:
+    name: Deploy Preview Blueprints
+    needs:
+      - compute_changes
+      - validate
+    if: needs.compute_changes.outputs.changed_blueprints != '[]' && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'preview'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opt-nc/setup-duckdb-action@v1.2.8
+        with:
+          version: v1.5.3
+      - name: Deploy preview blueprints
+        id: deploy-preview
+        shell: bash
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          PREVIEW_BRANCH: ${{ github.head_ref || inputs.branch }}
+          BLUEPRINTS: ${{ needs.compute_changes.outputs.changed_csv }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ -z "$PREVIEW_BRANCH" ]; then
+            echo "Preview branch is required for preview deploys"
+            exit 1
+          fi
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              OUTPUT="Preview deploy skipped because MOTHERDUCK_TOKEN is not configured for this repository."
+            else
+              echo "MOTHERDUCK_TOKEN is required for preview deploys"
+              exit 1
+            fi
+          else
+            OUTPUT="$(./tools/md_blueprints deploy --target preview --branch "$PREVIEW_BRANCH" --blueprints "$BLUEPRINTS")"
+          fi
+          echo "comment_body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && steps.deploy-preview.outputs.comment_body != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- preview-blueprints-comment -->';
+            const body = `${marker}
+            ### Preview Blueprints
+
+            ${{ steps.deploy-preview.outputs.comment_body }}`.replace(/^ +/gm, '');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  deploy-prod:
+    name: Deploy Production Blueprints
+    needs:
+      - compute_changes
+      - validate
+    if: needs.compute_changes.outputs.changed_blueprints != '[]' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.target == 'prod'))
+    runs-on: ubuntu-latest
+    environment: motherduck-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opt-nc/setup-duckdb-action@v1.2.8
+        with:
+          version: v1.5.3
+      - name: Deploy production blueprints
+        shell: bash
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          BLUEPRINTS: ${{ needs.compute_changes.outputs.changed_csv }}
+        run: |
+          ./tools/md_blueprints deploy --target prod --blueprints "$BLUEPRINTS"

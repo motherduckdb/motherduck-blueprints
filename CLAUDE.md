@@ -1,4 +1,3 @@
 # CLAUDE.md
 
-See [AGENTS.md](AGENTS.md). This file is kept for compatibility with agents and editors that look for Claude-specific repository guidance.
-
+See [AGENTS.md](AGENTS.md). Some agents and editors look for this file first; `AGENTS.md` is the single source of repository guidance.
