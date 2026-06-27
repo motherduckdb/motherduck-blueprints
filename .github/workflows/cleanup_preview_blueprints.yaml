@@ -31,4 +31,8 @@ jobs:
             echo "No branch name available for cleanup"
             exit 0
           fi
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Preview cleanup skipped because MOTHERDUCK_TOKEN is not configured for this repository."
+            exit 0
+          fi
           ./tools/md_blueprints cleanup --target preview --branch "$BRANCH_NAME"

@@ -17,6 +17,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ### Changed
 
 - Migrated the Wikipedia Pageviews example into `blueprints/wikipedia-pageviews/`.
+- Skipped production deployment and preview cleanup workflows when `MOTHERDUCK_TOKEN` is not configured.
 - Simplified the README into a customer-facing quickstart and moved detailed repository mechanics into `docs/repository-reference.md`.
 - Reworded blueprint documentation to describe the project-first layout without external product comparisons.
 - Replaced type-first Dives, Flights, and bundles documentation with project-level blueprint guidance.
