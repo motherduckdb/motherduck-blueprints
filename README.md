@@ -71,3 +71,4 @@ For a new project, the generated starter blueprint is usually the best first exa
 - [Set Up Your Repository](docs/setup-your-repository.md): copy this template into your repo.
 - [GitHub Setup](docs/github-setup.md): configure secrets, environments, and branch protection.
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
+- [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.

@@ -72,6 +72,8 @@ Then edit `blueprints/<blueprint-name>/blueprint.yml` and the files under `src/`
 
 The generated package is the recommended starting example. It creates a small `starter_metrics` table, publishes a branch- or production-scoped share, and deploys a Dive that reads the share. Replace the starter data and query with your project logic while keeping the same package boundary: one logical project or data product per blueprint.
 
+For every accepted `blueprint.yml` field, value shape, default, and rendered validation rule, see [blueprint.yml Reference](blueprint-yml-reference.md).
+
 ## Deployment Targets
 
 The repo defines two targets:
