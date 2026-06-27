@@ -187,4 +187,8 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           BLUEPRINTS: ${{ needs.compute_changes.outputs.changed_csv }}
         run: |
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Production deploy skipped because MOTHERDUCK_TOKEN is not configured for this repository."
+            exit 0
+          fi
           ./tools/md_blueprints deploy --target prod --blueprints "$BLUEPRINTS"
