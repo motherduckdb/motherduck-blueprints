@@ -23,6 +23,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Refreshed agent and repository docs so validation checklists, generated-template guidance, context notes, and PR reminders stay aligned.
 - Expanded the generated starter blueprint with daily metrics, a summary view, an underscore-safe Dive alias, and a richer dashboard.
 - Migrated the Wikipedia Pageviews example into `blueprints/wikipedia-pageviews/`.
 - Ran read-only deployment plans before preview and production deploys in CI.

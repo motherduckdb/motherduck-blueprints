@@ -358,7 +358,8 @@ Run these checks before opening a pull request:
 ```bash
 make validate
 make mock-test
+make example-smoke
 make preview-smoke <blueprint-name>
 ```
 
-`make validate` checks schemas, renders preview and production targets, enforces uniqueness, verifies file paths, parses Flight Python sources, and checks rendered resource rules. `make mock-test` exercises scaffold creation, live-state planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed Flight run handling without contacting MotherDuck. Run `make preview-smoke <blueprint-name>` for every blueprint that includes a Dive.
+`make validate` checks schemas, renders preview and production targets, enforces uniqueness, verifies file paths, parses Flight Python sources, and checks rendered resource rules. `make mock-test` exercises scaffold creation, live-state planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed Flight run handling without contacting MotherDuck. `make example-smoke` proves the generated starter package can be created, validated, built, and removed. Run `make preview-smoke <blueprint-name>` for every blueprint that includes a Dive.

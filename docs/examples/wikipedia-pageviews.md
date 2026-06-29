@@ -62,6 +62,7 @@ make validate
 make render-preview wikipedia-pageviews
 make preview-smoke wikipedia-pageviews
 make mock-test
+make example-smoke
 ```
 
 `make preview-smoke` builds the Dive through the local Vite preview harness without starting a long-running development server.

@@ -1,6 +1,6 @@
 # Agent Guide
 
-This repository contains versioned MotherDuck Blueprints for Dives, Flights, shares, and future context-layer assets.
+This repository contains MotherDuck Blueprints for Dives, Flights, shares, and future context-layer assets.
 
 ## Token Handling
 
@@ -23,6 +23,8 @@ Do not add deployable resources under top-level `dives/`, `flights/`, or `bundle
 Treat a blueprint package as one logical project or data product. Do not split or group packages by MotherDuck organization, service account, user, or database ownership. Databases are resources inside a project package; service accounts are target or resource identity choices.
 
 Use `make new-blueprint <blueprint-name>` as the starting example for new projects. The generated package should stay deployable: its Flight creates starter data and a share, and its Dive reads that share.
+
+When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, blueprint `README.md` files, `templates/blueprint/README.md`, `context/README.md`, `.github/pull_request_template.md`, and this guide for drift.
 
 ## Resources
 
@@ -70,4 +72,4 @@ CI calls `tools/md_blueprints` directly for change detection, validation, previe
 
 ## Changelog
 
-Update `CHANGELOG.md` in every pull request. Keep entries under `Unreleased` until the change is released or merged into a reusable template.
+Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep entries under `Unreleased` until the change is released or merged into a reusable template.

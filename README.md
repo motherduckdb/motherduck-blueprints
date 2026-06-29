@@ -19,11 +19,13 @@ Use this repo when you want:
 ```bash
 make validate
 make mock-test
+make example-smoke
 ```
 
 5. Open a small pull request and confirm the preview deployment comment appears.
 
 Use a MotherDuck service account token so deployed resources are owned by automation rather than by one person's account.
+Pull requests still validate without `MOTHERDUCK_TOKEN`, but live preview deployment starts only after that secret is configured.
 
 See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup flow and [GitHub Setup](docs/github-setup.md) for the short GitHub checklist.
 
@@ -68,6 +70,7 @@ When you have a MotherDuck token configured, inspect live create/update/delete a
 - Deploy from CI with a service account token.
 - Use target `deployment` metadata when preview and production use different service accounts or token env vars.
 - Store secrets in GitHub Actions, never in the repo.
+- Keep README, `docs/`, blueprint README files, and the generated template README aligned when commands or layout rules change.
 - Update [CHANGELOG.md](CHANGELOG.md) in every pull request.
 
 ## Examples

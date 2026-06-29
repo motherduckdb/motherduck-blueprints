@@ -162,3 +162,5 @@ You can then:
 - Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
 - Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.
 - Update `.github/CODEOWNERS`.
+
+When you change repository commands, resource behavior, target policies, or package layout, update the matching docs in the same pull request and add an entry to `CHANGELOG.md`.

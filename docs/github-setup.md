@@ -79,10 +79,12 @@ Before opening a PR, run:
 ```bash
 make validate
 make mock-test
+make example-smoke
 make preview-smoke <blueprint-name>
 ```
 
 Skip `make preview-smoke` only when the changed blueprint has no Dive.
+For docs-only changes, still update `CHANGELOG.md` and keep the relevant README or `docs/` page in sync with any behavior you describe.
 
 Live workflows run `tools/md_blueprints plan` before deploy. You can run the same check locally with a MotherDuck token:
 

@@ -14,5 +14,6 @@
 - [ ] Preview shares/databases that can be cleaned up include `${target.branch_slug}`.
 - [ ] Blueprints validate with `make validate`.
 - [ ] Dives build with `make preview-smoke <blueprint-name>` when changed.
+- [ ] Docs are updated when layout, commands, target behavior, or resource semantics changed.
 - [ ] `CHANGELOG.md` is updated.
 - [ ] Production deploy has an owner/reviewer.

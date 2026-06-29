@@ -9,6 +9,7 @@ Until then, use it to review and version proposed context files, for example:
 - `README.md` files beside concrete assets explaining ownership and review expectations.
 
 Until deployment is supported, package-local `resources.context` entries must use `deploy: false`.
+Document ownership, review expectations, and intended consumers beside concrete context assets. Update `docs/blueprint-yml-reference.md` and `docs/repository-reference.md` if context resource behavior changes.
 
 When MotherDuck exposes the deploy/update SQL functions or API for the context layer, add:
 

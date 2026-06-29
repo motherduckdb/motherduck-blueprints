@@ -20,6 +20,8 @@ The production target writes to the stable `__DATABASE_NAME__` database and shar
 
 ```bash
 make validate
+make mock-test
+make example-smoke
 make render-preview __BLUEPRINT_NAME__
 make preview-smoke __BLUEPRINT_NAME__
 ```
