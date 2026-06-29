@@ -36,11 +36,16 @@ new-blueprint: ## Scaffold a new blueprint package (e.g. make new-blueprint reve
 	@test ! -d "blueprints/$(ARG)" || { echo "Blueprint already exists: blueprints/$(ARG)"; exit 1; }
 	mkdir -p blueprints/$(ARG)/src
 	cp templates/blueprint/blueprint.yml blueprints/$(ARG)/blueprint.yml
+	cp templates/blueprint/README.md blueprints/$(ARG)/README.md
 	cp templates/blueprint/flight.py blueprints/$(ARG)/src/flight.py
 	cp templates/blueprint/requirements.txt blueprints/$(ARG)/src/requirements.txt
 	cp templates/blueprint/dive.tsx blueprints/$(ARG)/src/dive.tsx
-	@perl -pi -e 's/__BLUEPRINT_NAME__/$(ARG)/g; s/__DATABASE_NAME__/$(DB_NAME)/g' blueprints/$(ARG)/blueprint.yml blueprints/$(ARG)/src/flight.py blueprints/$(ARG)/src/dive.tsx
+	@perl -pi -e 's/__BLUEPRINT_NAME__/$(ARG)/g; s/__DATABASE_NAME__/$(DB_NAME)/g' blueprints/$(ARG)/blueprint.yml blueprints/$(ARG)/README.md blueprints/$(ARG)/src/flight.py blueprints/$(ARG)/src/dive.tsx
 	@echo "Created blueprints/$(ARG). Run make validate before opening a PR."
+
+.PHONY: example-smoke
+example-smoke: ## Create, validate, build, and destroy a generated blueprint example
+	./scripts/scaffold-smoke-test.sh
 
 .PHONY: validate
 validate: ## Validate all blueprint manifests without contacting MotherDuck

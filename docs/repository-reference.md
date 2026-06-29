@@ -70,7 +70,7 @@ make new-blueprint <blueprint-name>
 
 Then edit `blueprints/<blueprint-name>/blueprint.yml` and the files under `src/`.
 
-The generated package is the recommended starting example. It creates a small `starter_metrics` table, publishes a branch- or production-scoped share, and deploys a Dive that reads the share. Replace the starter data and query with your project logic while keeping the same package boundary: one logical project or data product per blueprint.
+The generated package is the recommended starting example. It creates a small `starter_daily_metrics` table and `starter_metric_summary` view, publishes a branch- or production-scoped share, and deploys a Dive that reads the share. Replace the starter data and query with your project logic while keeping the same package boundary: one logical project or data product per blueprint.
 
 For every accepted `blueprint.yml` field, value shape, default, and rendered validation rule, see [blueprint.yml Reference](blueprint-yml-reference.md).
 
@@ -90,6 +90,7 @@ make setup
 make preview <blueprint-name>
 make preview-smoke <blueprint-name>
 make new-blueprint <blueprint-name>
+make example-smoke
 make validate
 make render-preview <blueprint-name>
 make mock-test
@@ -101,16 +102,20 @@ make mock-test
 
 `make mock-test` shadows `duckdb` with a fake CLI and exercises validation, preview deploy, production deploy, cleanup, and failed Flight run reporting without contacting MotherDuck.
 
+`make example-smoke` creates a generated starter blueprint in an isolated temporary copy, validates its rendered preview target, builds its Dive, destroys the generated package, and validates the repository again.
+
 Run this minimum set before opening a PR:
 
 ```bash
 make validate
 make mock-test
+make example-smoke
 make preview-smoke <blueprint-name> # when the blueprint has a Dive
 ```
 
 ## CI/CD Flow
 
+- The `CI` workflow validates manifests, runs mock deployment tests, builds the included example Dive, and creates then destroys a generated starter blueprint.
 - Pull requests validate all manifests, discover changed blueprint packages from `motherduck.yml`, deploy the `preview` target, and comment with preview links.
 - Preview cleanup runs when a PR closes or a branch is deleted. Dives are deleted before Flights, shares, and preview databases.
 - Pushes to `main` deploy the `prod` target through the protected `motherduck-production` environment.

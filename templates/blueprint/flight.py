@@ -1,7 +1,7 @@
 """Starter Flight for the __BLUEPRINT_NAME__ blueprint.
 
-This creates a tiny project-owned database, publishes it as a share, and gives
-the starter Dive something real to query.
+This creates a project-owned database with daily metrics, publishes it as a
+share, and gives the starter Dive something real to query.
 """
 
 from __future__ import annotations
@@ -71,25 +71,45 @@ def load_starter_data(con: duckdb.DuckDBPyConnection, database: str, schema: str
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_ident}")
     con.execute(
         f"""
-        CREATE OR REPLACE TABLE {schema_ident}.starter_metrics AS
-        SELECT *
-        FROM (
+        CREATE OR REPLACE TABLE {schema_ident}.starter_daily_metrics AS
+        WITH days AS (
+          SELECT
+            (current_date - (13 - day_index)::INTEGER)::DATE AS measured_on,
+            day_index
+          FROM range(14) AS days(day_index)
+        ),
+        metric_seed(metric, base_value, daily_step) AS (
           VALUES
-            ('active_accounts', 128, ?),
-            ('monthly_queries', 8421, ?),
-            ('shared_databases', 7, ?)
-        ) AS metrics(metric, value, loaded_at_utc)
+            ('active_accounts', 118, 2),
+            ('daily_queries', 3910, 185),
+            ('shared_databases', 4, 1)
+        )
+        SELECT
+          metric,
+          measured_on,
+          (base_value + day_index * daily_step)::BIGINT AS value,
+          ? AS loaded_at_utc
+        FROM days
+        CROSS JOIN metric_seed
+        ORDER BY measured_on, metric
         """,
-        [loaded_at, loaded_at, loaded_at],
+        [loaded_at],
     )
     con.execute(
         f"""
-        CREATE OR REPLACE VIEW {schema_ident}.starter_summary AS
+        CREATE OR REPLACE VIEW {schema_ident}.starter_metric_summary AS
         SELECT
-          count(*)::BIGINT AS metric_count,
+          metric,
+          arg_max(value, measured_on)::BIGINT AS current_value,
+          min(value)::BIGINT AS min_value,
+          max(value)::BIGINT AS max_value,
+          round(avg(value), 2)::DOUBLE AS avg_value,
           sum(value)::BIGINT AS total_value,
+          min(measured_on) AS first_measured_on,
+          max(measured_on) AS last_measured_on,
           max(loaded_at_utc) AS loaded_at_utc
-        FROM {schema_ident}.starter_metrics
+        FROM {schema_ident}.starter_daily_metrics
+        GROUP BY metric
         """
     )
 
@@ -130,7 +150,7 @@ def main() -> None:
     load_starter_data(con, database, schema)
     share_url = publish_share(con, database, share)
 
-    print(f"Loaded starter metrics into md:{database}.{schema}.starter_metrics")
+    print(f"Loaded starter metrics into md:{database}.{schema}.starter_daily_metrics")
     print(f"Published share {share}: {share_url}")
 
 

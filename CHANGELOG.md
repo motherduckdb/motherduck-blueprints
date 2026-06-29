@@ -8,6 +8,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Added
 
+- Added CI coverage that validates manifests, mock deploys, builds the included Dive, and creates then destroys a generated starter blueprint.
+- Added `make example-smoke` to prove the generated starter blueprint can be created, rendered, built, and removed.
+- Added a generated blueprint README template.
 - Added a complete `blueprint.yml` field reference for agents, LLM crawlers, and blueprint authors.
 - Introduced project-first blueprint packages under `blueprints/<name>/`.
 - Added the root `motherduck.yml` repository manifest, JSON schemas, and `tools/md_blueprints`.
@@ -17,6 +20,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Expanded the generated starter blueprint with daily metrics, a summary view, an underscore-safe Dive alias, and a richer dashboard.
 - Migrated the Wikipedia Pageviews example into `blueprints/wikipedia-pageviews/`.
 - Skipped production deployment and preview cleanup workflows when `MOTHERDUCK_TOKEN` is not configured.
 - Reworked setup language for self-service use in your own repository.

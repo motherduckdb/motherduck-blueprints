@@ -1,7 +1,7 @@
 schemaVersion: 1
 name: __BLUEPRINT_NAME__
 title: __BLUEPRINT_NAME__
-description: Starter project that publishes a small metrics dataset and reads it from a Dive.
+description: Starter project that publishes a small daily metrics dataset and reads it from a Dive.
 
 variables:
   database:
@@ -55,7 +55,7 @@ resources:
       source: src/dive.tsx
       requiredResources:
         - share: data
-          alias: __BLUEPRINT_NAME__
+          alias: __DATABASE_NAME__
       targets:
         preview:
           title: __BLUEPRINT_NAME__:${target.branch} (Preview)

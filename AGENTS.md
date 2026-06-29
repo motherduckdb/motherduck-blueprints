@@ -48,6 +48,7 @@ Use these commands before opening PRs:
 ```bash
 make validate
 make mock-test
+make example-smoke
 ```
 
 When a blueprint includes a Dive, also run:

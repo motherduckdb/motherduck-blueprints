@@ -83,9 +83,10 @@ Before touching MotherDuck, run:
 ```bash
 make validate
 make mock-test
+make example-smoke
 ```
 
-`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises preview deploy, production deploy, cleanup, and failed-run reporting without contacting MotherDuck.
+`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises preview deploy, production deploy, cleanup, and failed-run reporting without contacting MotherDuck. `make example-smoke` creates, validates, builds, and destroys a generated starter blueprint in a temporary copy of the repo.
 
 If you keep a Dive in the repo, also run a finite local preview build:
 
@@ -146,7 +147,7 @@ Expected production flow:
 
 You can then:
 
-- Scaffold a starter package with `make new-blueprint <blueprint-name>`. The generated Flight creates a tiny metrics table and share, and the generated Dive reads that share.
+- Scaffold a starter package with `make new-blueprint <blueprint-name>`. The generated Flight creates daily metric tables and a share, and the generated Dive reads that share.
 - Replace the Wikipedia example with your own blueprint package.
 - Add standalone Dives or Flights as one-resource blueprints.
 - Add paired Flight + Dive packages that declare shared data products in `resources.shares`.
