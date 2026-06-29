@@ -10,6 +10,9 @@ targets:
   preview:
     mode: preview
     default: true
+    deployment:
+      tokenEnvVar: TARGET_MD_TOKEN
+      identity: fixture preview service account
     policies:
       disableSchedules: true
       cleanup: true

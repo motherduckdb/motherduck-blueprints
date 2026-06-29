@@ -86,7 +86,7 @@ make mock-test
 make example-smoke
 ```
 
-`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises preview deploy, production deploy, cleanup, and failed-run reporting without contacting MotherDuck. `make example-smoke` creates, validates, builds, and destroys a generated starter blueprint in a temporary copy of the repo.
+`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed-run reporting without contacting MotherDuck. `make example-smoke` creates, validates, builds, and destroys a generated starter blueprint in a temporary copy of the repo.
 
 If you keep a Dive in the repo, also run a finite local preview build:
 
@@ -111,11 +111,12 @@ Expected preview flow:
 
 1. `Deploy Blueprints` validates manifests.
 2. The changed blueprint packages are discovered from `motherduck.yml`.
-3. Preview Flights deploy with schedules disabled.
-4. Preview Flights run when `runOnDeploy` is true.
-5. Preview databases and shares are created with the branch slug.
-6. Dives deploy after required shares are resolvable.
-7. A PR comment lists preview Flight, share, and Dive links.
+3. The workflow runs a read-only preview plan.
+4. Preview Flights deploy with schedules disabled.
+5. Preview Flights run when `runOnDeploy` is true.
+6. Preview databases and shares are created with the branch slug.
+7. Dives deploy after required shares are resolvable.
+8. A PR comment lists the plan plus preview Flight, share, and Dive links.
 
 ## 8. Verify Cleanup
 
@@ -130,6 +131,12 @@ Expected cleanup flow:
 
 Cleanup refuses to drop share/database names that do not include the branch slug.
 
+You can preview cleanup locally before closing a PR:
+
+```bash
+./tools/md_blueprints cleanup --dry-run --target preview --branch test/wikipedia-blueprint
+```
+
 ## 9. Deploy to Production
 
 Merge the PR to `main`.
@@ -138,10 +145,11 @@ Expected production flow:
 
 1. `Deploy Blueprints` runs on `main`.
 2. GitHub waits for approval in `motherduck-production`.
-3. Production Flights deploy.
-4. Flights run when `runOnDeploy` is true.
-5. Required shares are resolved.
-6. Production Dives deploy.
+3. The workflow writes a read-only production plan to the GitHub job summary.
+4. Production Flights deploy.
+5. Flights run when `runOnDeploy` is true.
+6. Required shares are resolved.
+7. Production Dives deploy.
 
 ## 10. Customize the Blueprints
 
@@ -151,5 +159,6 @@ You can then:
 - Replace the Wikipedia example with your own blueprint package.
 - Add standalone Dives or Flights as one-resource blueprints.
 - Add paired Flight + Dive packages that declare shared data products in `resources.shares`.
+- Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
 - Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.
 - Update `.github/CODEOWNERS`.

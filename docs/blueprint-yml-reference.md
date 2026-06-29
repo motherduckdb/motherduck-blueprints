@@ -331,6 +331,26 @@ Rendered preview `config`:
 }
 ```
 
+## Related Root Target Fields
+
+`blueprint.yml` target overrides are rendered against targets declared in the root `motherduck.yml`. Live commands also read optional deployment metadata from the root target:
+
+```yaml
+targets:
+  preview:
+    mode: preview
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions preview service account
+```
+
+| Path | Required | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `targets.<target>.deployment.tokenEnvVar` | No | Non-empty string | `MOTHERDUCK_TOKEN` | Environment variable that contains the MotherDuck token for live `plan`, `deploy`, and `cleanup` commands. |
+| `targets.<target>.deployment.identity` | No | Non-empty string | None | Non-secret human label for the deployment identity. |
+
+The deploy tool passes the selected token value to DuckDB as `MOTHERDUCK_TOKEN` and never prints it.
+
 ## Validation Summary
 
 Run these checks before opening a pull request:
@@ -341,4 +361,4 @@ make mock-test
 make preview-smoke <blueprint-name>
 ```
 
-`make validate` checks schemas, renders preview and production targets, enforces uniqueness, verifies file paths, parses Flight Python sources, and checks rendered resource rules. `make mock-test` exercises scaffold creation, preview deploy, production deploy, cleanup, and failed Flight run handling without contacting MotherDuck. Run `make preview-smoke <blueprint-name>` for every blueprint that includes a Dive.
+`make validate` checks schemas, renders preview and production targets, enforces uniqueness, verifies file paths, parses Flight Python sources, and checks rendered resource rules. `make mock-test` exercises scaffold creation, live-state planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed Flight run handling without contacting MotherDuck. Run `make preview-smoke <blueprint-name>` for every blueprint that includes a Dive.

@@ -53,6 +53,8 @@ The repo includes cleanup workflows for preview blueprints. Keep those workflows
 
 Pull requests validate even when `MOTHERDUCK_TOKEN` is not configured. Preview deployment is skipped in that case; add the secret when you want PRs to create live MotherDuck previews.
 
+If a target uses a different service account secret, set `targets.<target>.deployment.tokenEnvVar` in `motherduck.yml` and expose that env var in your workflow. The default remains `MOTHERDUCK_TOKEN`.
+
 ## 5. Add Assets
 
 Add every deployable asset inside a blueprint package:
@@ -81,3 +83,9 @@ make preview-smoke <blueprint-name>
 ```
 
 Skip `make preview-smoke` only when the changed blueprint has no Dive.
+
+Live workflows run `tools/md_blueprints plan` before deploy. You can run the same check locally with a MotherDuck token:
+
+```bash
+./tools/md_blueprints plan --target preview --branch feature/example --blueprints <blueprint-name>
+```

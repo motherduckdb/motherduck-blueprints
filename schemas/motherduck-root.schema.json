@@ -57,6 +57,14 @@
         "mode": { "type": "string", "minLength": 1 },
         "default": { "type": "boolean" },
         "environment": { "type": "string" },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tokenEnvVar": { "type": "string", "minLength": 1 },
+            "identity": { "type": "string", "minLength": 1 }
+          }
+        },
         "variables": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/variable" }

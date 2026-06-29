@@ -36,13 +36,14 @@ On pull requests:
 
 1. `.github/workflows/deploy_blueprints.yaml` computes changed blueprint packages.
 2. `tools/md_blueprints validate` validates all manifests and rendered targets.
-3. `tools/md_blueprints deploy --target preview --branch <branch>` deploys changed blueprints.
-4. The preview Flight name and Dive title include the branch name.
-5. The preview database and share include `${target.branch_slug}`.
-6. The Flight runs once, waits for success, waits for the share URL, and deploys the Dive.
-7. A PR comment lists preview Flights, shares, and Dives.
+3. `tools/md_blueprints plan --target preview --branch <branch>` inspects live resources without mutating them.
+4. `tools/md_blueprints deploy --target preview --branch <branch>` deploys changed blueprints.
+5. The preview Flight name and Dive title include the branch name.
+6. The preview database and share include `${target.branch_slug}`.
+7. The Flight runs once, waits for success, waits for the share URL, and deploys the Dive.
+8. A PR comment lists the plan plus preview Flights, shares, and Dives.
 
-On merge to `main`, production deployment runs through the protected `motherduck-production` environment and uses stable names.
+On merge to `main`, production deployment writes a live plan to the GitHub job summary, runs through the protected `motherduck-production` environment, and uses stable names.
 
 ## Preview Behavior
 
@@ -52,7 +53,7 @@ The `preview` target disables schedules and requires cleanup-sensitive data reso
 wikipedia_pageviews_preview_feature_mock_test
 ```
 
-Preview cleanup deletes the Dive first, then the Flight, then the preview share and database. The cleanup guard refuses to drop preview data resources whose names do not include the rendered branch slug.
+Preview cleanup deletes the Dive first, then the Flight, then the preview share and database. Use `tools/md_blueprints cleanup --dry-run --target preview --branch <branch>` to inspect those actions without deleting anything. The cleanup guard refuses to drop preview data resources whose names do not include the rendered branch slug.
 
 ## Local Checks
 
