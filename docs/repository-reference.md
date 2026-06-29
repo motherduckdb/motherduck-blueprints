@@ -34,6 +34,8 @@ context/
 
 `CHANGELOG.md` records notable repository changes. Update it in every pull request.
 
+Keep the docs set aligned when repository behavior changes. Layout, command, target, or resource changes should be reflected in `README.md`, the relevant `docs/` page, any affected blueprint README, the generated blueprint template README, `AGENTS.md`, and the pull request checklist.
+
 ## Project Granularity
 
 A `blueprints/<name>/` package represents one logical project or data product that should be reviewed, previewed, deployed, rolled back, and understood as a unit.
@@ -131,6 +133,8 @@ make mock-test
 make example-smoke
 make preview-smoke <blueprint-name> # when the blueprint has a Dive
 ```
+
+For docs-only changes, run at least `git diff --check`. Run the full validation set when docs describe generated output, manifests, workflows, or command behavior.
 
 ## CI/CD Flow
 

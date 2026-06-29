@@ -22,6 +22,7 @@ No unreleased changes.
 
 ### Changed
 
+- Refreshed agent and repository docs so validation checklists, generated-template guidance, context notes, and PR reminders stay aligned.
 - Expanded the generated starter blueprint with daily metrics, a summary view, an underscore-safe Dive alias, and a richer dashboard.
 - Ran read-only deployment plans before preview and production deploys in CI.
 - Failed deploys before mutation when live planning finds duplicate Flights or Dives.
