@@ -21,6 +21,7 @@ cat > "${FAKE_BIN}/duckdb" <<'MOCK_DUCKDB'
 set -euo pipefail
 
 query="$*"
+: "${MOTHERDUCK_TOKEN:?MOTHERDUCK_TOKEN is required by fake duckdb}"
 state_dir="${MOCK_DUCKDB_STATE_DIR:?MOCK_DUCKDB_STATE_DIR is required}"
 flight_state="${state_dir}/flight_id"
 run_state="${state_dir}/run_number"
@@ -31,7 +32,9 @@ run_status="${MOCK_FLIGHT_RUN_STATUS:-RUN_STATUS_SUCCEEDED}"
 echo "$query" >> "${state_dir}/queries.log"
 
 if [[ "$query" == *"MD_LIST_DATABASE_SHARES"* ]]; then
-  echo "$share_url"
+  if [[ "${MOCK_SHARE_MISSING:-false}" != "true" ]]; then
+    echo "$share_url"
+  fi
 elif [[ "$query" == *"MD_LIST_FLIGHT_RUNS"* ]]; then
   if [[ "$query" == *"COALESCE(MAX(run_number)"* ]]; then
     if [ -f "$run_state" ]; then
@@ -43,7 +46,10 @@ elif [[ "$query" == *"MD_LIST_FLIGHT_RUNS"* ]]; then
     echo "$(cat "$run_state")|${run_status}"
   fi
 elif [[ "$query" == *"MD_LIST_FLIGHTS"* ]]; then
-  if [ -f "$flight_state" ]; then
+  if [[ "${MOCK_DUPLICATE_FLIGHTS:-false}" == "true" ]]; then
+    echo "00000000-0000-0000-0000-000000000011"
+    echo "00000000-0000-0000-0000-000000000012"
+  elif [ -f "$flight_state" ]; then
     cat "$flight_state"
   fi
 elif [[ "$query" == *"MD_CREATE_FLIGHT"* ]]; then
@@ -67,7 +73,10 @@ elif [[ "$query" == *"MD_DROP_DATABASE_SHARE"* ]]; then
 elif [[ "$query" == *"DROP DATABASE IF EXISTS"* ]]; then
   exit 0
 elif [[ "$query" == *"MD_LIST_DIVES"* ]]; then
-  if [ -f "$dive_state" ]; then
+  if [[ "${MOCK_DUPLICATE_DIVES:-false}" == "true" ]]; then
+    echo "00000000-0000-0000-0000-000000000021"
+    echo "00000000-0000-0000-0000-000000000022"
+  elif [ -f "$dive_state" ]; then
     cat "$dive_state"
   fi
 elif [[ "$query" == *"MD_CREATE_DIVE"* ]]; then
@@ -91,6 +100,8 @@ export SHARE_RESOLVE_ATTEMPTS=1
 export SHARE_RESOLVE_SLEEP_SECONDS=0
 export FLIGHT_RUN_POLL_ATTEMPTS=1
 export FLIGHT_RUN_POLL_SLEEP_SECONDS=0
+export MOTHERDUCK_TOKEN=mock-token
+export TARGET_MD_TOKEN=target-mock-token
 
 cd "$REPO_ROOT"
 
@@ -129,6 +140,66 @@ echo "==> Rendering preview target"
 grep -q "wikipedia_pageviews_preview_feature_mock_test" "${TMP_DIR}/render.out"
 grep -q '"scheduleCron": ""' "${TMP_DIR}/render.out"
 
+echo "==> Planning preview target"
+: > "${TMP_DIR}/queries.log"
+./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/plan.out"
+grep -q "#### Deployment Plan" "${TMP_DIR}/plan.out"
+grep -q "wikipedia-pageviews:feature/mock-test (Preview).*create" "${TMP_DIR}/plan.out"
+grep -q "wikipedia_pageviews_preview_feature_mock_test.*present" "${TMP_DIR}/plan.out"
+grep -q "Wikipedia Pageviews:feature/mock-test (Preview).*create" "${TMP_DIR}/plan.out"
+if grep -Eq "MD_CREATE_|MD_UPDATE_|MD_DELETE_|MD_DROP_DATABASE_SHARE|DROP DATABASE" "${TMP_DIR}/queries.log"; then
+  echo "Plan command issued a mutating query" >&2
+  cat "${TMP_DIR}/queries.log" >&2
+  exit 1
+fi
+
+echo "==> Planning preview target as JSON"
+./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews --json > "${TMP_DIR}/plan.json"
+ruby -rjson -e '
+  records = JSON.parse(File.read(ARGV.fetch(0)))
+  required = %w[blueprint type key name action exists id notes]
+  abort "missing stable plan fields" unless records.all? { |row| (required - row.keys).empty? }
+  abort "missing flight create plan" unless records.any? { |row| row["type"] == "flight" && row["action"] == "create" }
+' "${TMP_DIR}/plan.json"
+
+echo "==> Planning missing share"
+MOCK_SHARE_MISSING=true ./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/missing-share.out"
+grep -q "wikipedia_pageviews_preview_feature_mock_test.*missing" "${TMP_DIR}/missing-share.out"
+
+echo "==> Rejecting duplicate live resources during plan"
+if MOCK_DUPLICATE_FLIGHTS=true ./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/duplicate-flight.out" 2>&1; then
+  echo "Duplicate Flight plan unexpectedly passed" >&2
+  exit 1
+fi
+grep -q "duplicate Flight name" "${TMP_DIR}/duplicate-flight.out"
+if MOCK_DUPLICATE_DIVES=true ./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/duplicate-dive.out" 2>&1; then
+  echo "Duplicate Dive plan unexpectedly passed" >&2
+  exit 1
+fi
+grep -q "duplicate Dive title" "${TMP_DIR}/duplicate-dive.out"
+: > "${TMP_DIR}/queries.log"
+if MOCK_DUPLICATE_FLIGHTS=true ./tools/md_blueprints deploy --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/duplicate-deploy.out" 2>&1; then
+  echo "Duplicate Flight deploy unexpectedly passed" >&2
+  exit 1
+fi
+grep -q "duplicate Flight name" "${TMP_DIR}/duplicate-deploy.out"
+if grep -Eq "MD_CREATE_|MD_UPDATE_|MD_DELETE_|MD_DROP_DATABASE_SHARE|DROP DATABASE" "${TMP_DIR}/queries.log"; then
+  echo "Duplicate-resource deploy issued a mutating query" >&2
+  cat "${TMP_DIR}/queries.log" >&2
+  exit 1
+fi
+
+echo "==> Verifying target-specific token env var"
+env -u MOTHERDUCK_TOKEN TARGET_MD_TOKEN=target-mock-token ./tools/md_blueprints plan --root tests/fixtures/simple --target preview --branch feature/token --blueprints simple-dive > "${TMP_DIR}/target-token.out"
+grep -q "Simple Dive:feature/token (Preview).*create" "${TMP_DIR}/target-token.out"
+
+echo "==> Verifying missing live token fails"
+if env -u MOTHERDUCK_TOKEN ./tools/md_blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/missing-token.out" 2>&1; then
+  echo "Missing token plan unexpectedly passed" >&2
+  exit 1
+fi
+grep -q "MOTHERDUCK_TOKEN is required to plan target preview" "${TMP_DIR}/missing-token.out"
+
 echo "==> Mock deploying preview blueprint"
 ./tools/md_blueprints deploy --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/preview.out"
 grep -q "#### Wikipedia Pageviews" "${TMP_DIR}/preview.out"
@@ -142,6 +213,19 @@ echo "==> Mock deploying production blueprint"
 echo "==> Verifying empty access token is not sent"
 if grep -q "\"access_token_name\" => ''" "${TMP_DIR}/queries.log"; then
   echo "Empty access_token_name argument was sent to MotherDuck" >&2
+  exit 1
+fi
+
+echo "==> Dry-running preview cleanup"
+: > "${TMP_DIR}/queries.log"
+./tools/md_blueprints cleanup --dry-run --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/cleanup-dry-run.out"
+grep -q "Wikipedia Pageviews:feature/mock-test (Preview).*delete" "${TMP_DIR}/cleanup-dry-run.out"
+grep -q "wikipedia-pageviews:feature/mock-test (Preview).*delete" "${TMP_DIR}/cleanup-dry-run.out"
+grep -q "wikipedia_pageviews_preview_feature_mock_test.*drop_share" "${TMP_DIR}/cleanup-dry-run.out"
+grep -q "wikipedia_pageviews_preview_feature_mock_test.*drop_database" "${TMP_DIR}/cleanup-dry-run.out"
+if grep -Eq "MD_CREATE_|MD_UPDATE_|MD_DELETE_|MD_DROP_DATABASE_SHARE|DROP DATABASE" "${TMP_DIR}/queries.log"; then
+  echo "Cleanup dry-run issued a mutating query" >&2
+  cat "${TMP_DIR}/queries.log" >&2
   exit 1
 fi
 

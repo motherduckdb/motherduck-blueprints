@@ -130,7 +130,9 @@ jobs:
               exit 1
             fi
           else
-            OUTPUT="$(./tools/md_blueprints deploy --target preview --branch "$PREVIEW_BRANCH" --blueprints "$BLUEPRINTS")"
+            PLAN_OUTPUT="$(./tools/md_blueprints plan --target preview --branch "$PREVIEW_BRANCH" --blueprints "$BLUEPRINTS")"
+            DEPLOY_OUTPUT="$(./tools/md_blueprints deploy --target preview --branch "$PREVIEW_BRANCH" --blueprints "$BLUEPRINTS")"
+            OUTPUT="$(printf "%s\n\n%s" "$PLAN_OUTPUT" "$DEPLOY_OUTPUT")"
           fi
           echo "comment_body<<EOF" >> "$GITHUB_OUTPUT"
           echo "$OUTPUT" >> "$GITHUB_OUTPUT"
@@ -191,4 +193,10 @@ jobs:
             echo "Production deploy skipped because MOTHERDUCK_TOKEN is not configured for this repository."
             exit 0
           fi
+          PLAN_OUTPUT="$(./tools/md_blueprints plan --target prod --blueprints "$BLUEPRINTS")"
+          {
+            echo "### Production Blueprint Plan"
+            echo
+            echo "$PLAN_OUTPUT"
+          } >> "$GITHUB_STEP_SUMMARY"
           ./tools/md_blueprints deploy --target prod --blueprints "$BLUEPRINTS"

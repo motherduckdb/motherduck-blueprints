@@ -52,12 +52,21 @@ make preview-smoke revenue-overview
 
 Then replace the starter Flight and Dive with your real project logic.
 
+When you have a MotherDuck token configured, inspect live create/update/delete actions before applying them:
+
+```bash
+./tools/md_blueprints plan --target preview --branch feature/example --blueprints revenue-overview
+./tools/md_blueprints cleanup --dry-run --target preview --branch feature/example --blueprints revenue-overview
+```
+
 ## Best Practices to Copy
 
 - Keep one project or data product per `blueprints/<name>/` package.
 - Use lowercase slug names such as `account-360` or `revenue-ops`.
 - Keep preview resources branch-scoped and production resources stable.
+- Run a deployment plan before live deploys and use cleanup dry-runs before deleting previews.
 - Deploy from CI with a service account token.
+- Use target `deployment` metadata when preview and production use different service accounts or token env vars.
 - Store secrets in GitHub Actions, never in the repo.
 - Update [CHANGELOG.md](CHANGELOG.md) in every pull request.
 

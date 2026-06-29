@@ -65,8 +65,12 @@ module MDBlueprints
       %("#{value}")
     end
 
-    def run_command(*argv, stdin_data: nil)
-      stdout, stderr, status = Open3.capture3(*argv, stdin_data: stdin_data)
+    def run_command(*argv, stdin_data: nil, env: nil)
+      stdout, stderr, status = if env
+                                  Open3.capture3(env, *argv, stdin_data: stdin_data)
+                                else
+                                  Open3.capture3(*argv, stdin_data: stdin_data)
+                                end
       return stdout if status.success?
 
       raise CommandError, "#{argv.join(' ')} failed: #{stderr.strip}"
@@ -219,6 +223,59 @@ module MDBlueprints
 
   Blueprint = Struct.new(:name, :title, :path, :dir, :raw, keyword_init: true)
   RenderedBlueprint = Struct.new(:name, :title, :description, :shares, :flights, :dives, :contexts, keyword_init: true)
+  PlanRecord = Struct.new(:blueprint, :type, :key, :name, :action, :exists, :id, :notes, keyword_init: true) do
+    def to_h
+      {
+        blueprint: blueprint,
+        type: type,
+        key: key,
+        name: name,
+        action: action,
+        exists: exists,
+        id: id,
+        notes: notes.to_s
+      }
+    end
+  end
+
+  module PlanFormatter
+    module_function
+
+    def format(records, title:)
+      return "#### #{title}\n\nNo resources selected." if records.empty?
+
+      rows = records.map do |record|
+        [
+          record.blueprint,
+          record.type,
+          record.key,
+          record.name,
+          record.action,
+          format_exists(record.exists),
+          record.id,
+          record.notes
+        ].map { |value| escape_cell(value) }
+      end
+
+      lines = []
+      lines << "#### #{title}"
+      lines << ""
+      lines << "| Blueprint | Type | Key | Name | Action | Exists | ID | Notes |"
+      lines << "| --- | --- | --- | --- | --- | --- | --- | --- |"
+      rows.each { |row| lines << "| #{row.join(' | ')} |" }
+      lines.join("\n")
+    end
+
+    def format_exists(value)
+      return "" if value.nil?
+
+      value ? "yes" : "no"
+    end
+
+    def escape_cell(value)
+      value.to_s.gsub("|", "\\|").gsub(/\s+/, " ").strip
+    end
+  end
 
   class Project
     attr_reader :root, :manifest, :blueprints
@@ -285,6 +342,10 @@ module MDBlueprints
       all_names
     end
 
+    def target_config(target)
+      @manifest.fetch("targets").fetch(target) { raise ValidationError, "Unknown target #{target}" }
+    end
+
     private
 
     def load_blueprints
@@ -309,7 +370,7 @@ module MDBlueprints
     end
 
     def render_blueprint(blueprint, target, branch: nil)
-      target_config = @manifest.fetch("targets").fetch(target) { raise ValidationError, "Unknown target #{target}" }
+      target_settings = target_config(target)
       if target == "preview" && branch.to_s.empty?
         raise ValidationError, "Preview target requires --branch"
       end
@@ -327,7 +388,7 @@ module MDBlueprints
 
       raw_variables = {}
       raw_variables.merge!(extract_variable_values(@manifest["variables"] || {}))
-      raw_variables.merge!(extract_variable_values(target_config["variables"] || {}))
+      raw_variables.merge!(extract_variable_values(target_settings["variables"] || {}))
       raw_variables.merge!(extract_variable_values(blueprint.raw["variables"] || {}))
       raw_variables.merge!(extract_variable_values(blueprint.raw.dig("targets", target, "variables") || {}))
       context["var"] = render_variables(raw_variables, context)
@@ -343,7 +404,7 @@ module MDBlueprints
       flights = render_resources(resources["flights"] || {}, target, context).transform_values do |flight|
         flight["sourcePath"] = absolute_resource_path(blueprint.dir, flight.fetch("source"))
         flight["requirementsPath"] = absolute_resource_path(blueprint.dir, flight.fetch("requirements"))
-        if target_config.dig("policies", "disableSchedules") == true && target == "preview"
+        if target_settings.dig("policies", "disableSchedules") == true && target == "preview"
           flight["scheduleCron"] = ""
         end
         flight["config"] = stringify_map(flight["config"] || {})
@@ -494,30 +555,240 @@ module MDBlueprints
   class Deployer
     def initialize(project)
       @project = project
+      @sql_env = nil
+    end
+
+    def plan(target:, branch:, names:)
+      rendered = validate_and_render(target, branch, names)
+      prepare_live_command!(target, "plan")
+      build_deploy_plan(rendered)
     end
 
     def deploy(target:, branch:, names:)
-      @project.validate!(targets: [target])
-      rendered = @project.render_all(target, branch: branch, names: names)
+      rendered = validate_and_render(target, branch, names)
+      prepare_live_command!(target, "deploy")
+      records = build_deploy_plan(rendered)
+      ensure_plan_succeeds!(records)
+      plan_index = index_by_resource(records)
+
       rendered.each do |blueprint|
-        deploy_blueprint(blueprint, target)
+        deploy_blueprint(blueprint, target, plan_index)
       end
     end
 
-    def cleanup(target:, branch:, names:)
+    def cleanup_plan(target:, branch:, names:)
       raise ValidationError, "cleanup is only supported for preview target" unless target == "preview"
 
-      @project.validate!(targets: [target])
+      rendered = validate_and_render(target, branch, names)
+      prepare_live_command!(target, "cleanup")
       branch_slug = Util.branch_slug(branch)
-      rendered = @project.render_all(target, branch: branch, names: names)
-      rendered.each do |blueprint|
-        cleanup_blueprint(blueprint, branch_slug)
-      end
+      build_cleanup_plan(rendered, branch_slug)
+    end
+
+    def cleanup(target:, branch:, names:)
+      records = cleanup_plan(target: target, branch: branch, names: names)
+      ensure_plan_succeeds!(records)
+      apply_cleanup_plan(records)
+    end
+
+    def ensure_plan_succeeds!(records)
+      errors = records.select { |record| record.action == "error" }
+      return if errors.empty?
+
+      details = errors.map { |record| "#{record.blueprint}.#{record.type}.#{record.key}: #{record.notes}" }.join("; ")
+      raise ValidationError, "Plan contains errors: #{details}"
     end
 
     private
 
-    def deploy_blueprint(blueprint, target)
+    def validate_and_render(target, branch, names)
+      @project.validate!(targets: [target])
+      @project.render_all(target, branch: branch, names: names)
+    end
+
+    def prepare_live_command!(target, operation)
+      deployment = @project.target_config(target).fetch("deployment", {})
+      token_env_var = deployment.fetch("tokenEnvVar", "MOTHERDUCK_TOKEN")
+      token = ENV[token_env_var].to_s
+      if token.empty?
+        raise ValidationError, "#{token_env_var} is required to #{operation} target #{target}"
+      end
+
+      @sql_env = { "MOTHERDUCK_TOKEN" => token }
+    end
+
+    def build_deploy_plan(rendered)
+      records = []
+
+      rendered.each do |blueprint|
+        blueprint.flights.each do |key, flight|
+          ids = list_flight_ids(flight.fetch("name"))
+          records << existing_resource_record(
+            blueprint: blueprint,
+            type: "flight",
+            key: key,
+            name: flight.fetch("name"),
+            ids: ids,
+            duplicate_note: "duplicate Flight name; expected 0 or 1"
+          )
+        end
+
+        blueprint.shares.each do |key, share|
+          url = find_share_url(share.fetch("name"))
+          records << PlanRecord.new(
+            blueprint: blueprint.name,
+            type: "share",
+            key: key,
+            name: share.fetch("name"),
+            action: url.empty? ? "missing" : "present",
+            exists: !url.empty?,
+            id: url.empty? ? nil : url,
+            notes: "produced by Flight/project code; deployer waits for the share URL before dependent Dives"
+          )
+        end
+
+        blueprint.dives.each do |key, dive|
+          ids = list_dive_ids(dive.fetch("title"))
+          records << existing_resource_record(
+            blueprint: blueprint,
+            type: "dive",
+            key: key,
+            name: dive.fetch("title"),
+            ids: ids,
+            duplicate_note: "duplicate Dive title; expected 0 or 1"
+          )
+        end
+
+        blueprint.contexts.each do |key, ctx|
+          records << PlanRecord.new(
+            blueprint: blueprint.name,
+            type: "context",
+            key: key,
+            name: File.basename(ctx.fetch("sourcePath")),
+            action: "validated_only",
+            exists: false,
+            id: nil,
+            notes: "context deployment is not available yet"
+          )
+        end
+      end
+
+      records
+    end
+
+    def build_cleanup_plan(rendered, branch_slug)
+      records = []
+
+      rendered.each do |blueprint|
+        blueprint.dives.each do |key, dive|
+          title = dive.fetch("title")
+          ids = list_dive_ids(title)
+          if ids.empty?
+            records << cleanup_record(blueprint, "dive", key, title, "missing", false, nil)
+          else
+            ids.each { |id| records << cleanup_record(blueprint, "dive", key, title, "delete", true, id) }
+          end
+        end
+
+        blueprint.flights.each do |key, flight|
+          name = flight.fetch("name")
+          ids = list_flight_ids(name)
+          if ids.empty?
+            records << cleanup_record(blueprint, "flight", key, name, "missing", false, nil)
+          else
+            ids.each { |id| records << cleanup_record(blueprint, "flight", key, name, "delete", true, id) }
+          end
+        end
+
+        blueprint.shares.each do |key, share|
+          next unless share.fetch("cleanup", true)
+
+          share_name = share.fetch("name")
+          database_name = share.fetch("database")
+          unless share_name.include?(branch_slug)
+            records << cleanup_record(
+              blueprint,
+              "share",
+              key,
+              share_name,
+              "error",
+              nil,
+              nil,
+              "refusing to drop preview share without branch slug #{branch_slug}"
+            )
+            next
+          end
+
+          share_url = find_share_url(share_name)
+          if share_url.empty?
+            records << cleanup_record(blueprint, "share", key, share_name, "missing", false, nil)
+          else
+            records << cleanup_record(blueprint, "share", key, share_name, "drop_share", true, share_url)
+          end
+
+          next unless share.fetch("dropDatabase", false)
+
+          unless database_name.include?(branch_slug)
+            records << cleanup_record(
+              blueprint,
+              "database",
+              key,
+              database_name,
+              "error",
+              nil,
+              nil,
+              "refusing to drop preview database without branch slug #{branch_slug}"
+            )
+            next
+          end
+
+          records << cleanup_record(
+            blueprint,
+            "database",
+            key,
+            database_name,
+            "drop_database",
+            true,
+            nil,
+            "database existence is not inspected; cleanup uses DROP DATABASE IF EXISTS"
+          )
+        end
+      end
+
+      records
+    end
+
+    def existing_resource_record(blueprint:, type:, key:, name:, ids:, duplicate_note:)
+      case ids.length
+      when 0
+        PlanRecord.new(blueprint: blueprint.name, type: type, key: key, name: name, action: "create", exists: false, id: nil, notes: "")
+      when 1
+        PlanRecord.new(blueprint: blueprint.name, type: type, key: key, name: name, action: "update", exists: true, id: ids.first, notes: "")
+      else
+        PlanRecord.new(blueprint: blueprint.name, type: type, key: key, name: name, action: "error", exists: true, id: ids.join(","), notes: duplicate_note)
+      end
+    end
+
+    def cleanup_record(blueprint, type, key, name, action, exists, id, notes = "")
+      PlanRecord.new(
+        blueprint: blueprint.name,
+        type: type,
+        key: key,
+        name: name,
+        action: action,
+        exists: exists,
+        id: id,
+        notes: notes
+      )
+    end
+
+    def index_by_resource(records)
+      records.each_with_object({}) do |record, index|
+        index[[record.blueprint, record.type, record.key]] ||= record
+      end
+    end
+
+    def deploy_blueprint(blueprint, target, plan_index)
       $stderr.puts "Deploying blueprint '#{blueprint.name}' to #{target}..."
       flight_rows = []
       share_rows = []
@@ -525,7 +796,7 @@ module MDBlueprints
 
       blueprint.flights.each do |key, flight|
         $stderr.puts "Deploying Flight #{blueprint.name}.#{key}..."
-        flight_rows << deploy_flight(flight, target)
+        flight_rows << deploy_flight(flight, target, plan_index.fetch([blueprint.name, "flight", key]))
       end
 
       blueprint.shares.each do |_key, share|
@@ -535,7 +806,7 @@ module MDBlueprints
 
       blueprint.dives.each do |key, dive|
         $stderr.puts "Deploying Dive #{blueprint.name}.#{key}..."
-        dive_rows << deploy_dive(dive, blueprint.shares, target)
+        dive_rows << deploy_dive(dive, blueprint.shares, target, plan_index.fetch([blueprint.name, "dive", key]))
       end
 
       return unless target == "preview"
@@ -558,10 +829,9 @@ module MDBlueprints
       puts
     end
 
-    def deploy_flight(flight, target)
+    def deploy_flight(flight, target, plan)
       name = flight.fetch("name")
       name_sql = Util.sql_string(name)
-      existing_ids = sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{name_sql})).lines.map(&:strip).reject(&:empty?)
       config_sql = Util.sql_map(flight.fetch("config", {}))
       source_sql = "(SELECT content FROM read_text(#{Util.sql_string(flight.fetch("sourcePath"))}))"
       requirements_sql = "(SELECT content FROM read_text(#{Util.sql_string(flight.fetch("requirementsPath"))}))"
@@ -577,17 +847,20 @@ module MDBlueprints
       common_args.insert(3, %("access_token_name" => #{Util.sql_string(access_token_name)})) unless access_token_name.empty?
       common_args = common_args.join(", ")
 
-      flight_id = case existing_ids.length
-                  when 0
+      flight_id = case plan.action
+                  when "create"
                     $stderr.puts "  Creating new flight '#{name}'..."
                     sql(%(SET VARIABLE source_code = #{source_sql}; SET VARIABLE requirements_txt = #{requirements_sql}; FROM MD_CREATE_FLIGHT(#{common_args});))
-                    sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{name_sql})).strip
-                  when 1
-                    $stderr.puts "  Updating existing flight '#{name}' (#{existing_ids.first})..."
-                    sql(%(SET VARIABLE source_code = #{source_sql}; SET VARIABLE requirements_txt = #{requirements_sql}; FROM MD_UPDATE_FLIGHT("flight_id" => '#{existing_ids.first}'::UUID, #{common_args});))
-                    existing_ids.first
+                    ids = list_flight_ids(name)
+                    raise CommandError, "Expected one Flight named #{name} after create, found #{ids.length}" unless ids.length == 1
+
+                    ids.first
+                  when "update"
+                    $stderr.puts "  Updating existing flight '#{name}' (#{plan.id})..."
+                    sql(%(SET VARIABLE source_code = #{source_sql}; SET VARIABLE requirements_txt = #{requirements_sql}; FROM MD_UPDATE_FLIGHT("flight_id" => '#{plan.id}'::UUID, #{common_args});))
+                    plan.id
                   else
-                    raise ValidationError, "Found #{existing_ids.length} flights named #{name}; expected 0 or 1"
+                    raise ValidationError, "Cannot deploy Flight #{name} with plan action #{plan.action}"
                   end
 
       run_started = false
@@ -638,24 +911,23 @@ module MDBlueprints
       raise CommandError, "Timed out waiting for share '#{share_name}'"
     end
 
-    def deploy_dive(dive, shares, target)
+    def deploy_dive(dive, shares, target, plan)
       title = dive.fetch("title")
       required_resources_sql = required_resources_sql(dive.fetch("requiredResources"), shares)
       content_sql = "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') FROM read_text(#{Util.sql_string(dive.fetch("sourcePath"))}))"
       title_sql = Util.sql_string(title)
       description_sql = Util.sql_string(dive.fetch("description", ""))
-      existing_ids = sql(%(SELECT id FROM MD_LIST_DIVES() WHERE title = #{title_sql})).lines.map(&:strip).reject(&:empty?)
 
-      dive_id = case existing_ids.length
-                when 0
+      dive_id = case plan.action
+                when "create"
                   $stderr.puts "  Creating new dive '#{title}'..."
                   sql(%(SET VARIABLE content = #{content_sql}; SELECT id FROM MD_CREATE_DIVE(title = #{title_sql}, content = getvariable('content'), description = #{description_sql}, api_version = 1, required_resources = #{required_resources_sql}))).strip
-                when 1
-                  $stderr.puts "  Updating existing dive '#{title}' (#{existing_ids.first})..."
-                  sql(%(SET VARIABLE content = #{content_sql}; FROM MD_UPDATE_DIVE_CONTENT(id = '#{existing_ids.first}'::UUID, content = getvariable('content'), api_version = 1, required_resources = #{required_resources_sql}); FROM MD_UPDATE_DIVE_METADATA(id = '#{existing_ids.first}'::UUID, title = #{title_sql}, description = #{description_sql});))
-                  existing_ids.first
+                when "update"
+                  $stderr.puts "  Updating existing dive '#{title}' (#{plan.id})..."
+                  sql(%(SET VARIABLE content = #{content_sql}; FROM MD_UPDATE_DIVE_CONTENT(id = '#{plan.id}'::UUID, content = getvariable('content'), api_version = 1, required_resources = #{required_resources_sql}); FROM MD_UPDATE_DIVE_METADATA(id = '#{plan.id}'::UUID, title = #{title_sql}, description = #{description_sql});))
+                  plan.id
                 else
-                  raise ValidationError, "Found #{existing_ids.length} dives titled #{title}; expected 0 or 1"
+                  raise ValidationError, "Cannot deploy Dive #{title} with plan action #{plan.action}"
                 end
 
       $stderr.puts "  Deployed: https://app.motherduck.com/dives/#{dive_id}"
@@ -674,63 +946,47 @@ module MDBlueprints
       "[#{expressions.join(', ')}]"
     end
 
-    def cleanup_blueprint(blueprint, branch_slug)
-      $stderr.puts "Cleaning preview blueprint '#{blueprint.name}'..."
-
-      blueprint.dives.each_value do |dive|
-        title = dive.fetch("title")
-        ids = sql(%(SELECT id FROM MD_LIST_DIVES() WHERE title = #{Util.sql_string(title)})).lines.map(&:strip).reject(&:empty?)
-        if ids.empty?
-          puts "No preview Dive found for '#{title}'"
-        else
-          ids.each do |id|
-            puts "Deleting preview Dive #{id} (#{title})"
-            sql(%(FROM MD_DELETE_DIVE(id='#{id}'::UUID)))
-          end
+    def apply_cleanup_plan(records)
+      records.each do |record|
+        case [record.type, record.action]
+        when ["dive", "missing"]
+          puts "No preview Dive found for '#{record.name}'"
+        when ["dive", "delete"]
+          puts "Deleting preview Dive #{record.id} (#{record.name})"
+          sql(%(FROM MD_DELETE_DIVE(id='#{record.id}'::UUID)))
+        when ["flight", "missing"]
+          puts "No preview Flight found for '#{record.name}'"
+        when ["flight", "delete"]
+          puts "Deleting preview Flight #{record.id} (#{record.name})"
+          sql(%(FROM MD_DELETE_FLIGHT('#{record.id}'::UUID);))
+        when ["share", "missing"]
+          puts "No preview share found for '#{record.name}'"
+        when ["share", "drop_share"]
+          puts "Dropping preview share #{record.name}"
+          sql(%(FROM MD_DROP_DATABASE_SHARE(#{Util.sql_string(record.name)});))
+        when ["database", "drop_database"]
+          puts "Dropping preview database #{record.name}"
+          sql(%(DROP DATABASE IF EXISTS #{Util.quote_ident(record.name)};))
         end
-      end
-
-      blueprint.flights.each_value do |flight|
-        name = flight.fetch("name")
-        ids = sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{Util.sql_string(name)})).lines.map(&:strip).reject(&:empty?)
-        if ids.empty?
-          puts "No preview Flight found for '#{name}'"
-        else
-          ids.each do |id|
-            puts "Deleting preview Flight #{id} (#{name})"
-            sql(%(FROM MD_DELETE_FLIGHT('#{id}'::UUID);))
-          end
-        end
-      end
-
-      blueprint.shares.each_value do |share|
-        next unless share.fetch("cleanup", true)
-
-        share_name = share.fetch("name")
-        database_name = share.fetch("database")
-        unless share_name.include?(branch_slug)
-          raise ValidationError, "Refusing to drop preview share without branch slug: #{share_name}"
-        end
-        share_url = sql(%(SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = #{Util.sql_string(share_name)})).strip
-        if share_url.empty?
-          puts "No preview share found for '#{share_name}'"
-        else
-          puts "Dropping preview share #{share_name}"
-          sql(%(FROM MD_DROP_DATABASE_SHARE(#{Util.sql_string(share_name)});))
-        end
-
-        next unless share.fetch("dropDatabase", false)
-
-        unless database_name.include?(branch_slug)
-          raise ValidationError, "Refusing to drop preview database without branch slug: #{database_name}"
-        end
-        puts "Dropping preview database #{database_name}"
-        sql(%(DROP DATABASE IF EXISTS #{Util.quote_ident(database_name)};))
       end
     end
 
+    def list_flight_ids(name)
+      sql(%(SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) WHERE flight_name = #{Util.sql_string(name)})).lines.map(&:strip).reject(&:empty?)
+    end
+
+    def list_dive_ids(title)
+      sql(%(SELECT id FROM MD_LIST_DIVES() WHERE title = #{Util.sql_string(title)})).lines.map(&:strip).reject(&:empty?)
+    end
+
+    def find_share_url(name)
+      sql(%(SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = #{Util.sql_string(name)})).lines.first.to_s.strip
+    end
+
     def sql(statement)
-      Util.run_command("duckdb", "md:", "-csv", "-noheader", "-c", statement).strip
+      raise ValidationError, "MotherDuck token was not prepared for live command" unless @sql_env
+
+      Util.run_command("duckdb", "md:", "-csv", "-noheader", "-c", statement, env: @sql_env).strip
     end
   end
 
@@ -752,14 +1008,27 @@ module MDBlueprints
       when "changed"
         changed = project.changed_blueprints(base: options[:base], head: options[:head] || "HEAD")
         puts(options[:json] ? JSON.generate(changed) : changed.join("\n"))
+      when "plan"
+        target = options[:target] || "prod"
+        deployer = Deployer.new(project)
+        records = deployer.plan(target: target, branch: options[:branch], names: options[:blueprints])
+        puts(options[:json] ? JSON.pretty_generate(records.map(&:to_h)) : PlanFormatter.format(records, title: "Deployment Plan"))
+        deployer.ensure_plan_succeeds!(records)
       when "deploy"
         target = options[:target] || "prod"
         Deployer.new(project).deploy(target: target, branch: options[:branch], names: options[:blueprints])
       when "cleanup"
         target = options[:target] || "preview"
-        Deployer.new(project).cleanup(target: target, branch: options[:branch], names: options[:blueprints])
+        deployer = Deployer.new(project)
+        if options[:dry_run]
+          records = deployer.cleanup_plan(target: target, branch: options[:branch], names: options[:blueprints])
+          puts(options[:json] ? JSON.pretty_generate(records.map(&:to_h)) : PlanFormatter.format(records, title: "Cleanup Plan"))
+          deployer.ensure_plan_succeeds!(records)
+        else
+          deployer.cleanup(target: target, branch: options[:branch], names: options[:blueprints])
+        end
       else
-        warn "Usage: tools/md_blueprints <validate|render|changed|deploy|cleanup> [options]"
+        warn "Usage: tools/md_blueprints <validate|render|changed|plan|deploy|cleanup> [options]"
         exit 2
       end
     rescue ValidationError, CommandError, KeyError => e
@@ -777,6 +1046,7 @@ module MDBlueprints
         opts.on("--base REF") { |value| options[:base] = value }
         opts.on("--head REF") { |value| options[:head] = value }
         opts.on("--json") { options[:json] = true }
+        opts.on("--dry-run") { options[:dry_run] = true }
       end
       parser.parse!(argv)
       options

@@ -14,6 +14,9 @@ targets:
   preview:
     mode: preview
     default: true
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions preview service account
     policies:
       disableSchedules: true
       cleanup: true
@@ -24,6 +27,9 @@ targets:
   prod:
     mode: production
     environment: motherduck-production
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions production service account
     policies:
       serviceAccountRecommended: true
     variables:

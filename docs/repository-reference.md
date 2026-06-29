@@ -49,6 +49,19 @@ A single MotherDuck user or service account can own many databases, and one proj
 
 Prefer one deployment service account per project/environment. If a project must use multiple service accounts, model that explicitly as identity configuration for the affected target or resource instead of splitting one project into artificial packages.
 
+Target deployment metadata is optional:
+
+```yaml
+targets:
+  prod:
+    mode: production
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions production service account
+```
+
+`tokenEnvVar` defaults to `MOTHERDUCK_TOKEN`. If you set a different env var, the deploy tool reads that env var and passes its value to DuckDB as `MOTHERDUCK_TOKEN` without printing it. `identity` is a non-secret label for humans.
+
 ## Blueprint Packages
 
 Each deployable project lives under `blueprints/<name>/` and declares resources in `blueprint.yml`:
@@ -94,13 +107,19 @@ make example-smoke
 make validate
 make render-preview <blueprint-name>
 make mock-test
+./tools/md_blueprints plan --target preview --branch feature/local --blueprints <blueprint-name>
+./tools/md_blueprints cleanup --dry-run --target preview --branch feature/local --blueprints <blueprint-name>
 ```
 
 `make validate` parses `motherduck.yml`, expands included blueprints, validates against the committed schemas, renders preview and production targets, checks uniqueness, checks Flight Python syntax, and validates Dive required resources.
 
 `make preview-smoke <blueprint-name>` writes that blueprint's Dive into the local Vite preview harness and runs a production build without starting a server.
 
-`make mock-test` shadows `duckdb` with a fake CLI and exercises validation, preview deploy, production deploy, cleanup, and failed Flight run reporting without contacting MotherDuck.
+`make mock-test` shadows `duckdb` with a fake CLI and exercises validation, planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed Flight run reporting without contacting MotherDuck.
+
+`tools/md_blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
+
+`tools/md_blueprints cleanup --dry-run` shows the preview Dives, Flights, shares, and databases that cleanup would delete or drop. It uses the same branch-slug safety checks as real cleanup and does not issue delete or drop queries.
 
 `make example-smoke` creates a generated starter blueprint in an isolated temporary copy, validates its rendered preview target, builds its Dive, destroys the generated package, and validates the repository again.
 
@@ -117,8 +136,9 @@ make preview-smoke <blueprint-name> # when the blueprint has a Dive
 
 - The `CI` workflow validates manifests, runs mock deployment tests, builds the included example Dive, and creates then destroys a generated starter blueprint.
 - Pull requests validate all manifests, discover changed blueprint packages from `motherduck.yml`, deploy the `preview` target, and comment with preview links.
+- Preview deployment runs a read-only plan immediately before deploy; the PR comment includes the plan and deployed links.
 - Preview cleanup runs when a PR closes or a branch is deleted. Dives are deleted before Flights, shares, and preview databases.
-- Pushes to `main` deploy the `prod` target through the protected `motherduck-production` environment.
+- Pushes to `main` plan the `prod` target, write the plan to the GitHub job summary, then deploy through the protected `motherduck-production` environment.
 - No workflow file needs per-blueprint path filters or manual asset registration.
 
 ## Context Layer
