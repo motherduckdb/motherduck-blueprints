@@ -46,6 +46,7 @@ Start with the scaffold:
 ```bash
 make new-blueprint revenue-overview
 make validate
+make example-smoke
 make preview-smoke revenue-overview
 ```
 
@@ -64,7 +65,7 @@ Then replace the starter Flight and Dive with your real project logic.
 
 The included [Wikipedia Pageviews blueprint](blueprints/wikipedia-pageviews/README.md) shows a Flight that loads public data, publishes a share, and deploys a Dive that reads that share.
 
-For a new project, the generated starter blueprint is usually the best first example because it is small, deployable, and easy to replace.
+For a new project, the generated starter blueprint is usually the best first example because it is small, deployable, and easy to replace. `make example-smoke` creates that starter in an isolated temp copy, validates it, builds its Dive, and removes it again.
 
 ## More Detail
 

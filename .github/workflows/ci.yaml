@@ -1,0 +1,58 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "motherduck.yml"
+      - "Makefile"
+      - "blueprints/**"
+      - "schemas/**"
+      - "tools/**"
+      - "scripts/**"
+      - "templates/**"
+      - ".dive-preview/**"
+      - ".github/workflows/*.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "motherduck.yml"
+      - "Makefile"
+      - "blueprints/**"
+      - "schemas/**"
+      - "tools/**"
+      - "scripts/**"
+      - "templates/**"
+      - ".dive-preview/**"
+      - ".github/workflows/*.yaml"
+
+jobs:
+  checks:
+    name: Validate and Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: .dive-preview/package-lock.json
+
+      - name: Validate manifests
+        run: make validate
+
+      - name: Run mock deployment tests
+        run: make mock-test
+
+      - name: Build included example Dive
+        run: make preview-smoke wikipedia-pageviews
+
+      - name: Create and destroy generated example
+        run: make example-smoke
