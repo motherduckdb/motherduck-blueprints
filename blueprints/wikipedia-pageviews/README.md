@@ -29,5 +29,5 @@ make preview-smoke wikipedia-pageviews
 make validate
 make mock-test
 make example-smoke
-./tools/md_blueprints render --target preview --branch feature/example --blueprints wikipedia-pageviews
+md-blueprints render --target preview --branch feature/example --blueprints wikipedia-pageviews
 ```

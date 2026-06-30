@@ -19,6 +19,7 @@ trap cleanup EXIT
 
 rsync -a \
   --exclude .git \
+  --exclude .venv \
   --exclude .dive-preview/.env \
   --exclude .dive-preview/dist \
   --exclude .dive-preview/node_modules \

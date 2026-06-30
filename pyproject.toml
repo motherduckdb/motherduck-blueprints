@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "md-blueprints"
+version = "0.2.0"
+description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+md-blueprints = "md_blueprints.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+md_blueprints = ["schemas/*.json"]

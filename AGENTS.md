@@ -68,7 +68,7 @@ make preview-smoke <blueprint-name>
 make render-preview <blueprint-name>
 ```
 
-CI calls `tools/md_blueprints` directly for change detection, validation, preview/prod deployment, and preview cleanup.
+CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/prod deployment, and preview cleanup. `tools/md_blueprints` remains as a compatibility wrapper for existing local commands.
 
 ## Changelog
 

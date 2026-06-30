@@ -7,6 +7,8 @@ Use this page when you need the detailed repository layout, deployment behavior,
 ```text
 motherduck.yml
 CHANGELOG.md
+pyproject.toml
+action.yml
 
 blueprints/
   <blueprint-name>/
@@ -21,6 +23,10 @@ schemas/
   motherduck-root.schema.json
   blueprint.schema.json
 
+src/
+  md_blueprints/
+    schemas/
+
 tools/
   md_blueprints
 
@@ -31,6 +37,10 @@ context/
 ```
 
 `motherduck.yml` is the canonical repository manifest. It declares included blueprint manifests, shared variables, and the `preview` and `prod` targets. GitHub Actions discover changed blueprints from this manifest instead of requiring manual path-filter registration.
+
+`md-blueprints` is the versioned CLI package that validates schemas, renders targets, plans deployments, deploys resources, cleans previews, and hosts migration commands. `tools/md_blueprints` is a compatibility wrapper around the package command.
+
+`schemas/` is an optional mirror for editor support and documentation. The packaged schemas under `src/md_blueprints/schemas/` are the CLI validation source of truth.
 
 `CHANGELOG.md` records notable repository changes. Update it in every pull request.
 
@@ -109,19 +119,27 @@ make example-smoke
 make validate
 make render-preview <blueprint-name>
 make mock-test
-./tools/md_blueprints plan --target preview --branch feature/local --blueprints <blueprint-name>
-./tools/md_blueprints cleanup --dry-run --target preview --branch feature/local --blueprints <blueprint-name>
+md-blueprints plan --target preview --branch feature/local --blueprints <blueprint-name>
+md-blueprints cleanup --dry-run --target preview --branch feature/local --blueprints <blueprint-name>
+md-blueprints doctor
+md-blueprints migrate --to latest
 ```
 
-`make validate` parses `motherduck.yml`, expands included blueprints, validates against the committed schemas, renders preview and production targets, checks uniqueness, checks Flight Python syntax, and validates Dive required resources.
+`make setup` installs the local Python package and Dive preview dependencies.
+
+`make validate` parses `motherduck.yml`, expands included blueprints, validates against the packaged schemas, renders preview and production targets, checks uniqueness, checks Flight Python syntax, and validates Dive required resources.
 
 `make preview-smoke <blueprint-name>` writes that blueprint's Dive into the local Vite preview harness and runs a production build without starting a server.
 
 `make mock-test` shadows `duckdb` with a fake CLI and exercises validation, planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed Flight run reporting without contacting MotherDuck.
 
-`tools/md_blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
+`md-blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
 
-`tools/md_blueprints cleanup --dry-run` shows the preview Dives, Flights, shares, and databases that cleanup would delete or drop. It uses the same branch-slug safety checks as real cleanup and does not issue delete or drop queries.
+`md-blueprints cleanup --dry-run` shows the preview Dives, Flights, shares, and databases that cleanup would delete or drop. It uses the same branch-slug safety checks as real cleanup and does not issue delete or drop queries.
+
+`md-blueprints doctor` reports the CLI version, supported schema versions, project schema versions, validation status, DuckDB availability, and whether the local `schemas/` mirror matches the packaged schema source.
+
+`md-blueprints migrate --to latest` is dry-run by default. It prints migration diffs for future breaking schema changes and writes only when `--write` is supplied.
 
 `make example-smoke` creates a generated starter blueprint in an isolated temporary copy, validates its rendered preview target, builds its Dive, destroys the generated package, and validates the repository again.
 
@@ -144,6 +162,8 @@ For docs-only changes, run at least `git diff --check`. Run the full validation 
 - Preview cleanup runs when a PR closes or a branch is deleted. Dives are deleted before Flights, shares, and preview databases.
 - Pushes to `main` plan the `prod` target, write the plan to the GitHub job summary, then deploy through the protected `motherduck-production` environment.
 - No workflow file needs per-blueprint path filters or manual asset registration.
+
+Customer repositories should pin the released package or action version. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for the schema compatibility and migration policy.
 
 ## Context Layer
 

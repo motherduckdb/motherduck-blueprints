@@ -77,6 +77,7 @@ The generated package is intentionally small but deployable: it creates starter 
 Before opening a PR, run:
 
 ```bash
+make setup
 make validate
 make mock-test
 make example-smoke
@@ -86,8 +87,10 @@ make preview-smoke <blueprint-name>
 Skip `make preview-smoke` only when the changed blueprint has no Dive.
 For docs-only changes, still update `CHANGELOG.md` and keep the relevant README or `docs/` page in sync with any behavior you describe.
 
-Live workflows run `tools/md_blueprints plan` before deploy. You can run the same check locally with a MotherDuck token:
+Live workflows run `md-blueprints plan` before deploy. You can run the same check locally with a MotherDuck token:
 
 ```bash
-./tools/md_blueprints plan --target preview --branch feature/example --blueprints <blueprint-name>
+md-blueprints plan --target preview --branch feature/example --blueprints <blueprint-name>
 ```
+
+Pin the released package or action version when maintaining a customer repository over time. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for upgrade and migration guidance.

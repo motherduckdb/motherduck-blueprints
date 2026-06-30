@@ -4,6 +4,8 @@ Use this page as a machine-readable reference for `blueprints/<blueprint-name>/b
 
 `blueprint.yml` describes one deployable MotherDuck blueprint package. It declares metadata, optional variables, target-specific overrides, and resources such as shares, Flights, Dives, and context files.
 
+The `md-blueprints` package is the validation source of truth for this schema. The repo-local `schemas/` files mirror the packaged schema for editor and documentation support.
+
 ## File Shape
 
 ```yaml

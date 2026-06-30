@@ -24,4 +24,5 @@ make mock-test
 make example-smoke
 make render-preview __BLUEPRINT_NAME__
 make preview-smoke __BLUEPRINT_NAME__
+md-blueprints doctor
 ```
