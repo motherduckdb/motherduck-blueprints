@@ -973,8 +973,8 @@ class Deployer:
         config_sql = sql_map(flight.get("config", {}) if isinstance(flight.get("config"), dict) else {})
         source_sql = f"(SELECT content FROM read_text({sql_string(flight['sourcePath'])}))"
         requirements_sql = f"(SELECT content FROM read_text({sql_string(flight['requirementsPath'])}))"
+        schedule_cron = str(flight.get("scheduleCron", ""))
         common_args = [
-            f'"schedule_cron" => {sql_string(flight.get("scheduleCron", ""))}',
             f'"flight_secret_names" => {sql_array(list(flight.get("secrets", [])))}',
             f'"config" => {config_sql}',
             f'"name" => {name_sql}',
@@ -984,14 +984,14 @@ class Deployer:
         access_token_name = str(flight.get("accessTokenName", ""))
         if access_token_name:
             common_args.insert(3, f'"access_token_name" => {sql_string(access_token_name)}')
-        common_args_sql = ", ".join(common_args)
 
         if plan.action == "create":
             print(f"  Creating new flight '{name}'...", file=sys.stderr)
+            create_args_sql = ", ".join([f'"schedule_cron" => {sql_string(schedule_cron)}', *common_args])
             self._sql(
                 f"SET VARIABLE source_code = {source_sql}; "
                 f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                f"FROM MD_CREATE_FLIGHT({common_args_sql});"
+                f"FROM MD_CREATE_FLIGHT({create_args_sql});"
             )
             ids = self._list_flight_ids(name)
             if len(ids) != 1:
@@ -999,10 +999,14 @@ class Deployer:
             flight_id = ids[0]
         elif plan.action == "update":
             print(f"  Updating existing flight '{name}' ({plan.id})...", file=sys.stderr)
+            update_args = list(common_args)
+            if schedule_cron:
+                update_args.insert(0, f'"schedule_cron" => {sql_string(schedule_cron)}')
+            update_args_sql = ", ".join(update_args)
             self._sql(
                 f"SET VARIABLE source_code = {source_sql}; "
                 f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {common_args_sql});"
+                f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {update_args_sql});"
             )
             flight_id = str(plan.id)
         else:

@@ -16,7 +16,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
-- Updated live Flight deploys to call `MD_RUN_FLIGHT` with the current MotherDuck argument order.
+- Updated live Flight deploys for current MotherDuck Flight run and unscheduled update behavior.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
 - Kept `tools/md_blueprints` as a compatibility wrapper around the package command.
 - Documented that the template, CLI package, and action stay in one repository for this release, with modularization and repository split as follow-up criteria.

@@ -55,6 +55,10 @@ elif [[ "$query" == *"MD_LIST_FLIGHTS"* ]]; then
 elif [[ "$query" == *"MD_CREATE_FLIGHT"* ]]; then
   echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
 elif [[ "$query" == *"MD_UPDATE_FLIGHT"* ]]; then
+  if [[ "$query" == *"\"schedule_cron\" => ''"* ]]; then
+    echo "MD_UPDATE_FLIGHT must omit empty schedule_cron" >&2
+    exit 1
+  fi
   echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
 elif [[ "$query" == *"MD_RUN_FLIGHT"* ]]; then
   if [[ "$query" != *"FROM MD_RUN_FLIGHT(map("* ]]; then
@@ -262,6 +266,10 @@ grep -q "#### Wikipedia Pageviews" "${TMP_DIR}/preview.out"
 grep -q "wikipedia-pageviews:feature/mock-test (Preview)" "${TMP_DIR}/preview.out"
 grep -q "wikipedia_pageviews_preview_feature_mock_test" "${TMP_DIR}/preview.out"
 grep -q "Wikipedia Pageviews:feature/mock-test (Preview)" "${TMP_DIR}/preview.out"
+
+echo "==> Mock updating unscheduled preview blueprint"
+md-blueprints deploy --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/preview-update.out" 2>&1
+grep -q "Updating existing flight 'wikipedia-pageviews:feature/mock-test (Preview)'" "${TMP_DIR}/preview-update.out"
 
 echo "==> Mock deploying production blueprint"
 md-blueprints deploy --target prod --blueprints wikipedia-pageviews > "${TMP_DIR}/production.out"
