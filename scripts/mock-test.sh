@@ -74,6 +74,10 @@ elif [[ "$query" == *"MD_RUN_FLIGHT"* ]]; then
 elif [[ "$query" == *"MD_GET_FLIGHT_LOGS"* ]]; then
   echo "mock failure log tail"
 elif [[ "$query" == *"MD_DELETE_FLIGHT"* ]]; then
+  if [[ "$query" != *"FROM MD_DELETE_FLIGHT(flight_id := "* ]]; then
+    echo "MD_DELETE_FLIGHT must be called with a named flight_id argument" >&2
+    exit 1
+  fi
   rm -f "$flight_state"
   rm -f "$run_state"
 elif [[ "$query" == *"MD_DROP_DATABASE_SHARE"* ]]; then

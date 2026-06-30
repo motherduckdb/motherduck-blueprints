@@ -1131,7 +1131,7 @@ class Deployer:
                 print(f"No preview Flight found for '{record.name}'")
             elif (record.type, record.action) == ("flight", "delete"):
                 print(f"Deleting preview Flight {record.id} ({record.name})")
-                self._sql(f"FROM MD_DELETE_FLIGHT('{record.id}'::UUID);")
+                self._sql(f"FROM MD_DELETE_FLIGHT(flight_id := '{record.id}'::UUID);")
             elif (record.type, record.action) == ("share", "missing"):
                 print(f"No preview share found for '{record.name}'")
             elif (record.type, record.action) == ("share", "drop_share"):

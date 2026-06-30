@@ -17,6 +17,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ### Changed
 
 - Updated live Flight deploys for current MotherDuck Flight run and unscheduled update behavior.
+- Updated preview cleanup for current MotherDuck Flight delete behavior.
 - Added the missing `pytz` runtime dependency for the Wikipedia Pageviews Flight share publishing path.
 - Set the Wikipedia Pageviews Flight DuckDB session timezone to UTC before reading share metadata.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
