@@ -81,6 +81,7 @@ Recommended settings:
 Before touching MotherDuck, run:
 
 ```bash
+make setup
 make validate
 make mock-test
 make example-smoke
@@ -134,7 +135,7 @@ Cleanup refuses to drop share/database names that do not include the branch slug
 You can preview cleanup locally before closing a PR:
 
 ```bash
-./tools/md_blueprints cleanup --dry-run --target preview --branch test/wikipedia-blueprint
+md-blueprints cleanup --dry-run --target preview --branch test/wikipedia-blueprint
 ```
 
 ## 9. Deploy to Production
@@ -162,5 +163,36 @@ You can then:
 - Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
 - Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.
 - Update `.github/CODEOWNERS`.
+
+## 11. Keep Tooling in Sync
+
+After repository creation, treat `md-blueprints` as the long-term upgrade surface. The template repo is the starting point, while the package and action carry schema validation, deployment behavior, and migrations.
+
+Pin the package locally or in CI:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install ./md_blueprints-0.2.0-py3-none-any.whl
+.venv/bin/md-blueprints validate
+```
+
+Download the wheel from the matching GitHub Release. The action tag is the preferred CI path for customer repositories.
+
+When using the repository action, pin the action major version in customer workflows:
+
+```yaml
+- uses: motherduckdb/motherduck-blueprints@v1
+  with:
+    command: validate
+```
+
+Before adopting a new schema version, run:
+
+```bash
+md-blueprints doctor
+md-blueprints migrate --to latest
+```
+
+Review migration output before applying it with `--write`.
 
 When you change repository commands, resource behavior, target policies, or package layout, update the matching docs in the same pull request and add an entry to `CHANGELOG.md`.

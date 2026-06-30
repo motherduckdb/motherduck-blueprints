@@ -2,7 +2,12 @@
 .dive-preview/node_modules/
 .dive-preview/src/dive.tsx
 .dive-preview/dist/
+.venv/
+build/
+dist/
+.release-notes.md
 .DS_Store
 *.log
 __pycache__/
 *.py[cod]
+*.egg-info/

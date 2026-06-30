@@ -1,0 +1,38 @@
+name: MotherDuck Blueprints
+description: Install and run the versioned MotherDuck Blueprints CLI.
+
+inputs:
+  command:
+    description: CLI command to run, such as validate, render, changed, plan, deploy, cleanup, doctor, or migrate.
+    required: true
+    default: validate
+  args:
+    description: Additional command arguments.
+    required: false
+    default: ""
+  python-version:
+    description: Python version used to install md-blueprints.
+    required: false
+    default: "3.11"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install md-blueprints
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "$GITHUB_ACTION_PATH"
+
+    - name: Run md-blueprints
+      shell: bash
+      env:
+        MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
+        MD_BLUEPRINTS_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        md-blueprints "$MD_BLUEPRINTS_COMMAND" $MD_BLUEPRINTS_ARGS

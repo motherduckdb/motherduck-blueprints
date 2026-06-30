@@ -2,11 +2,16 @@
 
 ARG := $(word 2,$(MAKECMDGOALS))
 DB_NAME := $(subst -,_,$(ARG))
+CLI := .venv/bin/md-blueprints
+
+$(CLI): pyproject.toml $(shell find src/md_blueprints -type f 2>/dev/null)
+	python3 -m venv .venv
+	.venv/bin/python -m pip install -e .
 
 # -- Local development --------------------------------------------------------
 
 .PHONY: setup
-setup: ## Install Dive preview dependencies and create .env from example
+setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from example
 	cd .dive-preview && npm install
 	@test -f .dive-preview/.env || cp .dive-preview/.env.example .dive-preview/.env
 	@echo ""
@@ -44,21 +49,29 @@ new-blueprint: ## Scaffold a new blueprint package (e.g. make new-blueprint reve
 	@echo "Created blueprints/$(ARG). Run make validate before opening a PR."
 
 .PHONY: example-smoke
-example-smoke: ## Create, validate, build, and destroy a generated blueprint example
-	./scripts/scaffold-smoke-test.sh
+example-smoke: $(CLI) ## Create, validate, build, and destroy a generated blueprint example
+	PYTHONDONTWRITEBYTECODE=1 PATH="$(CURDIR)/.venv/bin:$$PATH" ./scripts/scaffold-smoke-test.sh
 
 .PHONY: validate
-validate: ## Validate all blueprint manifests without contacting MotherDuck
-	./tools/md_blueprints validate
+validate: $(CLI) ## Validate all blueprint manifests without contacting MotherDuck
+	PYTHONDONTWRITEBYTECODE=1 $(CLI) validate
 
 .PHONY: render-preview
-render-preview: ## Render a blueprint for a preview branch
+render-preview: $(CLI) ## Render a blueprint for a preview branch
 	@test -n "$(ARG)" || { echo "Usage: make render-preview <blueprint-name>"; exit 1; }
-	./tools/md_blueprints render --target preview --branch feature/local --blueprints "$(ARG)"
+	PYTHONDONTWRITEBYTECODE=1 $(CLI) render --target preview --branch feature/local --blueprints "$(ARG)"
 
 .PHONY: mock-test
-mock-test: ## Run local mock deployment tests without contacting MotherDuck
-	./scripts/mock-test.sh
+mock-test: $(CLI) ## Run local mock deployment tests without contacting MotherDuck
+	PYTHONDONTWRITEBYTECODE=1 PATH="$(CURDIR)/.venv/bin:$$PATH" ./scripts/mock-test.sh
+
+.PHONY: package-smoke
+package-smoke: ## Build and smoke test the installable md-blueprints package
+	PYTHONDONTWRITEBYTECODE=1 ./scripts/package-smoke-test.sh
+
+.PHONY: release-check
+release-check: ## Verify package version metadata and optional release tag
+	./scripts/check-release-version.sh "$(TAG)"
 
 # -- Help ---------------------------------------------------------------------
 

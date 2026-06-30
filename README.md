@@ -17,6 +17,7 @@ Use this repo when you want:
 4. Run the local checks:
 
 ```bash
+make setup
 make validate
 make mock-test
 make example-smoke
@@ -57,8 +58,8 @@ Then replace the starter Flight and Dive with your real project logic.
 When you have a MotherDuck token configured, inspect live create/update/delete actions before applying them:
 
 ```bash
-./tools/md_blueprints plan --target preview --branch feature/example --blueprints revenue-overview
-./tools/md_blueprints cleanup --dry-run --target preview --branch feature/example --blueprints revenue-overview
+md-blueprints plan --target preview --branch feature/example --blueprints revenue-overview
+md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints revenue-overview
 ```
 
 ## Best Practices to Copy
@@ -67,6 +68,7 @@ When you have a MotherDuck token configured, inspect live create/update/delete a
 - Use lowercase slug names such as `account-360` or `revenue-ops`.
 - Keep preview resources branch-scoped and production resources stable.
 - Run a deployment plan before live deploys and use cleanup dry-runs before deleting previews.
+- Treat `md-blueprints` as the versioned tooling contract; customers upgrade by bumping the package or action version, not by re-cloning this template.
 - Deploy from CI with a service account token.
 - Use target `deployment` metadata when preview and production use different service accounts or token env vars.
 - Store secrets in GitHub Actions, never in the repo.
@@ -85,3 +87,4 @@ For a new project, the generated starter blueprint is usually the best first exa
 - [GitHub Setup](docs/github-setup.md): configure secrets, environments, and branch protection.
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
+- [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): package/action pinning, schema compatibility, migrations, GitHub Release publishing, and future repo-split guidance.
