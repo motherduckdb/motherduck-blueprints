@@ -1011,7 +1011,7 @@ class Deployer:
         run_started = False
         if flight.get("runOnDeploy", False):
             print(f"  Starting flight run for '{name}'...", file=sys.stderr)
-            self._sql(f"FROM MD_RUN_FLIGHT('{flight_id}'::UUID, {config_sql});")
+            self._sql(f"FROM MD_RUN_FLIGHT({config_sql}, '{flight_id}'::UUID);")
             run_started = True
             if flight.get("waitForRun", False) == "success":
                 self._wait_for_flight_run_success(flight_id)
