@@ -61,8 +61,8 @@ elif [[ "$query" == *"MD_UPDATE_FLIGHT"* ]]; then
   fi
   echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
 elif [[ "$query" == *"MD_RUN_FLIGHT"* ]]; then
-  if [[ "$query" != *"FROM MD_RUN_FLIGHT(map("* ]]; then
-    echo "MD_RUN_FLIGHT must be called with config as the first argument" >&2
+  if [[ "$query" != *"FROM MD_RUN_FLIGHT(config := map("*", flight_id := "* ]]; then
+    echo "MD_RUN_FLIGHT must be called with named config and flight_id arguments" >&2
     exit 1
   fi
   current_run_number=0
