@@ -289,6 +289,7 @@ def main() -> None:
 
     rows = fetch_pageviews()
     con = duckdb.connect("md:")
+    con.execute("SET TimeZone='UTC'")
     ensure_schema(con, database, schema)
     upsert_rows(con, schema, rows)
     share_url = publish_share(con, database, share)
