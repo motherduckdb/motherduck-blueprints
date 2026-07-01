@@ -33,9 +33,11 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     makefile = (target / "Makefile").read_text(encoding="utf-8")
     deploy_workflow = (target / ".github/workflows/deploy_blueprints.yaml").read_text(encoding="utf-8")
     readme = (target / "README.md").read_text(encoding="utf-8")
+    requirements = (target / "blueprints/wikipedia-pageviews/src/requirements.txt").read_text(encoding="utf-8")
 
     assert f"CLI_VERSION := {__version__}" in makefile
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in deploy_workflow
+    assert "pytz>=2024.1" in requirements
     assert "__MD_BLUEPRINTS_" not in readme
     assert "mock-test" not in makefile
     assert "package-smoke" not in makefile

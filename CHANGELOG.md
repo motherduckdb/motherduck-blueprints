@@ -38,6 +38,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Updated docs and local setup guidance for PyPI installs, action `@v0`, the Python DuckDB runtime, and the schema compatibility matrix.
 - Updated customer docs and template docs to use generated repository setup instead of cloning the tooling repository.
 - Made preview Flight updates idempotent when schedules are already disabled, aligned Flight run SQL with live MotherDuck function signatures, and surfaced live SQL failures as CLI errors instead of tracebacks.
+- Added the MotherDuck runtime timezone dependency to generated starter Flight requirements.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
 - Kept `tools/md_blueprints` as a compatibility wrapper around the package command.
 - Documented that the template, CLI package, and action stay in one repository for this release, with modularization and repository split as follow-up criteria.
