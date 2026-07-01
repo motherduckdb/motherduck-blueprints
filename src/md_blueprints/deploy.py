@@ -10,6 +10,8 @@ from pathlib import Path
 from .project import CommandError, Project, RenderedBlueprint, branch_slug
 from .schema import ValidationError
 
+DuckDBConfigValue = str | bool | int | float | list[str]
+
 
 def sql_string(value: object) -> str:
     return "'" + str(value).replace("'", "''") + "'"
@@ -117,7 +119,7 @@ class PlanFormatter:
 class Deployer:
     def __init__(self, project: Project) -> None:
         self.project = project
-        self.sql_env: dict[str, str] | None = None
+        self.sql_env: dict[str, DuckDBConfigValue] | None = None
 
     def plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = self._validate_and_render(target, branch, names)
@@ -604,7 +606,7 @@ class Deployer:
         if self.sql_env is None:
             raise ValidationError("MotherDuck token was not prepared for live command")
         try:
-            import duckdb  # type: ignore[import-not-found]
+            import duckdb
         except ModuleNotFoundError as exc:
             raise CommandError(
                 "duckdb Python package is required for live MotherDuck commands. "
