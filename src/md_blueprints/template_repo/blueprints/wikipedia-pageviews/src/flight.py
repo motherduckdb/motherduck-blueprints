@@ -84,6 +84,10 @@ def quote_ident(value: str) -> str:
     return f'"{value}"'
 
 
+def sql_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def pageview_url(
     project: str,
     access: str,
@@ -276,10 +280,10 @@ def publish_share(con: duckdb.DuckDBPyConnection, database: str, share: str) -> 
         """
     )
     con.execute(f"UPDATE SHARE {share_ident}")
-    row = con.execute(f"DESCRIBE SHARE {share_ident}").fetchone()
+    row = con.execute(f"SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = {sql_string(share)}").fetchone()
     if not row:
         raise RuntimeError(f"Share {share!r} was not found after creation")
-    return str(row[1])
+    return str(row[0])
 
 
 def main() -> None:

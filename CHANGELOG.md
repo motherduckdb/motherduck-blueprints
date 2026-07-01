@@ -39,6 +39,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Updated customer docs and template docs to use generated repository setup instead of cloning the tooling repository.
 - Made preview Flight updates idempotent when schedules are already disabled, aligned Flight run SQL with live MotherDuck function signatures, and surfaced live SQL failures as CLI errors instead of tracebacks.
 - Added the MotherDuck runtime timezone dependency to generated starter Flight requirements.
+- Updated generated starter Flights to read share URLs through `MD_LIST_DATABASE_SHARES()`.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
 - Kept `tools/md_blueprints` as a compatibility wrapper around the package command.
 - Documented that the template, CLI package, and action stay in one repository for this release, with modularization and repository split as follow-up criteria.
