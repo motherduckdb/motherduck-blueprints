@@ -170,6 +170,28 @@ def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPa
     assert '"flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID' in run_call
 
 
+def test_cleanup_flight_delete_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    monkeypatch.setattr(deployer, "_sql", lambda statement: calls.append(statement) or "")
+
+    deployer._apply_cleanup_plan(
+        [
+            PlanRecord(
+                blueprint="ops",
+                type="flight",
+                key="loader",
+                name="preview-loader",
+                action="delete",
+                exists=True,
+                id="1a4ea2e6-0997-43ea-afe9-78c15c62220e",
+            )
+        ]
+    )
+
+    assert calls == ['FROM MD_DELETE_FLIGHT("flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID);']
+
+
 def test_sql_identifier_quoting_rejects_unsafe_database_names() -> None:
     assert quote_ident("preview_database_1") == '"preview_database_1"'
 
