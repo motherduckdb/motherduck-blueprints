@@ -104,7 +104,7 @@ jobs:
           name: md-blueprints-dist
           path: dist
 
-      - uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
 
   publish-template:
     name: Publish Generated Template Repository
