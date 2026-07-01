@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,17 @@ from md_blueprints import __version__
 from md_blueprints.init import action_major_tag, run_init
 from md_blueprints.project import Project
 from md_blueprints.schema import ValidationError
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MIRRORED_TEMPLATE_PATHS = [
+    "motherduck.yml",
+    "blueprints/wikipedia-pageviews",
+    "schemas/v1",
+    ".dive-preview",
+    "templates/blueprint",
+    "docs",
+    "context",
+]
 
 
 def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> None:
@@ -62,3 +74,42 @@ def test_init_force_overwrites_template_files(tmp_path: Path) -> None:
     run_init(target, force=True)
 
     assert "MotherDuck Blueprints" in (target / "README.md").read_text(encoding="utf-8")
+
+
+def test_init_template_does_not_drift_from_mirrored_repo_paths(tmp_path: Path) -> None:
+    target = tmp_path / "customer-blueprints"
+
+    run_init(target)
+
+    source_files = set(git_tracked_files(MIRRORED_TEMPLATE_PATHS))
+    generated_files = set(files_under(target, MIRRORED_TEMPLATE_PATHS))
+    assert generated_files == source_files
+
+    drifted = [
+        path
+        for path in sorted(source_files)
+        if (target / path).read_bytes() != (REPO_ROOT / path).read_bytes()
+    ]
+    assert drifted == []
+
+
+def git_tracked_files(paths: list[str]) -> list[Path]:
+    result = subprocess.run(
+        ["git", "ls-files", *paths],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    return [Path(line) for line in result.stdout.splitlines()]
+
+
+def files_under(root: Path, paths: list[str]) -> list[Path]:
+    files: list[Path] = []
+    for relative in paths:
+        candidate = root / relative
+        if candidate.is_file():
+            files.append(Path(relative))
+            continue
+        files.extend(path.relative_to(root) for path in candidate.rglob("*") if path.is_file())
+    return sorted(files)

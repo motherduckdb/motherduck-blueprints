@@ -23,6 +23,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Added release external-setup preflight checks for the PyPI project and generated template repository.
 - Added release version checks and GitHub Release publishing for tagged package artifacts.
 - Added PyPI trusted publishing to the release workflow.
+- Added a generated-template drift test that compares `md-blueprints init` output with the mirrored repository paths.
 
 ### Changed
 
@@ -41,6 +42,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Added the MotherDuck runtime timezone dependency to generated starter Flight requirements.
 - Updated generated starter Flights to read share URLs through `MD_LIST_DATABASE_SHARES()`.
 - Updated preview cleanup to call Flight deletion with the live MotherDuck function signature.
+- Included the DuckDB Python package in development installs so strict type checks cover live deploy configuration.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
 - Kept `tools/md_blueprints` as a compatibility wrapper around the package command.
 - Documented that the template, CLI package, and action stay in one repository for this release, with modularization and repository split as follow-up criteria.
