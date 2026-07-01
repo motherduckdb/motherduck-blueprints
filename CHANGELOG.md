@@ -29,7 +29,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Converted customer-facing deploy and cleanup workflows to run the pinned `motherduckdb/motherduck-blueprints` action instead of installing the local checkout.
 - Kept tooling-repository deploy and doctor workflows on the local action checkout while generated customer workflows use the stamped public action tag.
 - Updated the action to expose raw CLI stdout and install the deploy extra only for live commands.
-- Replaced the deployer DuckDB CLI shell-out with the DuckDB Python package.
+- Replaced the deployer DuckDB CLI shell-out with the DuckDB Python package and its live MotherDuck runtime dependencies.
 - Split the CLI implementation into schema, template, project, deploy, migration, and maintenance modules.
 - Updated release publishing to maintain a floating major tag such as `v0`.
 - Updated release publishing to generate the customer template and push it to `motherduckdb/blueprints-template`, failing tagged releases when the required template repository or token is missing.

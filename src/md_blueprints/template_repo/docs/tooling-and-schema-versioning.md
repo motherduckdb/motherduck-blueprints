@@ -34,7 +34,7 @@ make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-If you use live local plan/deploy/cleanup commands, install the deploy extra:
+If you use live local plan/deploy/cleanup commands, install the deploy extra. It includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
 
 ```bash
 make install-deploy

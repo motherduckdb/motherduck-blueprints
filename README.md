@@ -109,7 +109,7 @@ python3 -m venv .venv
 .venv/bin/md-blueprints validate
 ```
 
-Live `plan`, `deploy`, and `cleanup` commands need the deploy extra:
+Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which includes the DuckDB Python runtime dependencies for MotherDuck:
 
 ```bash
 .venv/bin/python -m pip install "md-blueprints[deploy]==0.3.0"
