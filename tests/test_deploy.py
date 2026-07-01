@@ -133,6 +133,43 @@ def test_flight_update_retries_without_schedule_when_existing_flight_is_unschedu
     assert '"schedule_cron"' not in calls[1]
 
 
+def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    deployer._deploy_flight(
+        {
+            "name": "preview-loader",
+            "sourcePath": "src/flight.py",
+            "requirementsPath": "src/requirements.txt",
+            "scheduleCron": "",
+            "runOnDeploy": True,
+            "waitForRun": False,
+            "config": {"article": "DuckDB"},
+        },
+        "preview",
+        PlanRecord(
+            blueprint="ops",
+            type="flight",
+            key="loader",
+            name="preview-loader",
+            action="update",
+            exists=True,
+            id="1a4ea2e6-0997-43ea-afe9-78c15c62220e",
+        ),
+    )
+
+    run_call = next(call for call in calls if "MD_RUN_FLIGHT" in call)
+    assert 'MD_RUN_FLIGHT("config" => map(' in run_call
+    assert '"flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID' in run_call
+
+
 def test_sql_identifier_quoting_rejects_unsafe_database_names() -> None:
     assert quote_ident("preview_database_1") == '"preview_database_1"'
 
