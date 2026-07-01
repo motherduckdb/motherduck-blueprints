@@ -3,7 +3,7 @@ description: Install and run the versioned MotherDuck Blueprints CLI.
 
 inputs:
   command:
-    description: CLI command to run, such as validate, render, changed, plan, deploy, cleanup, doctor, or migrate.
+    description: CLI command to run, such as init, validate, render, changed, plan, deploy, cleanup, doctor, or migrate.
     required: true
     default: validate
   args:
@@ -15,24 +15,63 @@ inputs:
     required: false
     default: "3.11"
 
+outputs:
+  stdout:
+    description: Raw CLI stdout.
+    value: ${{ steps.run.outputs.stdout }}
+
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Install md-blueprints
       shell: bash
+      env:
+        MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
       run: |
+        set -euo pipefail
+        install_target="$GITHUB_ACTION_PATH"
+        case "$MD_BLUEPRINTS_COMMAND" in
+          plan|deploy|cleanup)
+            install_target="${GITHUB_ACTION_PATH}[deploy]"
+            ;;
+        esac
         python -m pip install --upgrade pip
-        python -m pip install "$GITHUB_ACTION_PATH"
+        python -m pip install "$install_target"
 
     - name: Run md-blueprints
+      id: run
       shell: bash
       env:
         MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
         MD_BLUEPRINTS_ARGS: ${{ inputs.args }}
       run: |
         set -euo pipefail
-        md-blueprints "$MD_BLUEPRINTS_COMMAND" $MD_BLUEPRINTS_ARGS
+        stdout_file="$(mktemp)"
+        set +e
+        python - <<'PY' | tee "$stdout_file"
+        import os
+        import shlex
+        import subprocess
+        import sys
+
+        argv = [
+            "md-blueprints",
+            os.environ["MD_BLUEPRINTS_COMMAND"],
+            *shlex.split(os.environ.get("MD_BLUEPRINTS_ARGS", "")),
+        ]
+        completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, check=False)
+        sys.stdout.write(completed.stdout)
+        raise SystemExit(completed.returncode)
+        PY
+        status="${PIPESTATUS[0]}"
+        set -e
+        {
+          echo "stdout<<MD_BLUEPRINTS_EOF"
+          cat "$stdout_file"
+          echo "MD_BLUEPRINTS_EOF"
+        } >> "$GITHUB_OUTPUT"
+        exit "$status"

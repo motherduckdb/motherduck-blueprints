@@ -8,13 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 FAKE_BIN="${TMP_DIR}/bin"
+FAKE_PYTHON="${TMP_DIR}/python"
 
 cleanup() {
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-mkdir -p "$FAKE_BIN"
+mkdir -p "$FAKE_BIN" "$FAKE_PYTHON"
 
 cat > "${FAKE_BIN}/duckdb" <<'MOCK_DUCKDB'
 #!/usr/bin/env bash
@@ -94,7 +95,104 @@ MOCK_DUCKDB
 
 chmod +x "${FAKE_BIN}/duckdb"
 
+cat > "${FAKE_PYTHON}/duckdb.py" <<'PY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+class MockResult:
+    def __init__(self, rows: list[tuple[str, ...]]) -> None:
+        self._rows = rows
+
+    def fetchall(self) -> list[tuple[str, ...]]:
+        return self._rows
+
+
+class MockConnection:
+    def __init__(self, config: dict[str, str] | None) -> None:
+        token = (config or {}).get("motherduck_token")
+        if not token:
+            raise RuntimeError("motherduck_token is required by fake duckdb")
+        self.state_dir = Path(os.environ["MOCK_DUCKDB_STATE_DIR"])
+        self.flight_state = self.state_dir / "flight_id"
+        self.run_state = self.state_dir / "run_number"
+        self.dive_state = self.state_dir / "dive_id"
+        self.share_url = "md:_share/mock/00000000-0000-0000-0000-000000000003"
+
+    def execute(self, statement: str) -> MockResult:
+        query = statement
+        with (self.state_dir / "queries.log").open("a", encoding="utf-8") as handle:
+            handle.write(query)
+            handle.write("\n")
+
+        if "MD_LIST_DATABASE_SHARES" in query:
+            if os.environ.get("MOCK_SHARE_MISSING", "false") != "true":
+                return MockResult([(self.share_url,)])
+            return MockResult([])
+        if "MD_LIST_FLIGHT_RUNS" in query:
+            if self.run_state.exists():
+                status = os.environ.get("MOCK_FLIGHT_RUN_STATUS", "RUN_STATUS_SUCCEEDED")
+                return MockResult([(f"{self.run_state.read_text().strip()}|{status}",)])
+            return MockResult([])
+        if "MD_LIST_FLIGHTS" in query:
+            if os.environ.get("MOCK_DUPLICATE_FLIGHTS", "false") == "true":
+                return MockResult([
+                    ("00000000-0000-0000-0000-000000000011",),
+                    ("00000000-0000-0000-0000-000000000012",),
+                ])
+            if self.flight_state.exists():
+                return MockResult([(self.flight_state.read_text().strip(),)])
+            return MockResult([])
+        if "MD_CREATE_FLIGHT" in query or "MD_UPDATE_FLIGHT" in query:
+            self.flight_state.write_text("00000000-0000-0000-0000-000000000001", encoding="utf-8")
+            return MockResult([])
+        if "MD_RUN_FLIGHT" in query:
+            current_run_number = int(self.run_state.read_text().strip()) if self.run_state.exists() else 0
+            self.run_state.write_text(str(current_run_number + 1), encoding="utf-8")
+            return MockResult([])
+        if "MD_GET_FLIGHT_LOGS" in query:
+            return MockResult([("mock failure log tail",)])
+        if "MD_DELETE_FLIGHT" in query:
+            self.flight_state.unlink(missing_ok=True)
+            self.run_state.unlink(missing_ok=True)
+            return MockResult([])
+        if "MD_DROP_DATABASE_SHARE" in query or "DROP DATABASE IF EXISTS" in query:
+            return MockResult([])
+        if "MD_LIST_DIVES" in query:
+            if os.environ.get("MOCK_DUPLICATE_DIVES", "false") == "true":
+                return MockResult([
+                    ("00000000-0000-0000-0000-000000000021",),
+                    ("00000000-0000-0000-0000-000000000022",),
+                ])
+            if self.dive_state.exists():
+                return MockResult([(self.dive_state.read_text().strip(),)])
+            return MockResult([])
+        if "MD_CREATE_DIVE" in query:
+            self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
+            return MockResult([(self.dive_state.read_text().strip(),)])
+        if "MD_UPDATE_DIVE" in query:
+            self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
+            return MockResult([])
+        if "MD_DELETE_DIVE" in query:
+            self.dive_state.unlink(missing_ok=True)
+            return MockResult([])
+
+        raise RuntimeError(f"Unexpected fake duckdb query: {query}")
+
+    def close(self) -> None:
+        return None
+
+
+def connect(database: str, *, config: dict[str, str] | None = None) -> MockConnection:
+    if database != "md:":
+        raise RuntimeError(f"unexpected database: {database}")
+    return MockConnection(config)
+PY
+
 export PATH="${FAKE_BIN}:${PATH}"
+export PYTHONPATH="${FAKE_PYTHON}${PYTHONPATH:+:${PYTHONPATH}}"
 export MOCK_DUCKDB_STATE_DIR="$TMP_DIR"
 export SHARE_RESOLVE_ATTEMPTS=1
 export SHARE_RESOLVE_SLEEP_SECONDS=0
@@ -167,7 +265,7 @@ if md-blueprints validate --root "$INVALID_SCHEMA_ROOT" > "${TMP_DIR}/invalid-sc
   echo "Invalid schema field unexpectedly passed" >&2
   exit 1
 fi
-grep -q "unexpectedField is not allowed" "${TMP_DIR}/invalid-schema.out"
+grep -q "Unknown field 'unexpectedField'" "${TMP_DIR}/invalid-schema.out"
 
 echo "==> Smoke testing blueprint template scaffold"
 SCAFFOLD_ROOT="${TMP_DIR}/scaffold"
@@ -304,6 +402,7 @@ MD_BLUEPRINTS_LATEST_VERSION="$(md-blueprints --version)" md-blueprints check-up
 grep -q "latest md-blueprints" "${TMP_DIR}/updates.out"
 
 echo "==> Verifying no Python bytecode artifacts"
+find src tests -name __pycache__ -type d -prune -exec rm -rf {} +
 PY_ARTIFACT="$(find . \
   -path ./.venv -prune -o \
   -path './src/*.egg-info' -prune -o \

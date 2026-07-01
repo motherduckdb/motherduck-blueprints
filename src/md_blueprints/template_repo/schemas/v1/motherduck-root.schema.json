@@ -1,0 +1,86 @@
+{
+  "$id": "motherduck-root.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "repository", "include", "targets"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "requiredCliVersion": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9-]*$" }
+      }
+    },
+    "include": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/variable" }
+    },
+    "targets": {
+      "type": "object",
+      "required": ["preview", "prod"],
+      "additionalProperties": { "$ref": "#/$defs/target" },
+      "properties": {
+        "preview": { "$ref": "#/$defs/target" },
+        "prod": { "$ref": "#/$defs/target" }
+      }
+    }
+  },
+  "$defs": {
+    "variable": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "required": ["default"],
+          "properties": {
+            "description": { "type": "string" },
+            "default": {}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "minLength": 1 },
+        "default": { "type": "boolean" },
+        "environment": { "type": "string" },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tokenEnvVar": { "type": "string", "minLength": 1 },
+            "identity": { "type": "string", "minLength": 1 }
+          }
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/variable" }
+        },
+        "policies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "disableSchedules": { "type": "boolean" },
+            "cleanup": { "type": "boolean" },
+            "requireBranchSlugInDataResources": { "type": "boolean" },
+            "serviceAccountRecommended": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

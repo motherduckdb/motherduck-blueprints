@@ -1,35 +1,26 @@
 # Set Up Your Repository
 
-This repository is a reusable MotherDuck Blueprints template. Copy it into your GitHub organization, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
+Use `md-blueprints init` to generate a MotherDuck Blueprints repository, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
 
 Blueprints are project-level packages. Each package should represent one logical project or data product, not an entire organization, service account, user, or database owner. Do not create top-level `dives/`, `flights/`, or `bundles/` directories in your repo.
 
-## 1. Copy the Template Repo
+## 1. Generate the Repository
 
-Create your repository from the template.
-
-Recommended GitHub flow once `motherduckdb/motherduck-blueprints` is public:
-
-1. Open the template repository.
-2. Click "Use this template".
-3. Select your GitHub organization.
-4. Name the new repository, for example `motherduck-blueprints`.
-5. Create the repository as private unless you want it public.
-
-CLI alternative:
+Install the released CLI and generate the customer file set:
 
 ```bash
-gh repo create <your-org>/motherduck-blueprints --private --template motherduckdb/motherduck-blueprints
-git clone git@github.com:<your-org>/motherduck-blueprints.git
+python3 -m venv .venv
+.venv/bin/python -m pip install "md-blueprints==0.3.0"
+.venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
 
-If GitHub template mode is not enabled yet, copy by clone and push:
+Create a GitHub repository and push the generated files:
 
 ```bash
-git clone git@github.com:motherduckdb/motherduck-blueprints.git motherduck-blueprints
-cd motherduck-blueprints
-git remote remove origin
+git init
+git add .
+git commit -m "Initial MotherDuck Blueprints repo"
 gh repo create <your-org>/motherduck-blueprints --private --source . --remote origin --push
 ```
 
@@ -83,11 +74,10 @@ Before touching MotherDuck, run:
 ```bash
 make setup
 make validate
-make mock-test
-make example-smoke
+make preview-smoke wikipedia-pageviews
 ```
 
-`make validate` checks manifests and rendered targets. `make mock-test` shadows `duckdb` with a fake CLI and exercises planning, preview deploy, production deploy, cleanup dry-runs, cleanup, and failed-run reporting without contacting MotherDuck. `make example-smoke` creates, validates, builds, and destroys a generated starter blueprint in a temporary copy of the repo.
+`make validate` checks manifests and rendered targets. `make preview-smoke` builds a selected Dive locally without contacting MotherDuck.
 
 If you keep a Dive in the repo, also run a finite local preview build:
 
@@ -166,22 +156,28 @@ You can then:
 
 ## 11. Keep Tooling in Sync
 
-After repository creation, treat `md-blueprints` as the long-term upgrade surface. The template repo is the starting point, while the package and action carry schema validation, deployment behavior, and migrations.
+After repository creation, treat `md-blueprints` as the long-term upgrade surface. The generated files are the starting point, while the package and action carry schema validation, deployment behavior, and migrations.
 
 Pin the package locally or in CI:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install ./md_blueprints-0.2.0-py3-none-any.whl
+.venv/bin/python -m pip install "md-blueprints==0.3.0"
 .venv/bin/md-blueprints validate
 ```
 
-Download the wheel from the matching GitHub Release. The action tag is the preferred CI path for customer repositories.
+Use the deploy extra for live local plan/deploy/cleanup commands. It includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
+
+```bash
+.venv/bin/python -m pip install "md-blueprints[deploy]==0.3.0"
+```
+
+The action tag is the preferred CI path for customer repositories.
 
 When using the repository action, pin the action major version in customer workflows:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v1
+- uses: motherduckdb/motherduck-blueprints@v0
   with:
     command: validate
 ```
@@ -195,4 +191,4 @@ md-blueprints migrate --to latest
 
 Review migration output before applying it with `--write`.
 
-When you change repository commands, resource behavior, target policies, or package layout, update the matching docs in the same pull request and add an entry to `CHANGELOG.md`.
+When you change repository commands, resource behavior, target policies, or package layout, update the matching docs in the same pull request.

@@ -73,6 +73,10 @@ package-smoke: ## Build and smoke test the installable md-blueprints package
 release-check: ## Verify package version metadata and optional release tag
 	./scripts/check-release-version.sh "$(TAG)"
 
+.PHONY: release-external-check
+release-external-check: ## Verify PyPI and generated-template repository setup for tagged releases
+	./scripts/check-release-external-setup.sh
+
 # -- Help ---------------------------------------------------------------------
 
 .PHONY: help

@@ -8,14 +8,38 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Added
 
+- Added Dependabot configuration for customer workflow action updates.
+- Added a scheduled Blueprints Doctor workflow that opens a tracking issue when the pinned action or schema needs attention.
+- Added `md-blueprints init <dir>` and packaged customer-template assets for generated repository setup.
+- Added `requiredCliVersion` support in the root manifest.
+- Added versioned packaged schema directories under `src/md_blueprints/schemas/v1/` with mirrored editor schemas under `schemas/v1/`.
+- Added pytest coverage and strict mypy checking for the packaged CLI modules.
+- Added deploy, template-rendering, include-glob, and CLI exit-code unit coverage for the module split.
+- Added migration registry tests that simulate a future schema migration diff, write, and idempotency flow.
 - Added the versioned `md-blueprints` Python package, console command, packaged schema resources, and GitHub Action wrapper.
 - Added `md-blueprints doctor`, `md-blueprints check-updates`, and `md-blueprints migrate --to latest` as schema maintenance surfaces.
 - Added tooling and schema versioning documentation for package pinning, compatibility policy, and customer upgrade flow.
 - Added package and release-artifact smoke tests for the wheel, sdist, packaged schemas, and local GitHub Action wrapper.
+- Added release external-setup preflight checks for the PyPI project and generated template repository.
 - Added release version checks and GitHub Release publishing for tagged package artifacts.
+- Added PyPI trusted publishing to the release workflow.
 
 ### Changed
 
+- Converted customer-facing deploy and cleanup workflows to run the pinned `motherduckdb/motherduck-blueprints` action instead of installing the local checkout.
+- Kept tooling-repository deploy and doctor workflows on the local action checkout while generated customer workflows use the stamped public action tag.
+- Updated the action to expose raw CLI stdout and install the deploy extra only for live commands.
+- Replaced the deployer DuckDB CLI shell-out with the DuckDB Python package and its live MotherDuck runtime dependencies.
+- Split the CLI implementation into schema, template, project, deploy, migration, and maintenance modules.
+- Updated release publishing to maintain a floating major tag such as `v0`.
+- Updated release publishing to generate the customer template and push it to `motherduckdb/blueprints-template`, failing tagged releases when the required template repository or token is missing.
+- Improved validation errors for unsupported schema versions and unknown fields so they name the action/package upgrade path.
+- Documented and implemented escaped literal template placeholders with `\${...}`.
+- Updated docs and local setup guidance for PyPI installs, action `@v0`, the Python DuckDB runtime, and the schema compatibility matrix.
+- Updated customer docs and template docs to use generated repository setup instead of cloning the tooling repository.
+- Made preview Flight updates idempotent when schedules are already disabled, aligned Flight run SQL with live MotherDuck function signatures, and surfaced live SQL failures as CLI errors instead of tracebacks.
+- Added the MotherDuck runtime timezone dependency to generated starter Flight requirements.
+- Updated generated starter Flights to read share URLs through `MD_LIST_DATABASE_SHARES()`.
 - Switched CI and deployment workflows to install and invoke the packaged `md-blueprints` command.
 - Kept `tools/md_blueprints` as a compatibility wrapper around the package command.
 - Documented that the template, CLI package, and action stay in one repository for this release, with modularization and repository split as follow-up criteria.
