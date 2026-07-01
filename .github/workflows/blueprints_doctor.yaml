@@ -19,7 +19,7 @@ jobs:
       - name: Run blueprints doctor
         id: doctor
         continue-on-error: true
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         with:
           command: doctor
           args: --format github-summary --check-updates

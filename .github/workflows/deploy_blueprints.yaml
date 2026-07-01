@@ -82,7 +82,7 @@ jobs:
       - name: Compute changed blueprints for pull request
         id: changed-pr
         if: ${{ inputs.blueprints == '' && github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         with:
           command: changed
           args: --base origin/${{ github.base_ref }} --head HEAD --json
@@ -104,7 +104,7 @@ jobs:
       - name: Compute changed blueprints for push
         id: changed-push
         if: ${{ inputs.blueprints == '' && github.event_name == 'push' }}
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         with:
           command: changed
           args: ${{ steps.push-range.outputs.args }}
@@ -112,7 +112,7 @@ jobs:
       - name: Select all blueprints for manual dispatch
         id: changed-all
         if: ${{ inputs.blueprints == '' && github.event_name == 'workflow_dispatch' }}
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         with:
           command: changed
           args: --all --json
@@ -141,7 +141,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: motherduckdb/motherduck-blueprints@v0
+      - uses: ./
         with:
           command: validate
 
@@ -188,7 +188,7 @@ jobs:
       - name: Plan preview blueprints
         id: plan-preview
         if: steps.preview-token.outputs.available == 'true'
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -198,7 +198,7 @@ jobs:
       - name: Deploy preview blueprints
         id: deploy-preview
         if: steps.preview-token.outputs.available == 'true'
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -288,7 +288,7 @@ jobs:
       - name: Plan production blueprints
         id: plan-prod
         if: steps.prod-token.outputs.available == 'true'
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -309,7 +309,7 @@ jobs:
 
       - name: Deploy production blueprints
         if: steps.prod-token.outputs.available == 'true'
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

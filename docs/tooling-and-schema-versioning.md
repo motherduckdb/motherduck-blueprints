@@ -144,7 +144,7 @@ Before the first stable customer handoff, split the generated customer template 
 - Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
 - Template repo: `motherduck.yml`, `blueprints/`, `context/`, customer docs, thin Makefile, customer workflows, Dependabot, CODEOWNERS, and `.gitignore`.
 
-The release workflow generates `motherduckdb/blueprints-template` from the same `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift.
+The release workflow generates `motherduckdb/blueprints-template` from the same `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout so pre-release PRs can validate before the floating major tag exists; generated customer workflows use the stamped public action tag.
 
 ## Agent Maintenance Map
 

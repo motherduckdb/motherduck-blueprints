@@ -27,6 +27,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ### Changed
 
 - Converted customer-facing deploy and cleanup workflows to run the pinned `motherduckdb/motherduck-blueprints` action instead of installing the local checkout.
+- Kept tooling-repository deploy and doctor workflows on the local action checkout while generated customer workflows use the stamped public action tag.
 - Updated the action to expose raw CLI stdout and install the deploy extra only for live commands.
 - Replaced the deployer DuckDB CLI shell-out with the DuckDB Python package.
 - Split the CLI implementation into schema, template, project, deploy, migration, and maintenance modules.

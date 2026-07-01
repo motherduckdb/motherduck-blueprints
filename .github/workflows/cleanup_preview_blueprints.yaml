@@ -51,7 +51,7 @@ jobs:
 
       - name: Cleanup preview blueprints
         if: steps.cleanup-token.outputs.available == 'true'
-        uses: motherduckdb/motherduck-blueprints@v0
+        uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
