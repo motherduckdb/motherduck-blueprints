@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from md_blueprints.deploy import Deployer, PlanRecord, quote_ident
-from md_blueprints.project import Project, RenderedBlueprint
+from md_blueprints.project import CommandError, Project, RenderedBlueprint
 from md_blueprints.schema import ValidationError
 
 
@@ -91,6 +91,46 @@ def test_deploy_plan_is_idempotent_for_same_live_state(monkeypatch: pytest.Monke
     assert first == second
     assert {record["action"] for record in first if record["type"] in {"flight", "dive"}} == {"update"}
     assert {record["action"] for record in first if record["type"] == "share"} == {"present"}
+
+
+def test_flight_update_retries_without_schedule_when_existing_flight_is_unscheduled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        if "MD_UPDATE_FLIGHT" in statement and '"schedule_cron"' in statement:
+            raise CommandError("MotherDuck SQL failed: Invalid Input Error: Cannot clear schedule: Flight has no schedule")
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    row = deployer._deploy_flight(
+        {
+            "name": "preview-loader",
+            "sourcePath": "src/flight.py",
+            "requirementsPath": "src/requirements.txt",
+            "scheduleCron": "",
+            "runOnDeploy": False,
+        },
+        "preview",
+        PlanRecord(
+            blueprint="ops",
+            type="flight",
+            key="loader",
+            name="preview-loader",
+            action="update",
+            exists=True,
+            id="1a4ea2e6-0997-43ea-afe9-78c15c62220e",
+        ),
+    )
+
+    assert row == "| preview-loader | 1a4ea2e6-0997-43ea-afe9-78c15c62220e | false |"
+    assert len(calls) == 2
+    assert '"schedule_cron"' in calls[0]
+    assert '"schedule_cron"' not in calls[1]
 
 
 def test_sql_identifier_quoting_rejects_unsafe_database_names() -> None:

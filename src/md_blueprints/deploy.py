@@ -403,8 +403,10 @@ class Deployer:
         config_sql = sql_map(config)
         source_sql = f"(SELECT content FROM read_text({sql_string(flight['sourcePath'])}))"
         requirements_sql = f"(SELECT content FROM read_text({sql_string(flight['requirementsPath'])}))"
+        schedule_cron = str(flight.get("scheduleCron", ""))
+        schedule_arg = f'"schedule_cron" => {sql_string(schedule_cron)}'
         common_args = [
-            f'"schedule_cron" => {sql_string(flight.get("scheduleCron", ""))}',
+            schedule_arg,
             f'"flight_secret_names" => {sql_array(secrets)}',
             f'"config" => {config_sql}',
             f'"name" => {name_sql}',
@@ -429,11 +431,21 @@ class Deployer:
             flight_id = ids[0]
         elif plan.action == "update":
             print(f"  Updating existing flight '{name}' ({plan.id})...", file=sys.stderr)
-            self._sql(
-                f"SET VARIABLE source_code = {source_sql}; "
-                f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {common_args_sql});"
-            )
+            try:
+                self._sql(
+                    f"SET VARIABLE source_code = {source_sql}; "
+                    f"SET VARIABLE requirements_txt = {requirements_sql}; "
+                    f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {common_args_sql});"
+                )
+            except CommandError as exc:
+                if schedule_cron or "Cannot clear schedule: Flight has no schedule" not in str(exc):
+                    raise
+                args_without_schedule_sql = ", ".join(arg for arg in common_args if arg != schedule_arg)
+                self._sql(
+                    f"SET VARIABLE source_code = {source_sql}; "
+                    f"SET VARIABLE requirements_txt = {requirements_sql}; "
+                    f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {args_without_schedule_sql});"
+                )
             flight_id = str(plan.id)
         else:
             raise ValidationError(f"Cannot deploy Flight {name} with plan action {plan.action}")
@@ -599,10 +611,14 @@ class Deployer:
                 "Install md-blueprints[deploy] or run through the MotherDuck Blueprints action."
             ) from exc
 
-        connection = duckdb.connect("md:", config=self.sql_env)
+        connection = None
         try:
+            connection = duckdb.connect("md:", config=self.sql_env)
             result = connection.execute(statement)
             rows = result.fetchall()
+        except duckdb.Error as exc:
+            raise CommandError(f"MotherDuck SQL failed: {exc}") from exc
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
         return format_sql_rows(rows).strip()
