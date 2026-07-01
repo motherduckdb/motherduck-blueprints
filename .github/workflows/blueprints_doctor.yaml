@@ -1,0 +1,60 @@
+name: Blueprints Doctor
+
+permissions:
+  contents: read
+  issues: write
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  doctor:
+    name: Check Blueprint Tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run blueprints doctor
+        id: doctor
+        continue-on-error: true
+        uses: motherduckdb/motherduck-blueprints@v0
+        with:
+          command: doctor
+          args: --format github-summary --check-updates
+
+      - name: Open issue if upgrade is needed
+        if: steps.doctor.outcome == 'failure'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          DOCTOR_OUTPUT: ${{ steps.doctor.outputs.stdout }}
+        with:
+          script: |
+            const title = 'MotherDuck Blueprints upgrade needed';
+            const marker = '<!-- motherduck-blueprints-upgrade-needed -->';
+            const body = `${marker}
+            ${process.env.DOCTOR_OUTPUT || 'The scheduled MotherDuck Blueprints doctor check failed. Bump the pinned action and run md-blueprints doctor locally.'}`.replace(/^ +/gm, '');
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: undefined,
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }

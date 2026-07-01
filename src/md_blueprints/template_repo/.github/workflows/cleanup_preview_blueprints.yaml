@@ -1,0 +1,59 @@
+name: Cleanup Preview Blueprints
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types:
+      - closed
+  delete:
+
+jobs:
+  cleanup:
+    name: Delete Preview Blueprints for Branch
+    if: github.event_name == 'pull_request' || github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Resolve cleanup branch
+        id: cleanup-branch
+        shell: bash
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          DELETED_BRANCH: ${{ github.event.ref }}
+        run: |
+          set -euo pipefail
+          branch_name="${PR_BRANCH:-$DELETED_BRANCH}"
+          if [ -z "$branch_name" ]; then
+            echo "No branch name available for cleanup"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "branch=${branch_name}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check cleanup token
+        id: cleanup-token
+        if: steps.cleanup-branch.outputs.available == 'true'
+        shell: bash
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Preview cleanup skipped because MOTHERDUCK_TOKEN is not configured for this repository."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cleanup preview blueprints
+        if: steps.cleanup-token.outputs.available == 'true'
+        uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: cleanup
+          args: --target preview --branch "${{ steps.cleanup-branch.outputs.branch }}"

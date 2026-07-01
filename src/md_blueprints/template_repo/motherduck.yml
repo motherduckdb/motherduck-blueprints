@@ -1,0 +1,37 @@
+schemaVersion: 1
+repository:
+  name: motherduck-blueprints
+
+include:
+  - blueprints/*/blueprint.yml
+
+variables:
+  preview_suffix:
+    description: Branch-scoped suffix for preview data resources.
+    default: _preview_${target.branch_slug}
+
+targets:
+  preview:
+    mode: preview
+    default: true
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions preview service account
+    policies:
+      disableSchedules: true
+      cleanup: true
+      requireBranchSlugInDataResources: true
+    variables:
+      share_visibility: HIDDEN
+
+  prod:
+    mode: production
+    environment: motherduck-production
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions production service account
+    policies:
+      serviceAccountRecommended: true
+    variables:
+      preview_suffix: ""
+      share_visibility: DISCOVERABLE

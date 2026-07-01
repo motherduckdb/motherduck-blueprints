@@ -57,6 +57,16 @@ fi
 "$INSTALL_VENV/bin/md-blueprints" validate --root "$REPO_ROOT"
 "$INSTALL_VENV/bin/md-blueprints" doctor --root "$REPO_ROOT"
 "$INSTALL_VENV/bin/md-blueprints" migrate --root "$REPO_ROOT" --to latest
+"$INSTALL_VENV/bin/md-blueprints" init "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" validate --root "$TMP_DIR/generated-template"
+grep -q "CLI_VERSION := ${CLI_VERSION}" "$TMP_DIR/generated-template/Makefile"
+grep -q "motherduckdb/motherduck-blueprints@v${CLI_VERSION%%.*}" "$TMP_DIR/generated-template/.github/workflows/deploy_blueprints.yaml"
+test -f "$TMP_DIR/generated-template/.dive-preview/.env.example"
+test -f "$TMP_DIR/generated-template/context/policies/.gitkeep"
+test -f "$TMP_DIR/generated-template/context/schemas/.gitkeep"
+test ! -e "$TMP_DIR/generated-template/src"
+test ! -e "$TMP_DIR/generated-template/pyproject.toml"
+test ! -e "$TMP_DIR/generated-template/CHANGELOG.md"
 
 "$INSTALL_VENV/bin/python" - "$CLI_VERSION" <<'PY'
 import importlib.metadata
@@ -70,8 +80,11 @@ if version != cli_version:
     raise SystemExit(f"installed metadata version {version} does not match md-blueprints --version {cli_version}")
 package = resources.files("md_blueprints")
 for schema in ["motherduck-root.schema.json", "blueprint.schema.json"]:
-    payload = package.joinpath("schemas", schema).read_text(encoding="utf-8")
+    payload = package.joinpath("schemas", "v1", schema).read_text(encoding="utf-8")
     json.loads(payload)
+template = package.joinpath("template_repo", "Makefile").read_text(encoding="utf-8")
+if "__MD_BLUEPRINTS_VERSION__" not in template:
+    raise SystemExit("template package data did not include unstamped Makefile")
 print(f"installed md-blueprints package OK: {version}")
 PY
 

@@ -12,11 +12,14 @@ on:
 jobs:
   build:
     name: Build Release Artifacts
+    if: github.repository == 'motherduckdb/motherduck-blueprints'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -38,7 +41,7 @@ jobs:
         with:
           command: validate
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: md-blueprints-dist
           path: dist/*
@@ -58,3 +61,94 @@ jobs:
               --title "$tag" \
               --notes "md-blueprints package artifacts for ${tag}."
           fi
+
+      - name: Update floating major tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          major="v$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "$major"
+
+  release-preflight:
+    name: Verify External Release Setup
+    needs: build
+    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Check PyPI and generated-template publishing setup
+        env:
+          TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
+          TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+          PYPI_PROJECT: md-blueprints
+        run: ./scripts/check-release-external-setup.sh
+
+  publish-pypi:
+    name: Publish PyPI Package
+    needs:
+      - build
+      - release-preflight
+    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: md-blueprints-dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
+
+  publish-template:
+    name: Publish Generated Template Repository
+    needs:
+      - build
+      - release-preflight
+    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: md-blueprints-dist
+          path: dist
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate template repository
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install dist/md_blueprints-*.whl
+          md-blueprints init generated-template
+
+      - name: Publish generated template repository
+        env:
+          TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
+          TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+        run: |
+          set -euo pipefail
+          if [ -z "$TEMPLATE_PUSH_TOKEN" ]; then
+            echo "BLUEPRINTS_TEMPLATE_PUSH_TOKEN is not configured; cannot publish generated template." >&2
+            exit 1
+          fi
+
+          cd generated-template
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "generate template for ${GITHUB_REF_NAME}"
+          git branch -M main
+          git remote add origin "https://x-access-token:${TEMPLATE_PUSH_TOKEN}@github.com/${TEMPLATE_REPOSITORY}.git"
+          git push --force origin main

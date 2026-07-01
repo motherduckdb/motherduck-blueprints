@@ -1,0 +1,82 @@
+schemaVersion: 1
+name: wikipedia-pageviews
+title: Wikipedia Pageviews
+description: Loads public Wikimedia pageview data with a Flight and visualizes it in a Dive.
+
+variables:
+  database:
+    description: MotherDuck database that stores Wikipedia pageview data.
+    default: wikipedia_pageviews
+  share:
+    description: MotherDuck share published by the loader Flight.
+    default: wikipedia_pageviews
+  schema:
+    description: Schema that contains the pageview tables and views.
+    default: main
+  articles:
+    description: Comma-separated Wikipedia article names to load.
+    default: DuckDB,MotherDuck,Wikipedia
+  days_back:
+    description: Number of complete days to load.
+    default: "30"
+  user_agent:
+    description: User-Agent sent to Wikimedia's public API.
+    default: motherduck-blueprints-wikipedia-pageviews/1.0 (https://github.com/motherduckdb/motherduck-blueprints)
+
+resources:
+  shares:
+    pageviews:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    pageviews_loader:
+      name: wikipedia-pageviews
+      source: src/flight.py
+      requirements: src/requirements.txt
+      scheduleCron: 17 6 * * *
+      accessTokenName: ""
+      runOnDeploy: true
+      waitForRun: success
+      secrets: []
+      config:
+        project: en.wikipedia.org
+        articles: ${var.articles}
+        access: all-access
+        agent: user
+        granularity: daily
+        days_back: ${var.days_back}
+        database: ${resources.shares.pageviews.database}
+        schema: ${var.schema}
+        share: ${resources.shares.pageviews.name}
+        share_access: ${resources.shares.pageviews.access}
+        share_visibility: ${resources.shares.pageviews.visibility}
+        user_agent: ${var.user_agent}
+      targets:
+        preview:
+          name: wikipedia-pageviews:${target.branch} (Preview)
+          scheduleCron: ""
+          runOnDeploy: true
+
+  dives:
+    pageviews:
+      title: Wikipedia Pageviews
+      source: src/dive.tsx
+      description: Recent daily pageviews for selected Wikipedia articles, loaded by a MotherDuck Flight from Wikimedia public data.
+      requiredResources:
+        - share: pageviews
+          alias: wikipedia_pageviews
+      targets:
+        preview:
+          title: Wikipedia Pageviews:${target.branch} (Preview)

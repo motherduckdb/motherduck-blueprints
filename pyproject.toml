@@ -4,12 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-blueprints"
-version = "0.2.0"
+version = "0.3.0"
 description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "packaging>=24.0",
   "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+deploy = [
+  "duckdb>=1.1",
+]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -19,4 +30,18 @@ md-blueprints = "md_blueprints.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-md_blueprints = ["schemas/*.json"]
+md_blueprints = [
+  "schemas/**/*.json",
+  "template_repo/**/*",
+  "template_repo/.dive-preview/.env.example",
+  "template_repo/.dive-preview/**/*",
+  "template_repo/.github/**/*",
+  "template_repo/.gitignore",
+  "template_repo/context/policies/.gitkeep",
+  "template_repo/context/schemas/.gitkeep",
+]
+
+[tool.mypy]
+exclude = [
+  "src/md_blueprints/template_repo/",
+]

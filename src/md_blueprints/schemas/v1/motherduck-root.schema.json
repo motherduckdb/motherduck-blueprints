@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "const": 1 },
+    "requiredCliVersion": { "type": "string", "minLength": 1 },
     "repository": {
       "type": "object",
       "required": ["name"],
