@@ -39,6 +39,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Updated docs and local setup guidance for PyPI installs, action `@v0`, the Python DuckDB runtime, and the schema compatibility matrix.
 - Updated customer docs and template docs to use generated repository setup instead of cloning the tooling repository.
 - Allowed the release external-setup preflight to accept a PyPI pending trusted publisher before the first package publish.
+- Required the generated-template token preflight to prove push permission, catching unapproved fine-grained token requests before release.
 - Made preview Flight updates idempotent when schedules are already disabled, aligned Flight run SQL with live MotherDuck function signatures, and surfaced live SQL failures as CLI errors instead of tracebacks.
 - Added the MotherDuck runtime timezone dependency to generated starter Flight requirements.
 - Updated generated starter Flights to read share URLs through `MD_LIST_DATABASE_SHARES()`.

@@ -28,6 +28,14 @@ def test_release_external_check_accepts_pending_pypi_publisher(tmp_path: Path) -
     assert "pending trusted publisher" in result.stdout
 
 
+def test_release_external_check_requires_template_push_permission(tmp_path: Path) -> None:
+    result = run_release_external_check(tmp_path, pypi_status=200, template_push=False)
+
+    assert result.returncode == 1
+    assert "cannot push" in result.stderr
+    assert "approve any pending org request" in result.stderr
+
+
 def test_release_external_check_can_require_registered_pypi_project(tmp_path: Path) -> None:
     result = run_release_external_check(
         tmp_path,
@@ -43,6 +51,7 @@ def run_release_external_check(
     tmp_path: Path,
     *,
     pypi_status: int,
+    template_push: bool = True,
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
@@ -59,7 +68,7 @@ if [ "$1" != "api" ] || [ "$2" != "repos/motherduckdb/blueprints-template" ]; th
   echo "unexpected gh invocation: $*" >&2
   exit 2
 fi
-printf '{"is_template":true}'
+printf '{"is_template":true,"permissions":{"push":%s}}' "${GH_TEMPLATE_PUSH}"
 """,
         encoding="utf-8",
     )
@@ -70,6 +79,7 @@ printf '{"is_template":true}'
             **os.environ,
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "TEMPLATE_PUSH_TOKEN": "template-token",
+            "GH_TEMPLATE_PUSH": "true" if template_push else "false",
             "PYPI_JSON_BASE_URL": base_url,
         }
         if extra_env is not None:

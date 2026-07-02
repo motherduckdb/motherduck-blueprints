@@ -37,6 +37,11 @@ repository = sys.argv[1]
 payload = json.loads(sys.argv[2])
 if payload.get("is_template") is not True:
     raise SystemExit(f"{repository} exists but is not marked as a GitHub template repository")
+if payload.get("permissions", {}).get("push") is not True:
+    raise SystemExit(
+        f"BLUEPRINTS_TEMPLATE_PUSH_TOKEN can read {repository}, but cannot push to it. "
+        "Grant Contents: Read and write access to the template repository and approve any pending org request."
+    )
 print(f"Template repository OK: {repository}")
 PY
 
