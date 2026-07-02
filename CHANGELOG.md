@@ -24,9 +24,6 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Added release version checks and GitHub Release publishing for tagged package artifacts.
 - Added PyPI trusted publishing to the release workflow.
 - Added a generated-template drift test that compares `md-blueprints init` output with the mirrored repository paths.
-
-### Added
-
 - Added `CONTRIBUTING.md` and `SECURITY.md`, including guidance that pull requests belong in this repository rather than the generated `blueprints-template` repository.
 - Added a `make install-deploy` target to the tooling repository Makefile, matching the generated customer Makefile.
 - Added mock deployment coverage for live Flight signatures: named `MD_RUN_FLIGHT`/`MD_DELETE_FLIGHT` arguments and the unscheduled preview Flight update retry path (ports the remaining coverage from PR #16).
