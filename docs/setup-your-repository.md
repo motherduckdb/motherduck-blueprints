@@ -10,7 +10,7 @@ Install the released CLI and generate the customer file set:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints==0.3.0"
+.venv/bin/python -m pip install md-blueprints
 .venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
@@ -158,19 +158,20 @@ You can then:
 
 After repository creation, treat `md-blueprints` as the long-term upgrade surface. The generated files are the starting point, while the package and action carry schema validation, deployment behavior, and migrations.
 
-Pin the package locally or in CI:
+The generated `Makefile` pins the CLI version in `CLI_VERSION`, so local installs stay aligned with the release that generated the repository. Install and validate with:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints==0.3.0"
-.venv/bin/md-blueprints validate
+make setup
+make validate
 ```
 
-Use the deploy extra for live local plan/deploy/cleanup commands. It includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
+Use `make install-deploy` before live local plan/deploy/cleanup commands. It installs the deploy extra, which includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
 
 ```bash
-.venv/bin/python -m pip install "md-blueprints[deploy]==0.3.0"
+make install-deploy
 ```
+
+To upgrade, bump `CLI_VERSION` in `Makefile` together with the action tag in `.github/workflows/`.
 
 The action tag is the preferred CI path for customer repositories.
 

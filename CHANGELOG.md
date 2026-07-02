@@ -25,8 +25,18 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Added PyPI trusted publishing to the release workflow.
 - Added a generated-template drift test that compares `md-blueprints init` output with the mirrored repository paths.
 
+### Added
+
+- Added `CONTRIBUTING.md` and `SECURITY.md`, including guidance that pull requests belong in this repository rather than the generated `blueprints-template` repository.
+- Added a `make install-deploy` target to the tooling repository Makefile, matching the generated customer Makefile.
+- Added mock deployment coverage for live Flight signatures: named `MD_RUN_FLIGHT`/`MD_DELETE_FLIGHT` arguments and the unscheduled preview Flight update retry path (ports the remaining coverage from PR #16).
+
 ### Changed
 
+- Removed hardcoded `md-blueprints` version pins from the setup and versioning docs; local installs now go through the Makefile (`make setup`, `make install-deploy`), which owns the version pin in generated repositories.
+- Changed template repository publishing to preserve `blueprints-template` history instead of force-pushing, and to tag and create a release on the template repository for each version so customer repositories can diff releases.
+- Linked Flights, Dives, shares, and service accounts to their MotherDuck product docs pages from the repository and template READMEs.
+- Aligned `actions/download-artifact` with the Dependabot-bumped `actions/upload-artifact` major version in the release workflow.
 - Rewrote the repository `README.md` for a customer-facing audience: clarified what Blueprints is, documented the relationship between this repository, the `md-blueprints` package/action, and the generated `blueprints-template` repository, added the template-based quickstart, and removed hardcoded version pins. Added the missing Node.js prerequisite to the repository and template READMEs.
 - Converted customer-facing deploy and cleanup workflows to run the pinned `motherduckdb/motherduck-blueprints` action instead of installing the local checkout.
 - Kept tooling-repository deploy and doctor workflows on the local action checkout while generated customer workflows use the stamped public action tag.
