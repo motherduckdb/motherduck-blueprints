@@ -1,6 +1,6 @@
 # MotherDuck Blueprints
 
-This repository deploys MotherDuck Flights, Dives, shares, and future context assets from GitHub. Pull requests validate blueprints, deploy branch-scoped previews, and leave a PR comment with the deployment plan and preview links. Merges to `main` deploy stable production resources through the `motherduck-production` GitHub Environment.
+This repository deploys MotherDuck [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), [shares](https://motherduck.com/docs/key-tasks/sharing-data/sharing-overview/), and future context assets from GitHub. Pull requests validate blueprints, deploy branch-scoped previews, and leave a PR comment with the deployment plan and preview links. Merges to `main` deploy stable production resources through the `motherduck-production` GitHub Environment.
 
 If you are reading this in `motherduckdb/blueprints-template`, do not open pull requests there. That repository is generated from `motherduckdb/motherduck-blueprints` on each release, and direct edits are overwritten.
 
@@ -9,7 +9,7 @@ If you are reading this in `motherduckdb/blueprints-template`, do not open pull 
 - Python 3.10 or newer.
 - Node.js 20 or newer (only needed to preview Dives locally).
 - GitHub Actions secrets and a protected `motherduck-production` environment.
-- A MotherDuck service account token for CI deployments.
+- A MotherDuck [service account](https://motherduck.com/docs/key-tasks/service-accounts-guide/) token for CI deployments.
 
 ## Quickstart
 

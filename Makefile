@@ -17,6 +17,11 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	@echo ""
 	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
 
+.PHONY: install-deploy
+install-deploy: ## Install CLI with live MotherDuck deploy dependencies
+	python3 -m venv .venv
+	.venv/bin/python -m pip install -e ".[deploy]"
+
 .PHONY: preview
 preview: ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)
 	@test -n "$(ARG)" || { echo "Usage: make preview <blueprint-name>"; exit 1; }

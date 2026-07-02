@@ -102,6 +102,10 @@ import os
 from pathlib import Path
 
 
+class Error(Exception):
+    """Mirrors duckdb.Error so deploy retry paths can be exercised."""
+
+
 class MockResult:
     def __init__(self, rows: list[tuple[str, ...]]) -> None:
         self._rows = rows
@@ -145,16 +149,25 @@ class MockConnection:
             if self.flight_state.exists():
                 return MockResult([(self.flight_state.read_text().strip(),)])
             return MockResult([])
-        if "MD_CREATE_FLIGHT" in query or "MD_UPDATE_FLIGHT" in query:
+        if "MD_CREATE_FLIGHT" in query:
+            self.flight_state.write_text("00000000-0000-0000-0000-000000000001", encoding="utf-8")
+            return MockResult([])
+        if "MD_UPDATE_FLIGHT" in query:
+            if "\"schedule_cron\" => ''" in query:
+                raise Error("Cannot clear schedule: Flight has no schedule")
             self.flight_state.write_text("00000000-0000-0000-0000-000000000001", encoding="utf-8")
             return MockResult([])
         if "MD_RUN_FLIGHT" in query:
+            if '"config" =>' not in query or '"flight_id" =>' not in query:
+                raise Error("MD_RUN_FLIGHT must be called with named config and flight_id arguments")
             current_run_number = int(self.run_state.read_text().strip()) if self.run_state.exists() else 0
             self.run_state.write_text(str(current_run_number + 1), encoding="utf-8")
             return MockResult([])
         if "MD_GET_FLIGHT_LOGS" in query:
             return MockResult([("mock failure log tail",)])
         if "MD_DELETE_FLIGHT" in query:
+            if '"flight_id" =>' not in query:
+                raise Error("MD_DELETE_FLIGHT must be called with a named flight_id argument")
             self.flight_state.unlink(missing_ok=True)
             self.run_state.unlink(missing_ok=True)
             return MockResult([])
@@ -356,6 +369,10 @@ grep -q "#### Wikipedia Pageviews" "${TMP_DIR}/preview.out"
 grep -q "wikipedia-pageviews:feature/mock-test (Preview)" "${TMP_DIR}/preview.out"
 grep -q "wikipedia_pageviews_preview_feature_mock_test" "${TMP_DIR}/preview.out"
 grep -q "Wikipedia Pageviews:feature/mock-test (Preview)" "${TMP_DIR}/preview.out"
+
+echo "==> Mock updating unscheduled preview blueprint"
+md-blueprints deploy --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/preview-update.out" 2>&1
+grep -q "Updating existing flight 'wikipedia-pageviews:feature/mock-test (Preview)'" "${TMP_DIR}/preview-update.out"
 
 echo "==> Mock deploying production blueprint"
 md-blueprints deploy --target prod --blueprints wikipedia-pageviews > "${TMP_DIR}/production.out"

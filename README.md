@@ -2,7 +2,7 @@
 
 MotherDuck Blueprints lets you manage MotherDuck resources the same way you manage application code: in a Git repository, reviewed through pull requests, and deployed by CI.
 
-A blueprint is a small package that declares one data project — its Flights (scheduled Python jobs), Dives (interactive data apps), and shares — in a `blueprint.yml` manifest next to its source code. From there:
+A blueprint is a small package that declares one data project — its [Flights](https://motherduck.com/docs/concepts/flights/) (scheduled Python jobs), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/) (interactive data apps), and [shares](https://motherduck.com/docs/key-tasks/sharing-data/sharing-overview/) — in a `blueprint.yml` manifest next to its source code. From there:
 
 - **Pull requests** validate every blueprint, deploy branch-scoped previews, and leave a comment on the PR with the deployment plan and preview links.
 - **Merges to `main`** deploy stable production resources through a protected GitHub Environment.
@@ -23,7 +23,7 @@ This repository is the source for the Blueprints tooling. As a user, you interac
 - Python 3.10 or newer.
 - Node.js 20 or newer (only needed to preview Dives locally).
 - A GitHub repository with Actions enabled.
-- A MotherDuck service account token for CI deployments, so deployed resources are owned by automation rather than by one person's account.
+- A MotherDuck [service account](https://motherduck.com/docs/key-tasks/service-accounts-guide/) token for CI deployments, so deployed resources are owned by automation rather than by one person's account.
 
 ## Quickstart
 
@@ -141,3 +141,7 @@ Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which inclu
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): package/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): the end-to-end example blueprint.
 - [MotherDuck documentation](https://motherduck.com/docs/getting-started) and the [MotherDuck Community Slack](https://slack.motherduck.com/) for product questions and support.
+
+## Contributing
+
+Issues and pull requests are welcome in this repository — see [CONTRIBUTING.md](CONTRIBUTING.md). Don't open pull requests against `blueprints-template`; it is regenerated on each release. To report a security issue, see [SECURITY.md](SECURITY.md).

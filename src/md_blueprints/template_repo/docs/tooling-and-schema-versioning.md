@@ -9,19 +9,14 @@ Customers should upgrade by bumping the package or action pin. They should not n
 
 ## Package and Action Pinning
 
-Install the CLI from PyPI:
+Generated repositories pin the CLI version in the `Makefile` `CLI_VERSION` variable, which `make setup` installs from PyPI. Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints==__MD_BLUEPRINTS_VERSION__"
-.venv/bin/md-blueprints validate
+make setup
+make install-deploy
 ```
 
-Install the deploy extra for live local `plan`, `deploy`, and `cleanup` commands. It includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
-
-```bash
-.venv/bin/python -m pip install "md-blueprints[deploy]==__MD_BLUEPRINTS_VERSION__"
-```
+Upgrade by bumping `CLI_VERSION` in `Makefile` together with the action tag in `.github/workflows/`.
 
 Customer workflows should pin the action major. While the package is `0.x`, the floating major tag is `v0`; switch examples to `v1` when the first stable customer contract is cut.
 
