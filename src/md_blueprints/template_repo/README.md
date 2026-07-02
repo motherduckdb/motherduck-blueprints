@@ -7,6 +7,7 @@ If you are reading this in `motherduckdb/blueprints-template`, do not open pull 
 ## Prerequisites
 
 - Python 3.10 or newer.
+- Node.js 20 or newer (only needed to preview Dives locally).
 - GitHub Actions secrets and a protected `motherduck-production` environment.
 - A MotherDuck service account token for CI deployments.
 

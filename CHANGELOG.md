@@ -27,6 +27,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Rewrote the repository `README.md` for a customer-facing audience: clarified what Blueprints is, documented the relationship between this repository, the `md-blueprints` package/action, and the generated `blueprints-template` repository, added the template-based quickstart, and removed hardcoded version pins. Added the missing Node.js prerequisite to the repository and template READMEs.
 - Converted customer-facing deploy and cleanup workflows to run the pinned `motherduckdb/motherduck-blueprints` action instead of installing the local checkout.
 - Kept tooling-repository deploy and doctor workflows on the local action checkout while generated customer workflows use the stamped public action tag.
 - Updated the action to expose raw CLI stdout and install the deploy extra only for live commands.
