@@ -4,7 +4,7 @@ All notable changes to this repository are documented here.
 
 Update this file in every pull request. Add entries under `Unreleased` until the change is released or merged into a reusable template.
 
-## Unreleased
+## v0.3.0 - 2026-07-02
 
 ### Added
 
