@@ -149,7 +149,7 @@ For docs-only changes, run at least `git diff --check`. Run the full validation 
 - The `CI` workflow validates manifests, runs mock deployment tests, builds the included example Dive, and creates then destroys a generated starter blueprint.
 - Pull requests validate all manifests, discover changed blueprint packages from `motherduck.yml`, deploy the `preview` target, and comment with preview links.
 - Preview deployment runs a read-only plan immediately before deploy; the PR comment includes the plan and deployed links.
-- Preview cleanup runs when a PR closes or a branch is deleted. Dives are deleted before Flights, shares, and preview databases.
+- Preview cleanup runs when a PR closes or a branch is deleted. Cleanup events for the same branch are serialized, and already-removed resources are treated as success so simultaneous PR-close and branch-delete events remain idempotent. Dives are deleted before Flights, shares, and preview databases.
 - Pushes to `main` plan the `prod` target, write the plan to the GitHub job summary, then deploy through the protected `motherduck-production` environment.
 - No workflow file needs per-blueprint path filters or manual asset registration.
 
