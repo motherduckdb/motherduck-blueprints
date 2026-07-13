@@ -9,6 +9,10 @@ on:
       - closed
   delete:
 
+concurrency:
+  group: cleanup-preview-${{ github.event.pull_request.head.ref || github.event.ref }}
+  cancel-in-progress: false
+
 jobs:
   cleanup:
     name: Delete Preview Blueprints for Branch

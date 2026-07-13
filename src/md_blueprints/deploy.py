@@ -635,20 +635,35 @@ class Deployer:
                 print(f"No preview Dive found for '{record.name}'")
             elif (record.type, record.action) == ("dive", "delete"):
                 print(f"Deleting preview Dive {record.id} ({record.name})")
-                self._sql(f"FROM MD_DELETE_DIVE(id='{record.id}'::UUID)")
+                self._delete_if_present(f"FROM MD_DELETE_DIVE(id='{record.id}'::UUID)", f"preview Dive {record.name}")
             elif (record.type, record.action) == ("flight", "missing"):
                 print(f"No preview Flight found for '{record.name}'")
             elif (record.type, record.action) == ("flight", "delete"):
                 print(f"Deleting preview Flight {record.id} ({record.name})")
-                self._sql(f"FROM MD_DELETE_FLIGHT(\"flight_id\" => '{record.id}'::UUID);")
+                self._delete_if_present(
+                    f"FROM MD_DELETE_FLIGHT(\"flight_id\" => '{record.id}'::UUID);",
+                    f"preview Flight {record.name}",
+                )
             elif (record.type, record.action) == ("share", "missing"):
                 print(f"No preview share found for '{record.name}'")
             elif (record.type, record.action) == ("share", "drop_share"):
                 print(f"Dropping preview share {record.name}")
-                self._sql(f"FROM MD_DROP_DATABASE_SHARE({sql_string(record.name)});")
+                self._delete_if_present(
+                    f"FROM MD_DROP_DATABASE_SHARE({sql_string(record.name)});",
+                    f"preview share {record.name}",
+                )
             elif (record.type, record.action) == ("database", "drop_database"):
                 print(f"Dropping preview database {record.name}")
                 self._sql(f"DROP DATABASE IF EXISTS {quote_ident(record.name)};")
+
+    def _delete_if_present(self, statement: str, label: str) -> None:
+        try:
+            self._sql(statement)
+        except CommandError as exc:
+            message = str(exc).lower()
+            if "does not exist" not in message and "not found" not in message:
+                raise
+            print(f"Skipping {label}; it was already removed by another cleanup run")
 
     def _list_flight_ids(self, name: str) -> list[str]:
         return [

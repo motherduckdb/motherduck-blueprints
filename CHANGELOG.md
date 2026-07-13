@@ -16,6 +16,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Serialized cleanup events per branch and made delete operations idempotent when another cleanup run removes a resource after planning.
 - Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
 
 ## v0.3.0 - 2026-07-02

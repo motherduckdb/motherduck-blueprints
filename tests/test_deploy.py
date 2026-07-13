@@ -248,6 +248,46 @@ def test_cleanup_flight_delete_uses_named_motherduck_arguments(monkeypatch: pyte
     assert calls == ['FROM MD_DELETE_FLIGHT("flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID);']
 
 
+def test_cleanup_ignores_resources_already_removed_by_concurrent_run(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+
+    def missing_share(statement: str) -> str:
+        raise CommandError('MotherDuck SQL failed: Share with name "preview_share" does not exist!')
+
+    monkeypatch.setattr(deployer, "_sql", missing_share)
+
+    deployer._apply_cleanup_plan(
+        [
+            PlanRecord(
+                blueprint="ops",
+                type="share",
+                key="data",
+                name="preview_share",
+                action="drop_share",
+                exists=True,
+                id="md:_share/example/id",
+            )
+        ]
+    )
+
+    assert "already removed by another cleanup run" in capsys.readouterr().out
+
+
+def test_cleanup_still_surfaces_unrelated_delete_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+
+    def permission_error(statement: str) -> str:
+        raise CommandError("MotherDuck SQL failed: permission denied")
+
+    monkeypatch.setattr(deployer, "_sql", permission_error)
+
+    with pytest.raises(CommandError, match="permission denied"):
+        deployer._delete_if_present("FROM delete_resource()", "preview resource")
+
+
 def test_sql_identifier_quoting_rejects_unsafe_database_names() -> None:
     assert quote_ident("preview_database_1") == '"preview_database_1"'
 
