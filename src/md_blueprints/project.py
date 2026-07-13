@@ -12,6 +12,9 @@ from .schema import SchemaValidator, ValidationError, load_yaml, validate_requir
 from .template import Template
 
 
+DIVE_STATUSES = {"draft", "ready", "endorsed", "archived"}
+
+
 class CommandError(Exception):
     pass
 
@@ -309,6 +312,8 @@ class Project:
                 )
             )
             dive.setdefault("description", "")
+            if target == "preview":
+                dive.setdefault("status", "draft")
 
         contexts = self._render_resources(resources_node.get("context", {}), target, context)
         for ctx in contexts.values():
@@ -440,6 +445,13 @@ class Project:
                 require_nonempty(dive.get(field), f"dives.{key}.{field}")
             require_file(Path(str(dive["sourcePath"])))
             required_resources = dive.get("requiredResources")
+            status = dive.get("status")
+            if status is not None and status not in DIVE_STATUSES:
+                raise ValidationError(
+                    f"dives.{key}.status must be one of {', '.join(sorted(DIVE_STATUSES))}"
+                )
+            if target == "preview" and status != "draft":
+                raise ValidationError(f"preview Dive {blueprint.name}.{key} must use draft status")
             if (
                 target == "preview"
                 and not includes_branch_scope(str(dive["title"]), branch)

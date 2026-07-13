@@ -264,3 +264,72 @@ resources:
 
     with pytest.raises(ValidationError, match="must not match its production title"):
         Project(tmp_path).validate(targets=["preview"], branch="prod")
+
+
+def test_preview_dive_defaults_to_draft_without_managing_production_status() -> None:
+    project = Project(FIXTURES / "simple")
+
+    preview = project.render_all("preview", branch="feature/status")[0]
+    production = project.render_all("prod")[0]
+
+    assert preview.dives["example"]["status"] == "draft"
+    assert "status" not in production.dives["example"]
+
+
+def test_preview_dive_rejects_non_draft_target_override(tmp_path: Path) -> None:
+    blueprint_dir = tmp_path / "blueprints" / "unsafe-status"
+    source_dir = blueprint_dir / "src"
+    source_dir.mkdir(parents=True)
+    (source_dir / "dive.tsx").write_text("export default function Dive() { return null; }\n", encoding="utf-8")
+    write_root_manifest(tmp_path)
+    (blueprint_dir / "blueprint.yml").write_text(
+        """
+schemaVersion: 1
+name: unsafe-status
+title: Unsafe Status
+resources:
+  dives:
+    dashboard:
+      title: Unsafe Status
+      source: src/dive.tsx
+      status: ready
+      requiredResources:
+        - url: md:_share/example/00000000-0000-0000-0000-000000000000
+          alias: example
+      targets:
+        preview:
+          title: Unsafe Status:${target.branch} (Preview)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="must use draft status"):
+        Project(tmp_path).validate(targets=["preview"], branch="feature/status")
+
+
+def test_dive_status_rejects_unknown_value(tmp_path: Path) -> None:
+    blueprint_dir = tmp_path / "blueprints" / "unknown-status"
+    source_dir = blueprint_dir / "src"
+    source_dir.mkdir(parents=True)
+    (source_dir / "dive.tsx").write_text("export default function Dive() { return null; }\n", encoding="utf-8")
+    write_root_manifest(tmp_path)
+    (blueprint_dir / "blueprint.yml").write_text(
+        """
+schemaVersion: 1
+name: unknown-status
+title: Unknown Status
+resources:
+  dives:
+    dashboard:
+      title: Unknown Status
+      source: src/dive.tsx
+      status: trusted
+      requiredResources:
+        - url: md:_share/example/00000000-0000-0000-0000-000000000000
+          alias: example
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="must be one of"):
+        Project(tmp_path)

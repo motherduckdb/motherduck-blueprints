@@ -35,6 +35,8 @@ In your MotherDuck organization:
 
 Use a service account token rather than a personal token so deployed Dives, Flights, tables, and shares are owned by a shared automation identity.
 
+The normal service account can manage `draft`, `ready`, and `archived` on Dives it owns. Only an organization admin can set `endorsed`; if your blueprints declare that status, protect an admin-capable production token with required GitHub Environment reviewers. Do not grant admin merely to make every Dive endorsed.
+
 ## 3. Add GitHub Secrets
 
 In your repository:
@@ -107,7 +109,8 @@ Expected preview flow:
 5. Preview Flights run when `runOnDeploy` is true.
 6. Preview databases and shares are created with the branch slug.
 7. Dives deploy after required shares are resolvable.
-8. A PR comment lists the plan plus preview Flight, share, and Dive links.
+8. Preview Dives are enforced as `draft`.
+9. A PR comment lists the plan, Dive status, and preview Flight, share, and Dive links.
 
 ## 8. Verify Cleanup
 
@@ -140,7 +143,9 @@ Expected production flow:
 4. Production Flights deploy.
 5. Flights run when `runOnDeploy` is true.
 6. Required shares are resolved.
-7. Production Dives deploy.
+7. Production Dives deploy and reconcile an explicitly declared status.
+
+The generated examples use `ready` in production and `draft` in preview. Omitting production `status` preserves the live value. A plan that promotes a Dive to `endorsed` or moves an endorsed Dive to another status calls out that transition for the environment reviewer.
 
 ## 10. Customize the Blueprints
 

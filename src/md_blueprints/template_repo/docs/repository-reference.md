@@ -100,6 +100,8 @@ The repo defines two targets:
 - `preview`: branch-scoped resource names, schedules disabled, preview cleanup enabled.
 - `prod`: stable production names, protected by the `motherduck-production` GitHub Environment.
 
+Preview Dives always render with `draft` status. Production Dives may declare `draft`, `ready`, `endorsed`, or `archived`; omitted production status remains unmanaged and is preserved during content updates.
+
 Preview resources must include `${target.branch_slug}` in cleanup-sensitive share/database names. This prevents cleanup from dropping stable production resources.
 
 Preview Flight names and Dive titles must also contain either `${target.branch}` or `${target.branch_slug}`. Cleanup refuses any Flight, Dive, share, or database whose preview identifier is not branch-scoped or exactly matches its production identifier.
@@ -127,7 +129,7 @@ md-blueprints migrate --to latest
 
 `make preview-smoke <blueprint-name>` writes that blueprint's Dive into the local Vite preview harness and runs a production build without starting a server.
 
-`md-blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
+`md-blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Dive rows include current and desired status, including endorsement or archival transitions. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
 
 `md-blueprints cleanup --dry-run` shows the preview Dives, Flights, shares, and databases that cleanup would delete or drop. It uses the same branch-slug safety checks as real cleanup and does not issue delete or drop queries.
 
@@ -151,6 +153,7 @@ For docs-only changes, run at least `git diff --check`. Run the full validation 
 - Preview deployment runs a read-only plan immediately before deploy; the PR comment includes the plan and deployed links.
 - Preview cleanup runs when a PR closes or a branch is deleted. Cleanup events for the same branch are serialized, and already-removed resources are treated as success so simultaneous PR-close and branch-delete events remain idempotent. Dives are deleted before Flights, shares, and preview databases.
 - Pushes to `main` plan the `prod` target, write the plan to the GitHub job summary, then deploy through the protected `motherduck-production` environment.
+- Setting a Dive to `endorsed` requires the production service account to be a MotherDuck organization admin. Keep that credential behind required environment reviewers and reserve endorsement for intentionally rare trusted sources of truth.
 - No workflow file needs per-blueprint path filters or manual asset registration.
 
 Customer repositories should pin the released package or action version. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for the schema compatibility and migration policy.

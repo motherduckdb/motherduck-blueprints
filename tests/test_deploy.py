@@ -134,7 +134,7 @@ def test_deploy_plan_is_idempotent_for_same_live_state(monkeypatch: pytest.Monke
     rendered = project.render_all("prod")
 
     monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: [f"{name}-id"])
-    monkeypatch.setattr(deployer, "_list_dive_ids", lambda title: [f"{title}-id"])
+    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [(f"{title}-id", "ready")])
     monkeypatch.setattr(deployer, "_find_share_url", lambda name: f"md:_share/{name}/123")
 
     first = [record.to_dict() for record in deployer._build_deploy_plan(rendered)]
@@ -143,6 +143,105 @@ def test_deploy_plan_is_idempotent_for_same_live_state(monkeypatch: pytest.Monke
     assert first == second
     assert {record["action"] for record in first if record["type"] in {"flight", "dive"}} == {"update"}
     assert {record["action"] for record in first if record["type"] == "share"} == {"present"}
+
+
+def test_dive_plan_reports_status_transition(monkeypatch: pytest.MonkeyPatch) -> None:
+    project = Project(FIXTURES / "simple")
+    deployer = Deployer(project)
+    blueprint = project.render_all("preview", branch="feature/status")[0]
+    monkeypatch.setattr(
+        deployer,
+        "_list_dive_states",
+        lambda title: [("00000000-0000-0000-0000-000000000002", "ready")],
+    )
+
+    record = deployer._build_deploy_plan([blueprint])[0]
+
+    assert record.current_status == "ready"
+    assert record.desired_status == "draft"
+    assert record.formatted_status() == "ready -> draft"
+
+
+def test_new_unmanaged_dive_plan_reports_motherduck_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    project = Project(FIXTURES / "simple")
+    deployer = Deployer(project)
+    blueprint = project.render_all("prod")[0]
+    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [])
+
+    record = deployer._build_deploy_plan([blueprint])[0]
+
+    assert record.formatted_status() == "draft (default)"
+
+
+def test_dive_deploy_updates_explicit_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "simple"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    deployer._deploy_dive(
+        {
+            "title": "Production Dashboard",
+            "sourcePath": "src/dive.tsx",
+            "description": "",
+            "requiredResources": [{"url": "md:_share/example/id", "alias": "example"}],
+            "status": "ready",
+        },
+        {},
+        "prod",
+        PlanRecord(
+            blueprint="simple-dive",
+            type="dive",
+            key="example",
+            name="Production Dashboard",
+            action="update",
+            exists=True,
+            id="00000000-0000-0000-0000-000000000002",
+            current_status="draft",
+            desired_status="ready",
+        ),
+    )
+
+    assert any("MD_UPDATE_DIVE_CONTENT" in call for call in calls)
+    assert any("MD_UPDATE_DIVE_STATUS" in call and "'ready'" in call for call in calls)
+
+
+def test_dive_deploy_preserves_status_when_unmanaged(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "simple"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    deployer._deploy_dive(
+        {
+            "title": "Production Dashboard",
+            "sourcePath": "src/dive.tsx",
+            "description": "",
+            "requiredResources": [{"url": "md:_share/example/id", "alias": "example"}],
+        },
+        {},
+        "prod",
+        PlanRecord(
+            blueprint="simple-dive",
+            type="dive",
+            key="example",
+            name="Production Dashboard",
+            action="update",
+            exists=True,
+            id="00000000-0000-0000-0000-000000000002",
+            current_status="endorsed",
+            desired_status=None,
+        ),
+    )
+
+    assert not any("MD_UPDATE_DIVE_STATUS" in call for call in calls)
 
 
 def test_flight_update_retries_without_schedule_when_existing_flight_is_unscheduled(

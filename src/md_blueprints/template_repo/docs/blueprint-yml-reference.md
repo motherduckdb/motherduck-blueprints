@@ -224,12 +224,14 @@ resources:
       title: Wikipedia Pageviews
       source: src/dive.tsx
       description: Recent daily pageviews.
+      status: ready
       requiredResources:
         - share: pageviews
           alias: wikipedia_pageviews
       targets:
         preview:
           title: Wikipedia Pageviews:${target.branch} (Preview)
+          status: draft
 ```
 
 Example using a direct share URL:
@@ -250,6 +252,7 @@ resources:
 | `resources.dives.<key>.title` | Yes | Non-empty string | None | MotherDuck Dive title after rendering. Must be unique per rendered target. |
 | `resources.dives.<key>.source` | Yes | Non-empty string | None | Path to the Dive source, relative to the blueprint directory. |
 | `resources.dives.<key>.description` | No | String | `""` | Dive description passed to MotherDuck. |
+| `resources.dives.<key>.status` | No | `draft`, `ready`, `endorsed`, or `archived` | Unmanaged | Desired MotherDuck governance status. When omitted, updates preserve the live status and new Dives use MotherDuck's `draft` default. |
 | `resources.dives.<key>.requiredResources` | Yes | Non-empty array | None | Share resources or direct share URLs that the Dive mounts. |
 | `resources.dives.<key>.targets` | No | Object keyed by target name | `{}` | Target-specific Dive overrides. |
 
@@ -257,10 +260,13 @@ Rendered Dive validation:
 
 - `title` and `source` must be non-empty after rendering.
 - `source` file must exist.
+- Preview Dives always render as `draft`; a non-draft preview override is rejected.
 - `requiredResources` must contain at least one item.
 - Each required resource must set `alias`.
 - Each required resource must set either `share` or `url`.
 - If `share` is set, it must reference a key under `resources.shares` in the same blueprint.
+
+Status is declarative only when it is present. Production deployments reconcile an explicit value with `MD_UPDATE_DIVE_STATUS`; plans show the current and desired values. Use `ready` for reviewed production Dives, reserve `endorsed` for intentionally rare organization-approved sources of truth, and use `archived` to retire a Dive without deleting its URL or history. Only MotherDuck organization admins can set `endorsed`, so a deployment that requests it must use an appropriately governed credential. Updating content without declaring `status` never resets or changes a live status.
 
 Required resource fields:
 

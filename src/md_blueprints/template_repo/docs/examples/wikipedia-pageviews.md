@@ -6,7 +6,7 @@ This example is a self-contained blueprint in `blueprints/wikipedia-pageviews/`.
 
 - `resources.flights.pageviews_loader` - loads public Wikimedia pageview data into MotherDuck.
 - `resources.shares.pageviews` - names the database share produced by the Flight.
-- `resources.dives.pageviews` - reads from that share through the `wikipedia_pageviews` alias.
+- `resources.dives.pageviews` - reads from that share through the `wikipedia_pageviews` alias, using `draft` in preview and `ready` in production.
 
 The Flight creates these MotherDuck objects if they do not already exist:
 
@@ -41,13 +41,13 @@ On pull requests:
 5. The preview Flight name and Dive title include the branch name.
 6. The preview database and share include `${target.branch_slug}`.
 7. The Flight runs once, waits for success, waits for the share URL, and deploys the Dive.
-8. A PR comment lists the plan plus preview Flights, shares, and Dives.
+8. A PR comment lists the plan plus preview Flights, shares, and Draft Dives.
 
-On merge to `main`, production deployment writes a live plan to the GitHub job summary, runs through the protected `motherduck-production` environment, and uses stable names.
+On merge to `main`, production deployment writes a live plan to the GitHub job summary, runs through the protected `motherduck-production` environment, uses stable names, and promotes the Dive to `ready`.
 
 ## Preview Behavior
 
-The `preview` target disables schedules and requires cleanup-sensitive data resources to include the branch slug. The rendered preview share for branch `feature/mock-test` is:
+The `preview` target disables schedules, forces Dive status to `draft`, and requires cleanup-sensitive data resources to include the branch slug. The rendered preview share for branch `feature/mock-test` is:
 
 ```text
 wikipedia_pageviews_preview_feature_mock_test
