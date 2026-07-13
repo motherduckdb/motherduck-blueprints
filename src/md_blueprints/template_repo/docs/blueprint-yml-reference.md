@@ -33,6 +33,8 @@ resources:
 
 The `resources` object is required. Each resource group inside it is optional, so a blueprint can contain any combination of shares, Flights, Dives, and context resources.
 
+All resource `source` and `requirements` paths must resolve inside the blueprint package directory. Absolute paths, `..` traversal, and symlinks that escape the package are rejected so validation and deployment cannot read files from elsewhere on the runner.
+
 ## Rendering Model
 
 `blueprint.yml` is first validated as YAML and then rendered for a target such as `preview` or `prod`.
@@ -205,6 +207,7 @@ Rendered Flight validation:
 
 - `name`, `source`, and `requirements` must be non-empty after rendering.
 - `source` and `requirements` files must exist.
+- `source` and `requirements` must stay inside the blueprint package, including after resolving symlinks.
 - `source` must parse as valid Python.
 - Non-empty `scheduleCron` values must contain exactly 5 fields.
 - In the default preview target, schedules are disabled by policy and render as `""` even if the base Flight sets `scheduleCron`.

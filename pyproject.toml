@@ -46,4 +46,5 @@ md_blueprints = [
 [tool.mypy]
 exclude = [
   "src/md_blueprints/template_repo/",
+  "tests/fixtures/",
 ]

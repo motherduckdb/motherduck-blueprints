@@ -103,10 +103,10 @@ Tagged `v*` pushes run the release workflow:
 2. Build the wheel and source distribution.
 3. Smoke test the installed wheel.
 4. Smoke test the local action wrapper.
-5. Attach artifacts to the matching GitHub Release.
+5. Verify the external PyPI and template-repository setup before publishing anything.
 6. Publish to PyPI through trusted publishing.
-7. Force-update the floating major tag, for example `v0`.
-8. Generate the customer template with the built wheel and force-push it to `motherduckdb/blueprints-template` when `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` is configured.
+7. Generate the customer template with the built wheel and push it to `motherduckdb/blueprints-template`.
+8. Attach artifacts to the matching GitHub Release and only then update the floating major tag, for example `v0`.
 
 One-time PyPI setup: register the `md-blueprints` project and add a trusted publisher for this repository, `release.yaml`, and the `pypi` environment. Tagged releases run `scripts/check-release-external-setup.sh` before publishing so a missing project or trusted-publishing setup fails with an actionable error.
 

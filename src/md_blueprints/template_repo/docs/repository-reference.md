@@ -30,6 +30,8 @@ context/
 
 `motherduck.yml` is the canonical repository manifest. It declares included blueprint manifests, shared variables, and the `preview` and `prod` targets. GitHub Actions discover changed blueprints from this manifest instead of requiring manual path-filter registration.
 
+`include` entries must be relative glob patterns that stay inside the repository root. Overlapping globs are deduplicated, and blueprint names must be unique across all matched manifests.
+
 The root manifest may also set `requiredCliVersion`, for example `requiredCliVersion: ">=1.3"`, when a repository depends on CLI behavior that cannot be expressed through schema shape alone.
 
 `md-blueprints` is the versioned CLI package that validates schemas, renders targets, plans deployments, deploys resources, cleans previews, and hosts migration commands.
@@ -99,6 +101,10 @@ The repo defines two targets:
 - `prod`: stable production names, protected by the `motherduck-production` GitHub Environment.
 
 Preview resources must include `${target.branch_slug}` in cleanup-sensitive share/database names. This prevents cleanup from dropping stable production resources.
+
+Preview Flight names and Dive titles must also contain either `${target.branch}` or `${target.branch_slug}`. Cleanup refuses any Flight, Dive, share, or database whose preview identifier is not branch-scoped or exactly matches its production identifier.
+
+The cleanup command also requires `targets.preview.policies.cleanup: true`; without that explicit opt-in it exits before querying or deleting resources.
 
 ## Local Commands
 

@@ -12,6 +12,17 @@ from md_blueprints.schema import ValidationError
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def test_cleanup_respects_disabled_target_policy() -> None:
+    project = Project(FIXTURES / "simple")
+    preview = project.target_config("preview")
+    policies = preview["policies"]
+    assert isinstance(policies, dict)
+    policies["cleanup"] = False
+
+    with pytest.raises(ValidationError, match="cleanup is disabled"):
+        Deployer(project).cleanup_plan(target="preview", branch="feature/test", names=None)
+
+
 def test_cleanup_plan_refuses_share_without_branch_slug(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     monkeypatch.setattr(deployer, "_list_dive_ids", lambda title: [])
@@ -72,6 +83,47 @@ def test_cleanup_plan_refuses_database_without_branch_slug(monkeypatch: pytest.M
         ("database", "error"),
     ]
     assert "refusing to drop preview database without branch slug feature_branch" in records[1].notes
+    with pytest.raises(ValidationError, match="Plan contains errors"):
+        deployer.ensure_plan_succeeds(records)
+
+
+def test_cleanup_plan_refuses_flight_and_dive_names_that_match_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_list_dive_ids", lambda title: pytest.fail("unsafe Dive lookup"))
+    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: pytest.fail("unsafe Flight lookup"))
+    preview = RenderedBlueprint(
+        name="ops",
+        title="Ops",
+        description="",
+        shares={},
+        flights={"loader": {"name": "production-loader"}},
+        dives={"dashboard": {"title": "Production Dashboard"}},
+        contexts={},
+    )
+    production = RenderedBlueprint(
+        name="ops",
+        title="Ops",
+        description="",
+        shares={},
+        flights={"loader": {"name": "production-loader"}},
+        dives={"dashboard": {"title": "Production Dashboard"}},
+        contexts={},
+    )
+
+    records = deployer._build_cleanup_plan(
+        [preview],
+        "prod",
+        branch="prod",
+        production={"ops": production},
+    )
+
+    assert [(record.type, record.action) for record in records] == [
+        ("dive", "error"),
+        ("flight", "error"),
+    ]
+    assert all("matches production" in record.notes for record in records)
     with pytest.raises(ValidationError, match="Plan contains errors"):
         deployer.ensure_plan_succeeds(records)
 
@@ -173,7 +225,11 @@ def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPa
 def test_cleanup_flight_delete_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []
-    monkeypatch.setattr(deployer, "_sql", lambda statement: calls.append(statement) or "")
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
 
     deployer._apply_cleanup_plan(
         [

@@ -76,6 +76,19 @@ def test_init_force_overwrites_template_files(tmp_path: Path) -> None:
     assert "MotherDuck Blueprints" in (target / "README.md").read_text(encoding="utf-8")
 
 
+def test_init_force_refuses_symlink_that_escapes_target(tmp_path: Path) -> None:
+    target = tmp_path / "existing"
+    outside = tmp_path / "outside"
+    target.mkdir()
+    outside.mkdir()
+    (target / "docs").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="outside"):
+        run_init(target, force=True)
+
+    assert list(outside.iterdir()) == []
+
+
 def test_init_template_does_not_drift_from_mirrored_repo_paths(tmp_path: Path) -> None:
     target = tmp_path / "customer-blueprints"
 

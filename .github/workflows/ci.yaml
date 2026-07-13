@@ -66,7 +66,7 @@ jobs:
         run: python -m pytest
 
       - name: Type-check package
-        run: python -m mypy --strict src/md_blueprints
+        run: python -m mypy --strict src/md_blueprints tests
 
       - name: Run mock deployment tests
         run: make mock-test

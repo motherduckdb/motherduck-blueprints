@@ -139,10 +139,22 @@ class Deployer:
     def cleanup_plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         if target != "preview":
             raise ValidationError("cleanup is only supported for preview target")
+        policies = self.project.target_config(target).get("policies", {})
+        if not isinstance(policies, dict) or policies.get("cleanup") is not True:
+            raise ValidationError("cleanup is disabled by the preview target policy")
 
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "cleanup")
-        return self._build_cleanup_plan(rendered, branch_slug(branch or ""))
+        production = {
+            blueprint.name: blueprint
+            for blueprint in self.project.render_all("prod", names=names)
+        }
+        return self._build_cleanup_plan(
+            rendered,
+            branch_slug(branch or ""),
+            branch=branch,
+            production=production,
+        )
 
     def cleanup(self, *, target: str, branch: str | None, names: list[str] | None) -> None:
         records = self.cleanup_plan(target=target, branch=branch, names=names)
@@ -162,7 +174,7 @@ class Deployer:
         branch: str | None,
         names: list[str] | None,
     ) -> list[RenderedBlueprint]:
-        self.project.validate(targets=[target])
+        self.project.validate(targets=[target], branch=branch)
         return self.project.render_all(target, branch=branch, names=names)
 
     def _prepare_live_command(self, target: str, operation: str) -> None:
@@ -232,11 +244,30 @@ class Deployer:
                 )
         return records
 
-    def _build_cleanup_plan(self, rendered: list[RenderedBlueprint], rendered_branch_slug: str) -> list[PlanRecord]:
+    def _build_cleanup_plan(
+        self,
+        rendered: list[RenderedBlueprint],
+        rendered_branch_slug: str,
+        *,
+        branch: str | None = None,
+        production: dict[str, RenderedBlueprint] | None = None,
+    ) -> list[PlanRecord]:
         records: list[PlanRecord] = []
         for blueprint in rendered:
+            production_blueprint = production.get(blueprint.name) if production else None
             for key, dive in blueprint.dives.items():
                 title = str(dive["title"])
+                production_title = None
+                if production_blueprint and key in production_blueprint.dives:
+                    production_title = str(production_blueprint.dives[key]["title"])
+                safety_error = self._preview_scope_error(
+                    "Dive", title, branch, rendered_branch_slug, production_title
+                )
+                if safety_error:
+                    records.append(
+                        self._cleanup_record(blueprint, "dive", key, title, "error", None, None, safety_error)
+                    )
+                    continue
                 ids = self._list_dive_ids(title)
                 if not ids:
                     records.append(self._cleanup_record(blueprint, "dive", key, title, "missing", False, None))
@@ -246,6 +277,17 @@ class Deployer:
 
             for key, flight in blueprint.flights.items():
                 name = str(flight["name"])
+                production_name = None
+                if production_blueprint and key in production_blueprint.flights:
+                    production_name = str(production_blueprint.flights[key]["name"])
+                safety_error = self._preview_scope_error(
+                    "Flight", name, branch, rendered_branch_slug, production_name
+                )
+                if safety_error:
+                    records.append(
+                        self._cleanup_record(blueprint, "flight", key, name, "error", None, None, safety_error)
+                    )
+                    continue
                 ids = self._list_flight_ids(name)
                 if not ids:
                     records.append(self._cleanup_record(blueprint, "flight", key, name, "missing", False, None))
@@ -259,7 +301,12 @@ class Deployer:
 
                 share_name = str(share["name"])
                 database_name = str(share["database"])
-                if rendered_branch_slug not in share_name:
+                production_share = production_blueprint.shares.get(key) if production_blueprint else None
+                production_share_name = str(production_share["name"]) if production_share else None
+                share_safety_error = self._preview_scope_error(
+                    "share", share_name, branch, rendered_branch_slug, production_share_name
+                )
+                if share_safety_error:
                     records.append(
                         self._cleanup_record(
                             blueprint,
@@ -269,7 +316,7 @@ class Deployer:
                             "error",
                             None,
                             None,
-                            f"refusing to drop preview share without branch slug {rendered_branch_slug}",
+                            share_safety_error,
                         )
                     )
                     continue
@@ -283,7 +330,11 @@ class Deployer:
                 if not share.get("dropDatabase", False):
                     continue
 
-                if rendered_branch_slug not in database_name:
+                production_database_name = str(production_share["database"]) if production_share else None
+                database_safety_error = self._preview_scope_error(
+                    "database", database_name, branch, rendered_branch_slug, production_database_name
+                )
+                if database_safety_error:
                     records.append(
                         self._cleanup_record(
                             blueprint,
@@ -293,7 +344,7 @@ class Deployer:
                             "error",
                             None,
                             None,
-                            f"refusing to drop preview database without branch slug {rendered_branch_slug}",
+                            database_safety_error,
                         )
                     )
                     continue
@@ -311,6 +362,24 @@ class Deployer:
                     )
                 )
         return records
+
+    @staticmethod
+    def _preview_scope_error(
+        resource_type: str,
+        name: str,
+        branch: str | None,
+        rendered_branch_slug: str,
+        production_name: str | None,
+    ) -> str | None:
+        if production_name is not None and name == production_name:
+            return f"refusing to delete preview {resource_type} because it matches production: {name}"
+        branch_markers = {rendered_branch_slug}
+        if branch:
+            branch_markers.add(branch)
+        if not any(marker and marker in name for marker in branch_markers):
+            action = "drop" if resource_type in {"share", "database"} else "delete"
+            return f"refusing to {action} preview {resource_type} without branch slug {rendered_branch_slug}"
+        return None
 
     def _existing_resource_record(
         self,

@@ -44,7 +44,7 @@ def run_init(target: Path, *, force: bool = False) -> None:
     for resource, relative in iter_resources(template_root):
         if not relative or "/__pycache__/" in f"/{relative}/":
             continue
-        destination = target / relative
+        destination = safe_destination(target, relative)
         if resource.is_dir():
             destination.mkdir(parents=True, exist_ok=True)
             continue
@@ -59,3 +59,12 @@ def run_init(target: Path, *, force: bool = False) -> None:
     print(f"Initialized MotherDuck Blueprints template in {target} ({written} files).")
     print(f"CLI version pinned in Makefile: {__version__}")
     print(f"Action tag pinned in workflows: {action_major_tag()}")
+
+
+def safe_destination(target: Path, relative: str) -> Path:
+    destination = target / relative
+    try:
+        destination.resolve(strict=False).relative_to(target)
+    except ValueError as exc:
+        raise ValidationError(f"Refusing to write template path outside {target}: {relative}") from exc
+    return destination
