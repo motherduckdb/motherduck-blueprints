@@ -66,6 +66,8 @@ class PlanRecord:
     exists: bool | None
     id: str | None
     notes: str = ""
+    current_status: str | None = None
+    desired_status: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -77,7 +79,22 @@ class PlanRecord:
             "exists": self.exists,
             "id": self.id,
             "notes": self.notes,
+            "current_status": self.current_status,
+            "desired_status": self.desired_status,
         }
+
+    def formatted_status(self) -> str:
+        if self.type != "dive":
+            return ""
+        if self.desired_status is None:
+            if self.current_status:
+                return f"preserve {self.current_status}"
+            return "draft (default)" if self.action == "create" else "unmanaged"
+        if self.current_status is None:
+            return self.desired_status
+        if self.current_status == self.desired_status:
+            return self.desired_status
+        return f"{self.current_status} -> {self.desired_status}"
 
 
 class PlanFormatter:
@@ -89,8 +106,8 @@ class PlanFormatter:
         lines = [
             f"#### {title}",
             "",
-            "| Blueprint | Type | Key | Name | Action | Exists | ID | Notes |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Blueprint | Type | Key | Name | Action | Exists | ID | Status | Notes |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for record in records:
             row = [
@@ -101,6 +118,7 @@ class PlanFormatter:
                 record.action,
                 PlanFormatter._format_exists(record.exists),
                 record.id or "",
+                record.formatted_status(),
                 record.notes,
             ]
             lines.append("| " + " | ".join(PlanFormatter._escape_cell(value) for value in row) + " |")
@@ -218,16 +236,7 @@ class Deployer:
                 )
 
             for key, dive in blueprint.dives.items():
-                records.append(
-                    self._existing_resource_record(
-                        blueprint=blueprint,
-                        type_name="dive",
-                        key=key,
-                        name=str(dive["title"]),
-                        ids=self._list_dive_ids(str(dive["title"])),
-                        duplicate_note="duplicate Dive title; expected 0 or 1",
-                    )
-                )
+                records.append(self._dive_plan_record(blueprint, key, dive))
 
             for key, ctx in blueprint.contexts.items():
                 records.append(
@@ -397,6 +406,62 @@ class Deployer:
             return PlanRecord(blueprint.name, type_name, key, name, "update", True, ids[0])
         return PlanRecord(blueprint.name, type_name, key, name, "error", True, ",".join(ids), duplicate_note)
 
+    def _dive_plan_record(
+        self,
+        blueprint: RenderedBlueprint,
+        key: str,
+        dive: dict[str, object],
+    ) -> PlanRecord:
+        title = str(dive["title"])
+        desired_status_value = dive.get("status")
+        desired_status = str(desired_status_value) if desired_status_value is not None else None
+        states = self._list_dive_states(title)
+        if not states:
+            notes = "endorsing requires an organization admin" if desired_status == "endorsed" else ""
+            return PlanRecord(
+                blueprint.name,
+                "dive",
+                key,
+                title,
+                "create",
+                False,
+                None,
+                notes,
+                desired_status=desired_status,
+            )
+        if len(states) == 1:
+            dive_id, current_status = states[0]
+            notes = ""
+            if current_status == "endorsed" and desired_status not in {None, "endorsed"}:
+                notes = "moving off endorsed may be one-way unless the deployer is an organization admin"
+            elif desired_status == "endorsed" and current_status != "endorsed":
+                notes = "endorsing requires an organization admin"
+            elif current_status == "endorsed":
+                notes = "content update remains endorsed"
+            return PlanRecord(
+                blueprint.name,
+                "dive",
+                key,
+                title,
+                "update",
+                True,
+                dive_id,
+                notes,
+                current_status=current_status,
+                desired_status=desired_status,
+            )
+        return PlanRecord(
+            blueprint.name,
+            "dive",
+            key,
+            title,
+            "error",
+            True,
+            ",".join(state[0] for state in states),
+            "duplicate Dive title; expected 0 or 1",
+            desired_status=desired_status,
+        )
+
     def _cleanup_record(
         self,
         blueprint: RenderedBlueprint,
@@ -451,7 +516,7 @@ class Deployer:
         print()
         self._print_section("Flights", "| Flight | ID | Run started |", "|--------|----|-------------|", flight_rows)
         self._print_section("Shares", "| Share | Link |", "|-------|------|", share_rows)
-        self._print_section("Dives", "| Dive | Link |", "|------|------|", dive_rows)
+        self._print_section("Dives", "| Dive | Status | Link |", "|------|--------|------|", dive_rows)
 
     def _print_section(self, title: str, header: str, separator: str, rows: list[str]) -> None:
         if not rows:
@@ -607,8 +672,25 @@ class Deployer:
         else:
             raise ValidationError(f"Cannot deploy Dive {title} with plan action {plan.action}")
 
+        desired_status_value = dive.get("status")
+        desired_status = str(desired_status_value) if desired_status_value is not None else None
+        if (
+            desired_status is not None
+            and desired_status != plan.current_status
+            and not (plan.action == "create" and desired_status == "draft")
+        ):
+            print(f"  Setting Dive status to {desired_status}...", file=sys.stderr)
+            self._sql(
+                f"FROM MD_UPDATE_DIVE_STATUS(id = '{dive_id}'::UUID, status = {sql_string(desired_status)});"
+            )
+
         print(f"  Deployed: https://app.motherduck.com/dives/{dive_id}", file=sys.stderr)
-        return f"| {title} | [Open Dive](https://app.motherduck.com/dives/{dive_id}) |" if target == "preview" else None
+        effective_status = desired_status or plan.current_status or "draft"
+        return (
+            f"| {title} | {effective_status} | [Open Dive](https://app.motherduck.com/dives/{dive_id}) |"
+            if target == "preview"
+            else None
+        )
 
     def _required_resources_sql(
         self,
@@ -681,6 +763,17 @@ class Deployer:
             for line in self._sql(f"SELECT id FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}").splitlines()
             if line.strip()
         ]
+
+    def _list_dive_states(self, title: str) -> list[tuple[str, str | None]]:
+        states: list[tuple[str, str | None]] = []
+        output = self._sql(f"SELECT id, status FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}")
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            dive_id, separator, raw_status = line.partition(",")
+            status = raw_status.strip().lower() if separator and raw_status.strip() else None
+            states.append((dive_id.strip(), status))
+        return states
 
     def _find_share_url(self, name: str) -> str:
         lines = self._sql(f"SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = {sql_string(name)}").splitlines()

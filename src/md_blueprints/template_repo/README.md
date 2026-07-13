@@ -2,6 +2,8 @@
 
 This repository deploys MotherDuck [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), [shares](https://motherduck.com/docs/key-tasks/sharing-data/sharing-overview/), and future context assets from GitHub. Pull requests validate blueprints, deploy branch-scoped previews, and leave a PR comment with the deployment plan and preview links. Merges to `main` deploy stable production resources through the `motherduck-production` GitHub Environment.
 
+Dive previews are always `draft`. Production blueprints can declare `ready`, `endorsed`, or `archived`, and deployment plans show status transitions before applying them. Omitting status preserves the current live value.
+
 If you are reading this in `motherduckdb/blueprints-template`, do not open pull requests there. That repository is generated from `motherduckdb/motherduck-blueprints` on each release, and direct edits are overwritten.
 
 ## Prerequisites

@@ -27,6 +27,7 @@ state_dir="${MOCK_DUCKDB_STATE_DIR:?MOCK_DUCKDB_STATE_DIR is required}"
 flight_state="${state_dir}/flight_id"
 run_state="${state_dir}/run_number"
 dive_state="${state_dir}/dive_id"
+dive_status_state="${state_dir}/dive_status"
 share_url="md:_share/mock/00000000-0000-0000-0000-000000000003"
 run_status="${MOCK_FLIGHT_RUN_STATUS:-RUN_STATUS_SUCCEEDED}"
 
@@ -78,15 +79,27 @@ elif [[ "$query" == *"MD_LIST_DIVES"* ]]; then
     echo "00000000-0000-0000-0000-000000000021"
     echo "00000000-0000-0000-0000-000000000022"
   elif [ -f "$dive_state" ]; then
-    cat "$dive_state"
+    if [[ "$query" == *"SELECT id, status"* ]]; then
+      echo "$(cat "$dive_state"),$(cat "$dive_status_state")"
+    else
+      cat "$dive_state"
+    fi
   fi
 elif [[ "$query" == *"MD_CREATE_DIVE"* ]]; then
   echo "00000000-0000-0000-0000-000000000002" > "$dive_state"
+  echo "draft" > "$dive_status_state"
   cat "$dive_state"
+elif [[ "$query" == *"MD_UPDATE_DIVE_STATUS"* ]]; then
+  for status in draft ready endorsed archived; do
+    if [[ "$query" == *"'$status'"* ]]; then
+      echo "$status" > "$dive_status_state"
+    fi
+  done
 elif [[ "$query" == *"MD_UPDATE_DIVE"* ]]; then
   echo "00000000-0000-0000-0000-000000000002" > "$dive_state"
 elif [[ "$query" == *"MD_DELETE_DIVE"* ]]; then
   rm -f "$dive_state"
+  rm -f "$dive_status_state"
 else
   echo "Unexpected fake duckdb query: $query" >&2
   exit 1
@@ -123,6 +136,7 @@ class MockConnection:
         self.flight_state = self.state_dir / "flight_id"
         self.run_state = self.state_dir / "run_number"
         self.dive_state = self.state_dir / "dive_id"
+        self.dive_status_state = self.state_dir / "dive_status"
         self.share_url = "md:_share/mock/00000000-0000-0000-0000-000000000003"
 
     def execute(self, statement: str) -> MockResult:
@@ -180,16 +194,29 @@ class MockConnection:
                     ("00000000-0000-0000-0000-000000000022",),
                 ])
             if self.dive_state.exists():
+                if "SELECT id, status" in query:
+                    return MockResult([(
+                        self.dive_state.read_text().strip(),
+                        self.dive_status_state.read_text().strip(),
+                    )])
                 return MockResult([(self.dive_state.read_text().strip(),)])
             return MockResult([])
         if "MD_CREATE_DIVE" in query:
             self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
+            self.dive_status_state.write_text("draft", encoding="utf-8")
             return MockResult([(self.dive_state.read_text().strip(),)])
+        if "MD_UPDATE_DIVE_STATUS" in query:
+            for status in ("draft", "ready", "endorsed", "archived"):
+                if f"'{status}'" in query:
+                    self.dive_status_state.write_text(status, encoding="utf-8")
+                    break
+            return MockResult([])
         if "MD_UPDATE_DIVE" in query:
             self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
             return MockResult([])
         if "MD_DELETE_DIVE" in query:
             self.dive_state.unlink(missing_ok=True)
+            self.dive_status_state.unlink(missing_ok=True)
             return MockResult([])
 
         raise RuntimeError(f"Unexpected fake duckdb query: {query}")
@@ -297,6 +324,7 @@ echo "==> Rendering preview target"
 md-blueprints render --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/render.out"
 grep -q "wikipedia_pageviews_preview_feature_mock_test" "${TMP_DIR}/render.out"
 grep -q '"scheduleCron": ""' "${TMP_DIR}/render.out"
+grep -q '"status": "draft"' "${TMP_DIR}/render.out"
 
 echo "==> Planning preview target"
 : > "${TMP_DIR}/queries.log"
@@ -305,6 +333,7 @@ grep -q "#### Deployment Plan" "${TMP_DIR}/plan.out"
 grep -q "wikipedia-pageviews:feature/mock-test (Preview).*create" "${TMP_DIR}/plan.out"
 grep -q "wikipedia_pageviews_preview_feature_mock_test.*present" "${TMP_DIR}/plan.out"
 grep -q "Wikipedia Pageviews:feature/mock-test (Preview).*create" "${TMP_DIR}/plan.out"
+grep -q "Wikipedia Pageviews:feature/mock-test (Preview).*draft" "${TMP_DIR}/plan.out"
 if grep -Eq "MD_CREATE_|MD_UPDATE_|MD_DELETE_|MD_DROP_DATABASE_SHARE|DROP DATABASE" "${TMP_DIR}/queries.log"; then
   echo "Plan command issued a mutating query" >&2
   cat "${TMP_DIR}/queries.log" >&2
@@ -318,7 +347,10 @@ import json
 import sys
 
 records = json.loads(open(sys.argv[1]).read())
-required = {"blueprint", "type", "key", "name", "action", "exists", "id", "notes"}
+required = {
+    "blueprint", "type", "key", "name", "action", "exists", "id", "notes",
+    "current_status", "desired_status",
+}
 if not all(required <= set(row) for row in records):
     raise SystemExit("missing stable plan fields")
 if not any(row["type"] == "flight" and row["action"] == "create" for row in records):
@@ -376,6 +408,7 @@ grep -q "Updating existing flight 'wikipedia-pageviews:feature/mock-test (Previe
 
 echo "==> Mock deploying production blueprint"
 md-blueprints deploy --target prod --blueprints wikipedia-pageviews > "${TMP_DIR}/production.out"
+grep -q "MD_UPDATE_DIVE_STATUS.*'ready'" "${TMP_DIR}/queries.log"
 
 echo "==> Verifying empty access token is not sent"
 if grep -q "\"access_token_name\" => ''" "${TMP_DIR}/queries.log"; then

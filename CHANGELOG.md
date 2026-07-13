@@ -6,8 +6,13 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+### Added
+
+- Added declarative Dive governance statuses (`draft`, `ready`, `endorsed`, and `archived`) with live status transitions in deployment plans, status reconciliation through `MD_UPDATE_DIVE_STATUS`, and backward-compatible preservation when production status is omitted.
+
 ### Changed
 
+- Enforced `draft` status for all preview Dives and made generated examples deploy production Dives as `ready`.
 - Hardened preview cleanup so Flights, Dives, shares, and databases must be branch-scoped, cannot reuse their production identifiers, and require an explicit target-policy opt-in.
 - Validated live preview operations with the requested branch instead of the validator's mock branch.
 - Restricted included manifests and resource source files to their repository and blueprint package boundaries, including after symlink resolution.

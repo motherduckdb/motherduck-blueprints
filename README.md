@@ -8,6 +8,8 @@ A blueprint is a small package that declares one data project — its [Flights](
 - **Merges to `main`** deploy stable production resources through a protected GitHub Environment.
 - **Branch cleanup** removes preview resources when the branch is deleted.
 
+Dive governance travels with the code: previews are always `draft`, while production manifests can declare `ready`, `endorsed`, or `archived`. Deployment plans show live-to-desired status transitions before anything changes.
+
 ## What's in this repository
 
 This repository is the source for the Blueprints tooling. As a user, you interact with three artifacts built from it:
@@ -108,6 +110,7 @@ Every pull request gets a comment with the deployment plan and preview links:
 
 - **Preview** deployments are branch-scoped: preview share and database names include the branch slug, Flight schedules are disabled, and resources are cleaned up when the branch goes away.
 - **Production** deployments run only from `main`, through the `motherduck-production` GitHub Environment, so you can require manual approval before anything changes.
+- **Dive status** is reconciled only when declared. Omitting it preserves the live status; setting `endorsed` requires an organization-admin deployment identity.
 
 ## Versioning and upgrades
 

@@ -53,9 +53,11 @@ resources:
     dashboard:
       title: __BLUEPRINT_NAME__
       source: src/dive.tsx
+      status: ready
       requiredResources:
         - share: data
           alias: __DATABASE_NAME__
       targets:
         preview:
           title: __BLUEPRINT_NAME__:${target.branch} (Preview)
+          status: draft

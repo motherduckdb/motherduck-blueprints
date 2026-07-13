@@ -74,9 +74,11 @@ resources:
       title: Wikipedia Pageviews
       source: src/dive.tsx
       description: Recent daily pageviews for selected Wikipedia articles, loaded by a MotherDuck Flight from Wikimedia public data.
+      status: ready
       requiredResources:
         - share: pageviews
           alias: wikipedia_pageviews
       targets:
         preview:
           title: Wikipedia Pageviews:${target.branch} (Preview)
+          status: draft
