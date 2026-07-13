@@ -9,7 +9,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Iterator
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_release_publishes_only_after_external_preflight_and_publish_jobs() -> None:
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+
+    assert jobs["release-preflight"]["needs"] == "build"
+    assert "release-preflight" in jobs["publish-pypi"]["needs"]
+    assert "release-preflight" in jobs["publish-template"]["needs"]
+    assert set(jobs["finalize-release"]["needs"]) == {"publish-pypi", "publish-template"}
+    build_steps = {step.get("name") for step in jobs["build"]["steps"]}
+    assert "Publish GitHub Release" not in build_steps
 
 
 def test_release_external_check_accepts_existing_pypi_project(tmp_path: Path) -> None:

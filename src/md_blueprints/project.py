@@ -107,17 +107,19 @@ class Project:
         self.schema.validate(self.manifest, "motherduck-root.schema.json")
         self.blueprints = self._load_blueprints()
 
-    def validate(self, targets: list[str] | None = None) -> bool:
+    def validate(self, targets: list[str] | None = None, *, branch: str | None = None) -> bool:
         target_names = targets or ["preview", "prod"]
         if not self.blueprints:
             raise ValidationError("No blueprints found from include globs")
 
         for target in target_names:
-            branch = "feature/mock-test" if target == "preview" else None
-            rendered = self.render_all(target, branch=branch)
+            rendered_branch = (branch or "feature/mock-test") if target == "preview" else None
+            rendered = self.render_all(target, branch=rendered_branch)
             self._validate_uniqueness(target, rendered)
             for blueprint in rendered:
-                self._validate_rendered_blueprint(target, branch, blueprint)
+                self._validate_rendered_blueprint(target, rendered_branch, blueprint)
+            if target == "preview":
+                self._validate_preview_separation(rendered, self.render_all("prod"))
         return True
 
     def render_all(
@@ -184,19 +186,31 @@ class Project:
         if not isinstance(include, list):
             raise ValidationError("$.include must be array")
 
-        paths: list[Path] = []
+        paths: set[Path] = set()
         for pattern in include:
-            paths.extend(self.root.glob(str(pattern)))
+            rendered_pattern = str(pattern)
+            pattern_path = Path(rendered_pattern)
+            if pattern_path.is_absolute() or ".." in pattern_path.parts:
+                raise ValidationError(f"Include pattern must stay within the project root: {rendered_pattern}")
+            for path in self.root.glob(rendered_pattern):
+                paths.add(require_within(path, self.root, f"Included blueprint {path}"))
 
         blueprints: list[Blueprint] = []
+        blueprint_paths: dict[str, Path] = {}
         for path in sorted(paths):
             raw = load_yaml(path)
             if not isinstance(raw, dict):
                 raise ValidationError(f"{path} must be an object")
             self.schema.validate(raw, "blueprint.schema.json")
+            name = str(raw["name"])
+            if name in blueprint_paths:
+                raise ValidationError(
+                    f"Duplicate blueprint name {name!r}: {blueprint_paths[name]} and {path}"
+                )
+            blueprint_paths[name] = path
             blueprints.append(
                 Blueprint(
-                    name=str(raw["name"]),
+                    name=name,
                     title=str(raw["title"]),
                     path=path,
                     dir=path.parent,
@@ -260,8 +274,20 @@ class Project:
 
         flights = self._render_resources(resources_node.get("flights", {}), target, context)
         for flight in flights.values():
-            flight["sourcePath"] = str((blueprint.dir / str(flight["source"])).resolve())
-            flight["requirementsPath"] = str((blueprint.dir / str(flight["requirements"])).resolve())
+            flight["sourcePath"] = str(
+                require_within(
+                    blueprint.dir / str(flight["source"]),
+                    blueprint.dir,
+                    f"Flight source for {blueprint.name}",
+                )
+            )
+            flight["requirementsPath"] = str(
+                require_within(
+                    blueprint.dir / str(flight["requirements"]),
+                    blueprint.dir,
+                    f"Flight requirements for {blueprint.name}",
+                )
+            )
             policies = target_settings.get("policies", {})
             if target == "preview" and isinstance(policies, dict) and policies.get("disableSchedules") is True:
                 flight["scheduleCron"] = ""
@@ -275,12 +301,24 @@ class Project:
 
         dives = self._render_resources(resources_node.get("dives", {}), target, context)
         for dive in dives.values():
-            dive["sourcePath"] = str((blueprint.dir / str(dive["source"])).resolve())
+            dive["sourcePath"] = str(
+                require_within(
+                    blueprint.dir / str(dive["source"]),
+                    blueprint.dir,
+                    f"Dive source for {blueprint.name}",
+                )
+            )
             dive.setdefault("description", "")
 
         contexts = self._render_resources(resources_node.get("context", {}), target, context)
         for ctx in contexts.values():
-            ctx["sourcePath"] = str((blueprint.dir / str(ctx["source"])).resolve())
+            ctx["sourcePath"] = str(
+                require_within(
+                    blueprint.dir / str(ctx["source"]),
+                    blueprint.dir,
+                    f"Context source for {blueprint.name}",
+                )
+            )
             ctx["deploy"] = ctx.get("deploy", False)
 
         return RenderedBlueprint(
@@ -389,12 +427,26 @@ class Project:
                 and schedule
             ):
                 raise ValidationError(f"preview flight {blueprint.name}.{key} must render with schedule disabled")
+            if (
+                target == "preview"
+                and not includes_branch_scope(str(flight["name"]), branch)
+            ):
+                raise ValidationError(
+                    f"preview Flight {blueprint.name}.{key} must include branch name or slug {rendered_branch_slug}"
+                )
 
         for key, dive in blueprint.dives.items():
             for field in ["title", "sourcePath"]:
                 require_nonempty(dive.get(field), f"dives.{key}.{field}")
             require_file(Path(str(dive["sourcePath"])))
             required_resources = dive.get("requiredResources")
+            if (
+                target == "preview"
+                and not includes_branch_scope(str(dive["title"]), branch)
+            ):
+                raise ValidationError(
+                    f"preview Dive {blueprint.name}.{key} must include branch name or slug {rendered_branch_slug}"
+                )
             if not isinstance(required_resources, list) or not required_resources:
                 raise ValidationError(f"dives.{key}.requiredResources must not be empty")
 
@@ -417,6 +469,33 @@ class Project:
                     f"context resource {blueprint.name}.{key} cannot deploy until MotherDuck exposes the context API"
                 )
 
+    def _validate_preview_separation(
+        self,
+        preview_blueprints: list[RenderedBlueprint],
+        production_blueprints: list[RenderedBlueprint],
+    ) -> None:
+        production = {blueprint.name: blueprint for blueprint in production_blueprints}
+        resource_fields = [
+            ("Flight", "flights", "name"),
+            ("Dive", "dives", "title"),
+            ("share", "shares", "name"),
+            ("database", "shares", "database"),
+        ]
+        for preview in preview_blueprints:
+            prod = production.get(preview.name)
+            if prod is None:
+                continue
+            for label, group_name, field in resource_fields:
+                preview_group = cast(dict[str, dict[str, object]], getattr(preview, group_name))
+                production_group = cast(dict[str, dict[str, object]], getattr(prod, group_name))
+                for key, resource in preview_group.items():
+                    production_resource = production_group.get(key)
+                    if production_resource is not None and resource.get(field) == production_resource.get(field):
+                        raise ValidationError(
+                            f"preview {label} {preview.name}.{key} must not match its production {field}: "
+                            f"{resource.get(field)}"
+                        )
+
 def nested_dict(node: object, *path: str) -> object | None:
     current = node
     for segment in path:
@@ -431,6 +510,12 @@ def stringify_map(values: dict[str, object]) -> dict[str, str]:
     return {str(key): str(value) for key, value in values.items()}
 
 
+def includes_branch_scope(value: str, branch: str | None) -> bool:
+    if not branch:
+        return False
+    return branch in value or branch_slug(branch) in value
+
+
 def require_nonempty(value: object, label: str) -> None:
     if str(value or "") == "":
         raise ValidationError(f"{label} is required")
@@ -439,6 +524,16 @@ def require_nonempty(value: object, label: str) -> None:
 def require_file(path: Path) -> None:
     if not path.is_file():
         raise ValidationError(f"Required file not found: {path}")
+
+
+def require_within(path: Path, root: Path, label: str) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValidationError(f"{label} must stay within {resolved_root}: {path}") from exc
+    return resolved_path
 
 
 def validate_python(path: Path) -> None:

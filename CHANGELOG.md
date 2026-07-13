@@ -4,6 +4,20 @@ All notable changes to this repository are documented here.
 
 Update this file in every pull request. Add entries under `Unreleased` until the change is released or merged into a reusable template.
 
+## Unreleased
+
+### Changed
+
+- Hardened preview cleanup so Flights, Dives, shares, and databases must be branch-scoped, cannot reuse their production identifiers, and require an explicit target-policy opt-in.
+- Validated live preview operations with the requested branch instead of the validator's mock branch.
+- Restricted included manifests and resource source files to their repository and blueprint package boundaries, including after symlink resolution.
+- Made `md-blueprints init --force` refuse template destinations that resolve outside the target directory through symlinks.
+- Delayed GitHub Release publication and floating-tag updates until release preflight, PyPI publishing, and generated-template publishing succeed, and narrowed the default release workflow permission to read-only.
+
+### Fixed
+
+- Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
+
 ## v0.3.0 - 2026-07-02
 
 ### Added

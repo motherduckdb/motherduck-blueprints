@@ -35,6 +35,8 @@ def load_yaml(path: Path) -> object:
             return yaml.safe_load(handle) or {}
     except yaml.YAMLError as exc:
         raise ValidationError(f"Invalid YAML in {path}: {exc}") from exc
+    except OSError as exc:
+        raise ValidationError(f"Could not read YAML file {path}: {exc}") from exc
 
 
 def declared_schema_version(data: object) -> int:
