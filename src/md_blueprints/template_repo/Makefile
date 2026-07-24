@@ -3,10 +3,18 @@
 ARG := $(word 2,$(MAKECMDGOALS))
 CLI_VERSION := __MD_BLUEPRINTS_VERSION__
 CLI := .venv/bin/md-blueprints
+CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)
 
-$(CLI):
-	python3 -m venv .venv
-	.venv/bin/python -m pip install "md-blueprints==$(CLI_VERSION)"
+.PHONY: cli
+cli:
+	@installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version 2>/dev/null || true )"; \
+	  if [ "$$installed_version" != "$(CLI_VERSION)" ]; then \
+	    python3 -m venv .venv; \
+	    .venv/bin/python -m pip install "md-blueprints @ $(CLI_SOURCE)"; \
+	  fi
+
+$(CLI): cli
+	@:
 
 .PHONY: setup
 setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from example
@@ -16,9 +24,8 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
 
 .PHONY: install-deploy
-install-deploy: ## Install CLI with live MotherDuck deploy dependencies
-	python3 -m venv .venv
-	.venv/bin/python -m pip install "md-blueprints[deploy]==$(CLI_VERSION)"
+install-deploy: $(CLI) ## Install CLI with live MotherDuck deploy dependencies
+	.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"
 
 .PHONY: preview
 preview: ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)

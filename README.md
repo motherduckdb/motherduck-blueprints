@@ -12,17 +12,17 @@ Dive governance travels with the code: previews are always `draft`, while produc
 
 ## What's in this repository
 
-This repository is the source for the Blueprints tooling. As a user, you interact with three artifacts built from it:
+This repository is the source for the Blueprints tooling. As a user, you interact with two versioned surfaces built from it:
 
 | Artifact | What it is |
 | --- | --- |
 | [`motherduckdb/blueprints-template`](https://github.com/motherduckdb/blueprints-template) | A GitHub template repository — the fastest way to start. It is generated from this repository on each release, so don't open pull requests there. |
-| [`md-blueprints` on PyPI](https://pypi.org/project/md-blueprints/) | The CLI for validating, planning, deploying, and migrating blueprints, locally or in CI. |
-| `motherduckdb/motherduck-blueprints@v0` | The GitHub Action that the generated workflows use to run the CLI in CI. |
+| `motherduckdb/motherduck-blueprints@v0` | The GitHub Action and CLI source for validating, planning, deploying, and migrating blueprints. Generated workflows use the action in CI, and local setup installs the matching repository tag. |
 
 ## Prerequisites
 
 - Python 3.10 or newer.
+- Git, used to install the versioned CLI source locally.
 - Node.js 20 or newer (only needed to preview Dives locally).
 - A GitHub repository with Actions enabled.
 - A MotherDuck [service account](https://motherduck.com/docs/key-tasks/service-accounts-guide/) token for CI deployments, so deployed resources are owned by automation rather than by one person's account.
@@ -43,7 +43,7 @@ Or generate the same file set with the CLI:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install md-blueprints
+.venv/bin/python -m pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0"
 .venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
@@ -119,7 +119,7 @@ Every pull request gets a comment with the deployment plan and preview links:
 
 ## Versioning and upgrades
 
-Your repository pins the tooling in two places: the action tag in `.github/workflows/` and the CLI version installed locally. Upgrade by bumping those pins.
+Your repository pins the tooling in two places: the floating action major in `.github/workflows/` and the exact source tag installed locally by the generated `Makefile`. Upgrade both when adopting a new major release; minor and patch action updates arrive through the floating major tag.
 
 ```yaml
 - uses: motherduckdb/motherduck-blueprints@v0
@@ -127,12 +127,12 @@ Your repository pins the tooling in two places: the action tag in `.github/workf
     command: validate
 ```
 
-Minor releases are additive and safe to accept through Dependabot after preview validation. Major releases can introduce a new manifest `schemaVersion`; run `md-blueprints doctor` and `md-blueprints migrate --to latest` first. See [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md) for the compatibility policy.
+Compatible minor and patch releases move the floating action major and are validated on the next workflow run. Major releases require an explicit action-pin change and can introduce a new manifest `schemaVersion`; run `md-blueprints doctor` and `md-blueprints migrate --to latest` first. See [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md) for the compatibility policy.
 
-Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which includes the DuckDB runtime dependencies:
+For live local `plan`, `deploy`, and `cleanup` commands, install the deploy extra from the pinned repository tag:
 
 ```bash
-.venv/bin/python -m pip install "md-blueprints[deploy]"
+make install-deploy
 ```
 
 ## Best practices
@@ -147,7 +147,7 @@ Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which inclu
 
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
-- [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): package/action pinning, schema compatibility, and migrations.
+- [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): the end-to-end example blueprint.
 - [MotherDuck documentation](https://motherduck.com/docs/getting-started) and the [MotherDuck Community Slack](https://slack.motherduck.com/) for product questions and support.
 

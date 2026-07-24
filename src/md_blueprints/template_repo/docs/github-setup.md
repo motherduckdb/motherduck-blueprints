@@ -94,4 +94,4 @@ Live workflows run `md-blueprints plan` before deploy. You can run the same chec
 md-blueprints plan --target preview --branch feature/example --blueprints <blueprint-name>
 ```
 
-Pin the released package or action version when maintaining a customer repository over time. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for upgrade and migration guidance.
+Pin the exact CLI source tag and the released action major when maintaining a customer repository over time. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for upgrade and migration guidance.

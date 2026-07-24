@@ -27,11 +27,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Validated live preview operations with the requested branch instead of the validator's mock branch.
 - Restricted included manifests and resource source files to their repository and blueprint package boundaries, including after symlink resolution.
 - Made `md-blueprints init --force` refuse template destinations that resolve outside the target directory through symlinks.
-- Delayed GitHub Release publication and floating-tag updates until release preflight, PyPI publishing, and generated-template publishing succeed, and narrowed the default release workflow permission to read-only.
+- Published the CLI and composite action directly from repository tags, removed the PyPI release dependency, and made generated repositories install local tooling from their matching Git tag.
+- Delayed GitHub Release publication and floating-tag updates until generated-template preflight and publishing succeed, and narrowed the default release workflow permission to read-only.
 - Made closed-pull-request cleanup evaluate both the branch and base manifests so previews for added and removed packages are deleted.
 
 ### Fixed
 
+- Made generated repositories reinstall local tooling after `CLI_VERSION` changes instead of silently reusing an older executable.
+- Excluded floating action tags from release triggers and rejected prerelease release-tag shapes before they can update the generated template or stable action major.
 - Pinned DuckDB below 1.5.5 until MotherDuck supports that client release, preventing live action installs from selecting an incompatible runtime.
 - Made plans reject missing Guide references, inherited roles, and share-grant roles before deployment can mutate earlier resources.
 - Made Guide resource references honor explicit IDs, filtered shares support declarative reset, and preview Guide cleanup tolerate validation-only production definitions.

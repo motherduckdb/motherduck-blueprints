@@ -1,72 +1,83 @@
 from __future__ import annotations
 
-import contextlib
-import json
 import os
 import subprocess
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Iterator
 
 import yaml
+
+from md_blueprints import __version__
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_release_publishes_only_after_external_preflight_and_publish_jobs() -> None:
-    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8"))
+def test_release_publishes_action_only_after_template_publish() -> None:
+    workflow_text = (REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
     jobs = workflow["jobs"]
 
+    assert '- "v*.*.*"' in workflow_text
     assert jobs["release-preflight"]["needs"] == "build"
-    assert "release-preflight" in jobs["publish-pypi"]["needs"]
-    assert "release-preflight" in jobs["publish-template"]["needs"]
-    assert set(jobs["finalize-release"]["needs"]) == {"publish-pypi", "publish-template"}
+    assert set(jobs["publish-template"]["needs"]) == {"build", "release-preflight"}
+    assert jobs["finalize-release"]["needs"] == "publish-template"
+    assert "publish-pypi" not in jobs
     build_steps = {step.get("name") for step in jobs["build"]["steps"]}
     assert "Publish GitHub Release" not in build_steps
 
+    publish_template_steps = jobs["publish-template"]["steps"]
+    generate_step = next(step for step in publish_template_steps if step.get("name") == "Generate template repository")
+    assert "python -m pip install ." in generate_step["run"]
+    assert "dist/" not in generate_step["run"]
 
-def test_release_external_check_accepts_existing_pypi_project(tmp_path: Path) -> None:
-    result = run_release_external_check(tmp_path, pypi_status=200)
+
+def test_release_external_check_accepts_writable_template_repository(tmp_path: Path) -> None:
+    result = run_release_external_check(tmp_path)
 
     assert result.returncode == 0
     assert "Template repository OK: motherduckdb/blueprints-template" in result.stdout
-    assert "PyPI project OK: md-blueprints" in result.stdout
-
-
-def test_release_external_check_accepts_pending_pypi_publisher(tmp_path: Path) -> None:
-    result = run_release_external_check(tmp_path, pypi_status=404)
-
-    assert result.returncode == 0
-    assert "PyPI project 'md-blueprints' is not registered yet" in result.stdout
-    assert "pending trusted publisher" in result.stdout
 
 
 def test_release_external_check_requires_template_push_permission(tmp_path: Path) -> None:
-    result = run_release_external_check(tmp_path, pypi_status=200, template_push=False)
+    result = run_release_external_check(tmp_path, template_push=False)
 
     assert result.returncode == 1
     assert "cannot push" in result.stderr
     assert "approve any pending org request" in result.stderr
 
 
-def test_release_external_check_can_require_registered_pypi_project(tmp_path: Path) -> None:
-    result = run_release_external_check(
-        tmp_path,
-        pypi_status=404,
-        extra_env={"ALLOW_PYPI_PENDING_PUBLISHER": "0"},
-    )
+def test_release_external_check_requires_template_repository_mode(tmp_path: Path) -> None:
+    result = run_release_external_check(tmp_path, is_template=False)
 
     assert result.returncode == 1
-    assert "Register a pending trusted publisher" in result.stderr
+    assert "not marked as a GitHub template repository" in result.stderr
+
+
+def test_release_version_check_accepts_only_stable_semantic_tags() -> None:
+    stable = subprocess.run(
+        [str(REPO_ROOT / "scripts/check-release-version.sh"), f"v{__version__}"],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    prerelease = subprocess.run(
+        [str(REPO_ROOT / "scripts/check-release-version.sh"), f"v{__version__}-rc.1"],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert stable.returncode == 0
+    assert prerelease.returncode == 1
+    assert "must match vMAJOR.MINOR.PATCH" in prerelease.stderr
 
 
 def run_release_external_check(
     tmp_path: Path,
     *,
-    pypi_status: int,
     template_push: bool = True,
-    extra_env: dict[str, str] | None = None,
+    is_template: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -82,52 +93,24 @@ if [ "$1" != "api" ] || [ "$2" != "repos/motherduckdb/blueprints-template" ]; th
   echo "unexpected gh invocation: $*" >&2
   exit 2
 fi
-printf '{"is_template":true,"permissions":{"push":%s}}' "${GH_TEMPLATE_PUSH}"
+printf '{"is_template":%s,"permissions":{"push":%s}}' "${GH_IS_TEMPLATE}" "${GH_TEMPLATE_PUSH}"
 """,
         encoding="utf-8",
     )
     gh.chmod(0o755)
 
-    with pypi_server(pypi_status) as base_url:
-        env = {
-            **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "TEMPLATE_PUSH_TOKEN": "template-token",
-            "GH_TEMPLATE_PUSH": "true" if template_push else "false",
-            "PYPI_JSON_BASE_URL": base_url,
-        }
-        if extra_env is not None:
-            env.update(extra_env)
-        return subprocess.run(
-            [str(REPO_ROOT / "scripts/check-release-external-setup.sh")],
-            cwd=REPO_ROOT,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-
-@contextlib.contextmanager
-def pypi_server(status: int) -> Iterator[str]:
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            if self.path != "/md-blueprints/json":
-                self.send_error(404)
-                return
-            self.send_response(status)
-            self.end_headers()
-            if status == 200:
-                self.wfile.write(json.dumps({"info": {"name": "md-blueprints"}}).encode("utf-8"))
-
-        def log_message(self, format: str, *args: object) -> None:
-            return
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-        thread.join()
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "TEMPLATE_PUSH_TOKEN": "template-token",
+        "GH_TEMPLATE_PUSH": "true" if template_push else "false",
+        "GH_IS_TEMPLATE": "true" if is_template else "false",
+    }
+    return subprocess.run(
+        [str(REPO_ROOT / "scripts/check-release-external-setup.sh")],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
