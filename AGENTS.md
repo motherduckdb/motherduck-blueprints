@@ -1,6 +1,6 @@
 # Agent Guide
 
-This repository contains MotherDuck Blueprints for Dives, Flights, shares, and future context-layer assets.
+This repository contains MotherDuck Blueprints for Dives, Flights, shares, and Guides.
 
 ## Token Handling
 
@@ -8,23 +8,23 @@ Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.div
 
 ## Project Layout
 
-`motherduck.yml` is the canonical repository manifest. It includes `blueprints/*/blueprint.yml`, defines shared variables, and declares the `preview` and `prod` targets. It is a catalog and policy file, not the deployable project boundary.
+`motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the `preview` and `prod` targets.
 
-Each deployable project lives in `blueprints/<blueprint-name>/`:
+Each deployable package has a `blueprint.yml`, source files, and a package README. Use typed roots when ownership follows the resource type:
 
-- `blueprint.yml` - resource manifest.
-- `src/flight.py` - optional Flight source.
-- `src/requirements.txt` - optional Flight dependencies.
-- `src/dive.tsx` - optional Dive source.
-- `README.md` - blueprint-specific notes.
+- `flights/**/<name>/` for Flight producers and their shares/outputs.
+- `dives/**/<name>/` for Dives and their inputs.
+- `guides/**/<name>/` for version-controlled Guides.
+- `roles/**/<name>/` for production RBAC roles and memberships.
+- `projects/**/<name>/` when any resource combination truly ships, previews, and rolls back together.
 
-Do not add deployable resources under top-level `dives/`, `flights/`, or `bundles/`; deployable work belongs in blueprint packages. Use lowercase slug names for blueprints (`a-z`, `0-9`, and `-`) so paths, selectors, and rendered resource names stay predictable.
+Nested organizational directories are allowed, but the package's immediate parent directory must match its lowercase blueprint slug. Existing `blueprints/<name>/` packages remain supported and are not required to migrate.
 
-Treat a blueprint package as one logical project or data product. Do not split or group packages by MotherDuck organization, service account, user, or database ownership. Databases are resources inside a project package; service accounts are target or resource identity choices.
+Use top-level `inputs` and `outputs` to connect independently deployed packages. Outputs name package-local shares; inputs reference `blueprint.output` contracts in the same repository. Use literal share URLs for external repositories.
 
-Use `make new-blueprint <blueprint-name>` as the starting example for new projects. The generated package should stay deployable: its Flight creates starter data and a share, and its Dive reads that share.
+Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `make new-project`. `make new-blueprint` remains an alias for a complete project scaffold.
 
-When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, blueprint `README.md` files, `templates/blueprint/README.md`, `context/README.md`, `.github/pull_request_template.md`, and this guide for drift.
+When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, package READMEs, `.github/pull_request_template.md`, and this guide for drift.
 
 ## Resources
 
@@ -33,7 +33,9 @@ Declare resources in `blueprint.yml`:
 - `resources.shares` names produced data products and their preview cleanup behavior.
 - `resources.flights` deploys MotherDuck Flights from Python source and requirements files.
 - `resources.dives` deploys Dives and required resources.
-- `resources.context` validates future context-layer files but must use `deploy: false` until MotherDuck exposes a deployment API.
+- `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.
+- `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled.
+- `resources.context` remains compatible, but `doctor` recommends `resources.guides`.
 
 For Dives, keep `export const REQUIRED_DATABASES = ...` on one line in source when using local preview. The deploy engine strips that export and passes rendered `requiredResources` from `blueprint.yml`.
 
@@ -42,6 +44,8 @@ For Dives, keep `export const REQUIRED_DATABASES = ...` on one line in source wh
 Preview deployments are branch-scoped. Preview share/database names that may be cleaned up must include `${target.branch_slug}`. Production names are stable and deploy through the `motherduck-production` GitHub Environment.
 
 Preview Flight schedules are disabled by target policy. Use `runOnDeploy: true` when a preview or production deploy should start an immediate run. Use `waitForRun: success` when dependent Dives should wait for the Flight run to succeed before resolving shares.
+
+Preview selection expands through both upstream producers and downstream consumers. Production selection expands downstream only, so changing a consumer does not rerun an unchanged producer.
 
 ## Commands
 

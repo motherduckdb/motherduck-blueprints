@@ -13,12 +13,16 @@ from md_blueprints.schema import ValidationError
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIRRORED_TEMPLATE_PATHS = [
     "motherduck.yml",
-    "blueprints/wikipedia-pageviews",
+    "flights",
+    "dives",
+    "guides",
+    "roles",
+    "projects",
+    "shared",
     "schemas/v1",
     ".dive-preview",
     "templates/blueprint",
     "docs",
-    "context",
 ]
 
 
@@ -28,13 +32,15 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     run_init(target)
 
     assert (target / "motherduck.yml").is_file()
-    assert (target / "blueprints/wikipedia-pageviews/blueprint.yml").is_file()
+    assert (target / "flights/wikipedia-pageviews-ingest/blueprint.yml").is_file()
+    assert (target / "dives/wikipedia-pageviews/blueprint.yml").is_file()
     assert (target / ".github/workflows/deploy_blueprints.yaml").is_file()
     assert (target / ".github/workflows/cleanup_preview_blueprints.yaml").is_file()
     assert (target / ".github/dependabot.yml").is_file()
     assert (target / ".dive-preview/.env.example").is_file()
-    assert (target / "context/policies/.gitkeep").is_file()
-    assert (target / "context/schemas/.gitkeep").is_file()
+    assert (target / "guides/README.md").is_file()
+    assert (target / "roles/README.md").is_file()
+    assert (target / "shared/README.md").is_file()
     assert not (target / "src").exists()
     assert not (target / "pyproject.toml").exists()
     assert not (target / "CHANGELOG.md").exists()
@@ -44,11 +50,16 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
 
     makefile = (target / "Makefile").read_text(encoding="utf-8")
     deploy_workflow = (target / ".github/workflows/deploy_blueprints.yaml").read_text(encoding="utf-8")
+    cleanup_workflow = (target / ".github/workflows/cleanup_preview_blueprints.yaml").read_text(encoding="utf-8")
     readme = (target / "README.md").read_text(encoding="utf-8")
-    requirements = (target / "blueprints/wikipedia-pageviews/src/requirements.txt").read_text(encoding="utf-8")
+    requirements = (target / "flights/wikipedia-pageviews-ingest/src/requirements.txt").read_text(encoding="utf-8")
 
     assert f"CLI_VERSION := {__version__}" in makefile
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in deploy_workflow
+    assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in cleanup_workflow
+    assert "github.event.pull_request.head.sha" in cleanup_workflow
+    assert "github.event.pull_request.base.sha" in cleanup_workflow
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in cleanup_workflow
     assert "pytz>=2024.1" in requirements
     assert "__MD_BLUEPRINTS_" not in readme
     assert "mock-test" not in makefile
@@ -94,7 +105,7 @@ def test_init_template_does_not_drift_from_mirrored_repo_paths(tmp_path: Path) -
 
     run_init(target)
 
-    source_files = set(git_tracked_files(MIRRORED_TEMPLATE_PATHS))
+    source_files = set(repository_files(MIRRORED_TEMPLATE_PATHS))
     generated_files = set(files_under(target, MIRRORED_TEMPLATE_PATHS))
     assert generated_files == source_files
 
@@ -106,15 +117,15 @@ def test_init_template_does_not_drift_from_mirrored_repo_paths(tmp_path: Path) -
     assert drifted == []
 
 
-def git_tracked_files(paths: list[str]) -> list[Path]:
+def repository_files(paths: list[str]) -> list[Path]:
     result = subprocess.run(
-        ["git", "ls-files", *paths],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *paths],
         cwd=REPO_ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE,
     )
-    return [Path(line) for line in result.stdout.splitlines()]
+    return [Path(line) for line in result.stdout.splitlines() if (REPO_ROOT / line).is_file()]
 
 
 def files_under(root: Path, paths: list[str]) -> list[Path]:

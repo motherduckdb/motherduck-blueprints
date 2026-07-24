@@ -1,61 +1,111 @@
 # Repository Reference
 
-Use this page when you need the detailed repository layout, deployment behavior, and local command reference.
+Use this page for the repository layout, dependency behavior, targets, and local commands.
 
 ## Repository Layout
 
 ```text
 motherduck.yml
-action.yml
-
-blueprints/
-  <blueprint-name>/
+flights/
+  <producer-name>/
     blueprint.yml
-    README.md
-    src/
-      flight.py
-      requirements.txt
-      dive.tsx
-
-schemas/
-  v1/
-    motherduck-root.schema.json
-    blueprint.schema.json
-
-context/
-  README.md
-  policies/
-  schemas/
+    src/flight.py
+dives/
+  <dive-name>/
+    blueprint.yml
+    src/dive.tsx
+guides/
+  <guide-name>/
+    blueprint.yml
+    guide.md
+roles/
+  <role-name>/
+    blueprint.yml
+projects/
+  <project-name>/
+    blueprint.yml
+shared/
+schemas/v1/
 ```
 
-`motherduck.yml` is the canonical repository manifest. It declares included blueprint manifests, shared variables, and the `preview` and `prod` targets. GitHub Actions discover changed blueprints from this manifest instead of requiring manual path-filter registration.
+`motherduck.yml` is the repository catalog and policy file. The v0.4 template discovers manifests recursively:
 
-`include` entries must be relative glob patterns that stay inside the repository root. Overlapping globs are deduplicated, and blueprint names must be unique across all matched manifests.
+```yaml
+include:
+  - flights/**/blueprint.yml
+  - dives/**/blueprint.yml
+  - guides/**/blueprint.yml
+  - roles/**/blueprint.yml
+  - projects/**/blueprint.yml
+  - blueprints/**/blueprint.yml
+```
 
-The root manifest may also set `requiredCliVersion`, for example `requiredCliVersion: ">=1.3"`, when a repository depends on CLI behavior that cannot be expressed through schema shape alone.
+The final entry preserves compatibility with existing repositories. No migration is required. Include patterns must stay inside the repository, overlapping matches are deduplicated, and blueprint names are globally unique.
 
-`md-blueprints` is the versioned CLI package that validates schemas, renders targets, plans deployments, deploys resources, cleans previews, and hosts migration commands.
+## Package Boundaries
 
-`schemas/v*/` is an optional mirror for editor support and documentation. The schemas packaged in the installed `md-blueprints` CLI are the validation source of truth.
+Every leaf package is independently deployable. Use:
 
-Keep the docs set aligned when repository behavior changes. Layout, command, target, or resource changes should be reflected in `README.md`, the relevant `docs/` page, and any affected blueprint README.
+- `flights/` for one or more Flights plus the shares and outputs they produce.
+- `dives/` for one or more Dives and their declared inputs.
+- `guides/` for one or more version-controlled Guides.
+- `roles/` for production custom roles and direct memberships.
+- `projects/` for any resource combination that genuinely ships, previews, and rolls back together.
+- `shared/` for human-oriented shared documentation or configuration only. It has no deployment semantics.
 
-## Project Granularity
+Nested team or domain directories are allowed. In canonical roots, the directory immediately containing `blueprint.yml` must match the blueprint's lowercase slug. Typed roots reject mismatched resource groups. Custom include roots and legacy `blueprints/` packages remain unconstrained.
 
-A `blueprints/<name>/` package represents one logical project or data product that should be reviewed, previewed, deployed, rolled back, and understood as a unit.
+Resource source files must remain inside their package, including after symlink resolution.
 
-Use a blueprint package for examples like `account-360`, `revenue-ops`, `support-insights`, or `wikipedia-pageviews`. Do not use a blueprint package for an entire organization, all databases owned by a user, all resources owned by a service account, or all production assets across unrelated projects.
+## Inputs, Outputs, and Deployment Graph
 
-A single MotherDuck user or service account can own many databases, and one project can occasionally involve more than one service account. That does not change the package boundary:
+A producer gives a package-local share a stable contract name:
 
-- Databases are resources or variables inside a project package.
-- Service accounts are deployment/runtime identity choices for a target or resource.
-- Targets such as `preview`, `staging`, and `prod` describe environment behavior.
-- The root `motherduck.yml` is a repository catalog and policy file, not an organization-wide package.
+```yaml
+outputs:
+  pageviews:
+    share: pageviews
+```
 
-Prefer one deployment service account per project/environment. If a project must use multiple service accounts, model that explicitly as identity configuration for the affected target or resource instead of splitting one project into artificial packages.
+A same-repository consumer references that contract:
 
-Target deployment metadata is optional:
+```yaml
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+resources:
+  dives:
+    dashboard:
+      requiredResources:
+        - input: pageviews
+          alias: wikipedia_pageviews
+```
+
+Inputs can also be used in templates through `${inputs.<name>.*}`. Rendered metadata includes the producer and output identity plus the target-specific share name, database, access, and visibility. Use a literal `url` required resource for a share owned by another repository.
+
+The CLI validates missing producers, missing outputs, outputs pointing to missing shares, self-references, and dependency cycles before deployment.
+
+Selection follows the graph:
+
+- Preview expands recursively upstream and downstream, producing a branch-scoped connected preview.
+- Production expands downstream only. Changing a producer redeploys its consumers; changing only a consumer uses the existing production output and does not rerun its producer.
+- Deployment order is deterministic and producer-first.
+- Preview cleanup reverses dependency order and removes deployed Guides before Dives, Flights, shares, and databases.
+
+Direct Git change detection remains package-based. Graph expansion happens when plan, deploy, or cleanup interprets the selected names.
+
+## Targets and Safety
+
+The default targets are:
+
+- `preview`: branch-scoped names, disabled Flight schedules, and cleanup enabled.
+- `prod`: stable names deployed through the `motherduck-production` GitHub Environment.
+
+Cleanup-sensitive preview shares and databases must contain `${target.branch_slug}`. Preview Flight names and Dive titles must contain the branch or branch slug. Cleanup refuses identifiers that are not branch-scoped or that match production.
+
+A target can select a token environment variable and document its deployment identity:
 
 ```yaml
 targets:
@@ -66,98 +116,43 @@ targets:
       identity: GitHub Actions production service account
 ```
 
-`tokenEnvVar` defaults to `MOTHERDUCK_TOKEN`. If you set a different env var, the deploy tool reads that env var and passes its value to the DuckDB Python connection config without printing it. `identity` is a non-secret label for humans.
-
-## Blueprint Packages
-
-Each deployable project lives under `blueprints/<name>/` and declares resources in `blueprint.yml`:
-
-- `resources.flights` for Python Flights.
-- `resources.dives` for React/SQL Dives.
-- `resources.shares` for produced data products used by Flights and Dives.
-- `resources.context` for context-layer files that validate now but do not deploy until MotherDuck exposes that API.
-
-Standalone Dives or Flights are represented as one-resource blueprints. A Flight + Dive pair should usually be one blueprint so preview deployment, share waiting, and cleanup stay coordinated.
-
-Blueprint names are lowercase slugs (`a-z`, `0-9`, and `-`) because they are used as directory names, CI selectors, and deployment identifiers.
-
-Create a package with:
-
-```bash
-make new-blueprint <blueprint-name>
-```
-
-Then edit `blueprints/<blueprint-name>/blueprint.yml` and the files under `src/`.
-
-The generated package is the recommended starting example. It creates a small `starter_daily_metrics` table and `starter_metric_summary` view, publishes a branch- or production-scoped share, and deploys a Dive that reads the share. Replace the starter data and query with your project logic while keeping the same package boundary: one logical project or data product per blueprint.
-
-For every accepted `blueprint.yml` field, value shape, default, and rendered validation rule, see [blueprint.yml Reference](blueprint-yml-reference.md).
-
-## Deployment Targets
-
-The repo defines two targets:
-
-- `preview`: branch-scoped resource names, schedules disabled, preview cleanup enabled.
-- `prod`: stable production names, protected by the `motherduck-production` GitHub Environment.
-
-Preview Dives always render with `draft` status. Production Dives may declare `draft`, `ready`, `endorsed`, or `archived`; omitted production status remains unmanaged and is preserved during content updates.
-
-Preview resources must include `${target.branch_slug}` in cleanup-sensitive share/database names. This prevents cleanup from dropping stable production resources.
-
-Preview Flight names and Dive titles must also contain either `${target.branch}` or `${target.branch_slug}`. Cleanup refuses any Flight, Dive, share, or database whose preview identifier is not branch-scoped or exactly matches its production identifier.
-
-The cleanup command also requires `targets.preview.policies.cleanup: true`; without that explicit opt-in it exits before querying or deleting resources.
+Tokens are passed to the DuckDB connection and are never printed.
 
 ## Local Commands
 
 ```bash
 make setup
-make preview <blueprint-name>
-make preview-smoke <blueprint-name>
-make new-blueprint <blueprint-name>
 make validate
-make render-preview <blueprint-name>
-md-blueprints plan --target preview --branch feature/local --blueprints <blueprint-name>
-md-blueprints cleanup --dry-run --target preview --branch feature/local --blueprints <blueprint-name>
+make new-flight events-ingest
+make new-dive events-dashboard INPUT=events-ingest.data
+make new-guide analytics-guide
+make new-role analytics-team
+make new-project revenue-overview
+make preview wikipedia-pageviews
+make preview-smoke wikipedia-pageviews
+make render-preview wikipedia-pageviews
+
+md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
+md-blueprints cleanup --dry-run --target preview --branch feature/local
 md-blueprints doctor
-md-blueprints migrate --to latest
 ```
 
-`make setup` installs the local Python package and Dive preview dependencies.
+`make new-blueprint NAME` remains a compatibility alias for `make new-project NAME`. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 
-`make validate` parses `motherduck.yml`, expands included blueprints, validates against the packaged schemas, renders preview and production targets, checks uniqueness, checks Flight Python syntax, and validates Dive required resources.
+`make validate` renders preview and production, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected production producer must already expose its declared share or planning fails before deployment.
 
-`make preview-smoke <blueprint-name>` writes that blueprint's Dive into the local Vite preview harness and runs a production build without starting a server.
+## Dives
 
-`md-blueprints plan` validates and renders selected blueprints, queries live MotherDuck state with read-only SQL, and reports whether Flights and Dives will be created or updated. Dive rows include current and desired status, including endorsement or archival transitions. Shares are reported as `present` or `missing` because the deployer waits for shares but project Flight code creates them.
+Preview Dives always use `draft`. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
 
-`md-blueprints cleanup --dry-run` shows the preview Dives, Flights, shares, and databases that cleanup would delete or drop. It uses the same branch-slug safety checks as real cleanup and does not issue delete or drop queries.
+## Guides
 
-`md-blueprints doctor` reports the CLI version, supported schema versions, project schema versions, validation status, DuckDB Python package availability, and whether the local `schemas/` mirror matches the packaged schema source.
+Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.
 
-`md-blueprints migrate --to latest` is dry-run by default. It prints migration diffs for future breaking schema changes and writes only when `--write` is supplied.
+## RBAC
 
-Run this minimum set before opening a PR:
+Declare custom roles under `resources.roles` or scaffold a role package with `make new-role`. Roles deploy only in production, before resources that may grant access to them. Share `grants` can target roles and users in additive or authoritative mode. Role and organization-Guide changes run an admin capability preflight before the first mutation.
 
-```bash
-make validate
-make preview-smoke <blueprint-name> # when the blueprint has a Dive
-```
+## CI/CD
 
-For docs-only changes, run at least `git diff --check`. Run the full validation set when docs describe generated output, manifests, workflows, or command behavior.
-
-## CI/CD Flow
-
-- The `CI` workflow validates manifests, runs mock deployment tests, builds the included example Dive, and creates then destroys a generated starter blueprint.
-- Pull requests validate all manifests, discover changed blueprint packages from `motherduck.yml`, deploy the `preview` target, and comment with preview links.
-- Preview deployment runs a read-only plan immediately before deploy; the PR comment includes the plan and deployed links.
-- Preview cleanup runs when a PR closes or a branch is deleted. Cleanup events for the same branch are serialized, and already-removed resources are treated as success so simultaneous PR-close and branch-delete events remain idempotent. Dives are deleted before Flights, shares, and preview databases.
-- Pushes to `main` plan the `prod` target, write the plan to the GitHub job summary, then deploy through the protected `motherduck-production` environment.
-- Setting a Dive to `endorsed` requires the production service account to be a MotherDuck organization admin. Keep that credential behind required environment reviewers and reserve endorsement for intentionally rare trusted sources of truth.
-- No workflow file needs per-blueprint path filters or manual asset registration.
-
-Customer repositories should pin the released package or action version. See [Tooling and Schema Versioning](tooling-and-schema-versioning.md) for the schema compatibility and migration policy.
-
-## Context Layer
-
-The `context/` directory is intentionally lightweight for now. Keep proposed schemas, prompts, relationship definitions, or policy files there until MotherDuck publishes the context-layer deployment interface. Blueprint `resources.context` entries validate files and intentionally refuse deployment while that API does not exist.
+Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with plans and preview links. Pushes to `main` expand production changes downstream and deploy through the protected production environment. Closing a PR or deleting a branch triggers dependency-safe preview cleanup.

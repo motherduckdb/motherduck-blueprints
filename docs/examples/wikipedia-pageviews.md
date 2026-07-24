@@ -1,14 +1,47 @@
 # Wikipedia Pageviews Example
 
-This example is a self-contained blueprint in `blueprints/wikipedia-pageviews/`.
+This example demonstrates cross-blueprint composition:
+
+```text
+flights/wikipedia-pageviews-ingest/
+  blueprint.yml
+  src/flight.py
+dives/wikipedia-pageviews/
+  blueprint.yml
+  src/dive.tsx
+```
+
+## Contract
+
+The producer loads Wikimedia data, publishes the `wikipedia_pageviews` share, and exports it as `pageviews`:
+
+```yaml
+outputs:
+  pageviews:
+    share: pageviews
+```
+
+The Dive consumes that stable output without owning or duplicating the ingestion pipeline:
+
+```yaml
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+resources:
+  dives:
+    pageviews:
+      requiredResources:
+        - input: pageviews
+          alias: wikipedia_pageviews
+```
 
 ## What It Deploys
 
-- `resources.flights.pageviews_loader` - loads public Wikimedia pageview data into MotherDuck.
-- `resources.shares.pageviews` - names the database share produced by the Flight.
-- `resources.dives.pageviews` - reads from that share through the `wikipedia_pageviews` alias, using `draft` in preview and `ready` in production.
+The producer package deploys the Flight and share. The consumer package deploys the Dive with `ready` status in production and `draft` status in preview.
 
-The Flight creates these MotherDuck objects if they do not already exist:
+The Flight creates or updates:
 
 - database: `wikipedia_pageviews`
 - schema: `main`
@@ -16,44 +49,23 @@ The Flight creates these MotherDuck objects if they do not already exist:
 - view: `main.pageviews_article_summary`
 - share: `wikipedia_pageviews`
 
-After each load, the Flight runs `UPDATE SHARE` so the Dive reads the latest published snapshot.
+The Dive queries that output through the `wikipedia_pageviews` alias. After each load, the Flight runs `UPDATE SHARE` so consumers read the latest snapshot.
 
-## Public Data Source
+The public data comes from Wikimedia's Pageviews API. The defaults load `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days.
 
-The Flight uses the Wikimedia Pageviews API:
+## Deployment Behavior
 
-```text
-https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...
-```
+Both packages are discovered recursively by `motherduck.yml`. On preview, selecting either package expands to the complete connected graph: the branch-scoped Flight runs, its share becomes available, and the Dive deploys against that preview output as `draft`.
 
-The default article set is `DuckDB`, `MotherDuck`, and `Wikipedia` for the last 30 complete days. Wikimedia asks API clients to send a useful `User-Agent`, so update `variables.user_agent` in `blueprint.yml` before deploying this from your repository.
-
-## Deployment Flow
-
-The root `motherduck.yml` includes `blueprints/*/blueprint.yml`, so this blueprint is discovered automatically. No workflow path-filter registration is required.
-
-On pull requests:
-
-1. `.github/workflows/deploy_blueprints.yaml` computes changed blueprint packages.
-2. `md-blueprints validate` validates all manifests and rendered targets.
-3. `md-blueprints plan --target preview --branch <branch>` inspects live resources without mutating them.
-4. `md-blueprints deploy --target preview --branch <branch>` deploys changed blueprints.
-5. The preview Flight name and Dive title include the branch name.
-6. The preview database and share include `${target.branch_slug}`.
-7. The Flight runs once, waits for success, waits for the share URL, and deploys the Dive.
-8. A PR comment lists the plan plus preview Flights, shares, and Draft Dives.
-
-On merge to `main`, production deployment writes a live plan to the GitHub job summary, runs through the protected `motherduck-production` environment, uses stable names, and promotes the Dive to `ready`.
-
-## Preview Behavior
-
-The `preview` target disables schedules, forces Dive status to `draft`, and requires cleanup-sensitive data resources to include the branch slug. The rendered preview share for branch `feature/mock-test` is:
+For branch `feature/mock-test`, the share and database render as:
 
 ```text
 wikipedia_pageviews_preview_feature_mock_test
 ```
 
-Preview cleanup deletes the Dive first, then the Flight, then the preview share and database. Use `md-blueprints cleanup --dry-run --target preview --branch <branch>` to inspect those actions without deleting anything. The cleanup guard refuses to drop preview data resources whose names do not include the rendered branch slug.
+In production, a producer change also redeploys the Dive and reconciles its declared `ready` status. A Dive-only change uses the existing production output and does not rerun the Flight.
+
+Cleanup reverses dependencies: it removes the Dive before the Flight, share, and preview database.
 
 ## Local Checks
 
@@ -63,4 +75,4 @@ make render-preview wikipedia-pageviews
 make preview-smoke wikipedia-pageviews
 ```
 
-`make preview-smoke` builds the Dive through the local Vite preview harness without starting a long-running development server.
+`make preview-smoke` builds the Dive through the local Vite harness without contacting MotherDuck.

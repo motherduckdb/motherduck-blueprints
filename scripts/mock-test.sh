@@ -76,8 +76,8 @@ elif [[ "$query" == *"DROP DATABASE IF EXISTS"* ]]; then
   exit 0
 elif [[ "$query" == *"MD_LIST_DIVES"* ]]; then
   if [[ "${MOCK_DUPLICATE_DIVES:-false}" == "true" ]]; then
-    echo "00000000-0000-0000-0000-000000000021"
-    echo "00000000-0000-0000-0000-000000000022"
+    echo "00000000-0000-0000-0000-000000000021,draft"
+    echo "00000000-0000-0000-0000-000000000022,draft"
   elif [ -f "$dive_state" ]; then
     if [[ "$query" == *"SELECT id, status"* ]]; then
       echo "$(cat "$dive_state"),$(cat "$dive_status_state")"
@@ -190,9 +190,9 @@ class MockConnection:
         if "MD_LIST_DIVES" in query:
             if os.environ.get("MOCK_DUPLICATE_DIVES", "false") == "true":
                 return MockResult([
-                    ("00000000-0000-0000-0000-000000000021",),
-                    ("00000000-0000-0000-0000-000000000022",),
-                ])
+                    ("00000000-0000-0000-0000-000000000021", "draft"),
+                    ("00000000-0000-0000-0000-000000000022", "draft"),
+            ])
             if self.dive_state.exists():
                 if "SELECT id, status" in query:
                     return MockResult([(
@@ -291,7 +291,7 @@ rsync -a \
   --exclude .dive-preview/dist \
   --exclude .dive-preview/node_modules \
   "$REPO_ROOT/" "$INVALID_SCHEMA_ROOT/"
-python3 - "$INVALID_SCHEMA_ROOT/blueprints/wikipedia-pageviews/blueprint.yml" <<'PY'
+python3 - "$INVALID_SCHEMA_ROOT/dives/wikipedia-pageviews/blueprint.yml" <<'PY'
 from pathlib import Path
 import sys
 
@@ -359,7 +359,7 @@ PY
 
 echo "==> Planning missing share"
 MOCK_SHARE_MISSING=true md-blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/missing-share.out"
-grep -q "wikipedia_pageviews_preview_feature_mock_test.*missing" "${TMP_DIR}/missing-share.out"
+grep -q "wikipedia_pageviews_preview_feature_mock_test.*pending" "${TMP_DIR}/missing-share.out"
 
 echo "==> Rejecting duplicate live resources during plan"
 if MOCK_DUPLICATE_FLIGHTS=true md-blueprints plan --target preview --branch feature/mock-test --blueprints wikipedia-pageviews > "${TMP_DIR}/duplicate-flight.out" 2>&1; then

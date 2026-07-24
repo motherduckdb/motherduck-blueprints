@@ -21,6 +21,13 @@ type ConnectionState =
   | { status: "connected"; connection: MDConnection }
   | { status: "error"; error: Error };
 
+export type RequiredDatabase = {
+  alias: string;
+  path?: string;
+  shareName?: string;
+  type?: "share" | "database";
+};
+
 export type UseSQLQueryResult<TData = readonly DuckDBRow[]> = {
   data: TData | undefined;
   isLoading: boolean;
@@ -112,6 +119,47 @@ class QueryObserver {
 type ContextValue = { state: ConnectionState };
 const SDKContext = createContext<ContextValue | null>(null);
 
+function sqlString(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function sqlIdentifier(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+async function resolveDatabasePath(connection: MDConnection, database: RequiredDatabase) {
+  if (database.path) return database.path;
+  if (!database.shareName) {
+    throw new Error(`Required database ${database.alias} must declare path or shareName`);
+  }
+
+  const result = await connection.safeEvaluateQuery(
+    `SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = ${sqlString(database.shareName)}`,
+  );
+  if (result.status === "error") throw result.err;
+  if (result.result.data.rowCount !== 1) {
+    throw new Error(`Could not resolve share ${database.shareName}`);
+  }
+  const url = result.result.data.singleValue();
+  if (typeof url !== "string" || !url) {
+    throw new Error(`Share ${database.shareName} did not return a valid URL`);
+  }
+  return url;
+}
+
+async function attachRequiredDatabases(
+  connection: MDConnection,
+  requiredDatabases: readonly RequiredDatabase[],
+) {
+  for (const database of requiredDatabases) {
+    const path = await resolveDatabasePath(connection, database);
+    const result = await connection.safeEvaluateQuery(
+      `ATTACH IF NOT EXISTS ${sqlString(path)} AS ${sqlIdentifier(database.alias)}`,
+    );
+    if (result.status === "error") throw result.err;
+  }
+}
+
 function useSDKContext() {
   const ctx = useContext(SDKContext);
   if (!ctx) throw new Error("Must be used within MotherDuckSDKProvider");
@@ -119,7 +167,15 @@ function useSDKContext() {
 }
 
 export function MotherDuckSDKProvider(
-  { token, children }: { token: string; children: ReactNode },
+  {
+    token,
+    requiredDatabases,
+    children,
+  }: {
+    token: string;
+    requiredDatabases: readonly RequiredDatabase[];
+    children: ReactNode;
+  },
 ) {
   const [state, setState] = useState<ConnectionState>({ status: "idle" });
 
@@ -132,6 +188,7 @@ export function MotherDuckSDKProvider(
       try {
         conn = MDConnection.create({ mdToken: token, useDuckDBWasmCOI: false });
         await conn.isInitialized();
+        await attachRequiredDatabases(conn, requiredDatabases);
         if (!cancelled) setState({ status: "connected", connection: conn });
       } catch (err) {
         if (!cancelled) setState({
@@ -141,7 +198,7 @@ export function MotherDuckSDKProvider(
       }
     })();
     return () => { cancelled = true; conn?.close(); };
-  }, [token]);
+  }, [token, requiredDatabases]);
 
   const value = useMemo(() => ({ state }), [state]);
   return <SDKContext.Provider value={value}>{children}</SDKContext.Provider>;

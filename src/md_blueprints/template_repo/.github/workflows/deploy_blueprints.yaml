@@ -33,6 +33,10 @@ on:
     paths:
       - "motherduck.yml"
       - "blueprints/**"
+      - "flights/**"
+      - "dives/**"
+      - "guides/**"
+      - "projects/**"
       - "schemas/**"
       - "templates/**"
       - ".github/workflows/deploy_blueprints.yaml"
@@ -42,6 +46,10 @@ on:
     paths:
       - "motherduck.yml"
       - "blueprints/**"
+      - "flights/**"
+      - "dives/**"
+      - "guides/**"
+      - "projects/**"
       - "schemas/**"
       - "templates/**"
       - ".github/workflows/deploy_blueprints.yaml"

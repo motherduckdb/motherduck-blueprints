@@ -1,9 +1,15 @@
 schemaVersion: 1
+requiredCliVersion: ">=0.4.0"
 repository:
   name: motherduck-blueprints
 
 include:
-  - blueprints/*/blueprint.yml
+  - flights/**/blueprint.yml
+  - dives/**/blueprint.yml
+  - guides/**/blueprint.yml
+  - roles/**/blueprint.yml
+  - projects/**/blueprint.yml
+  - blueprints/**/blueprint.yml
 
 variables:
   preview_suffix:

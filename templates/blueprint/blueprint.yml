@@ -3,6 +3,10 @@ name: __BLUEPRINT_NAME__
 title: __BLUEPRINT_NAME__
 description: Starter project that publishes a small daily metrics dataset and reads it from a Dive.
 
+outputs:
+  data:
+    share: data
+
 variables:
   database:
     description: MotherDuck database that stores this project's data.

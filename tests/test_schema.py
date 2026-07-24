@@ -59,3 +59,109 @@ targets:
 
     with pytest.raises(ValidationError, match="this project requires md-blueprints >=999.0"):
         Project(tmp_path)
+
+
+def test_required_resource_schema_requires_exactly_one_selector() -> None:
+    manifest = {
+        "schemaVersion": 1,
+        "name": "bad-dive",
+        "title": "Bad Dive",
+        "resources": {
+            "dives": {
+                "dashboard": {
+                    "title": "Bad Dive",
+                    "source": "src/dive.tsx",
+                    "requiredResources": [
+                        {
+                            "share": "local",
+                            "url": "md:_share/example/id",
+                            "alias": "data",
+                        }
+                    ],
+                }
+            }
+        },
+    }
+
+    with pytest.raises(ValidationError, match="exactly one allowed shape"):
+        SchemaValidator().validate(manifest, "blueprint.schema.json")
+
+
+def test_blueprint_schema_still_accepts_all_variable_shapes() -> None:
+    manifest = {
+        "schemaVersion": 1,
+        "name": "variables",
+        "title": "Variables",
+        "variables": {
+            "plain": "value",
+            "count": 2,
+            "enabled": True,
+            "documented": {"description": "A value", "default": "value"},
+        },
+        "resources": {},
+    }
+
+    SchemaValidator().validate(manifest, "blueprint.schema.json")
+
+
+def test_blueprint_schema_accepts_current_guide_rbac_and_runtime_features() -> None:
+    manifest = {
+        "schemaVersion": 1,
+        "name": "governed-analytics",
+        "title": "Governed analytics",
+        "resources": {
+            "roles": {
+                "finance": {
+                    "name": "finance",
+                    "includedRoles": ["explorer"],
+                    "members": ["finance@example.com"],
+                    "mode": "authoritative",
+                    "deploy": True,
+                }
+            },
+            "shares": {
+                "data": {
+                    "name": "finance",
+                    "database": "finance",
+                    "includePattern": None,
+                    "grants": {"roles": ["finance"], "mode": "authoritative"},
+                }
+            },
+            "flights": {
+                "loader": {
+                    "name": "finance-loader",
+                    "source": "flight.py",
+                    "requirements": "requirements.txt",
+                    "maxRuntimeSec": 900,
+                }
+            },
+            "dives": {
+                "dashboard": {
+                    "title": "Finance",
+                    "source": "dive.tsx",
+                    "status": "endorsed",
+                    "requiredResources": [{"share": "data", "alias": "finance"}],
+                }
+            },
+            "guides": {
+                "definitions": {
+                    "title": "Finance definitions",
+                    "topic": "finance/metrics",
+                    "source": "guide.md",
+                    "access": "organization",
+                    "deploy": True,
+                    "references": [
+                        {
+                            "type": "catalog",
+                            "share": "data",
+                            "schema": "reporting",
+                            "table": "metrics",
+                        },
+                        {"type": "dive", "resource": "dashboard"},
+                    ],
+                }
+            },
+        },
+    }
+
+    SchemaValidator().validate(manifest, "blueprint.schema.json")

@@ -9,7 +9,7 @@
 
 ## Deployment notes
 
-- [ ] New or renamed assets are declared in `blueprints/<name>/blueprint.yml`.
+- [ ] New or renamed assets are declared in a typed-root or `projects/<name>/blueprint.yml` package.
 - [ ] Dives list required resources in `blueprint.yml`.
 - [ ] Dive statuses are intentional: previews are `draft`, and `endorsed` production changes have an organization-admin reviewer.
 - [ ] Preview shares/databases that can be cleaned up include `${target.branch_slug}`.

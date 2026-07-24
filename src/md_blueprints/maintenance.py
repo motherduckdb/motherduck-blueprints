@@ -99,6 +99,16 @@ def run_doctor(
             "validation: passed",
         ]
     )
+    legacy_context_blueprints = []
+    for blueprint in project.blueprints:
+        resources_node = blueprint.raw.get("resources")
+        if isinstance(resources_node, dict) and resources_node.get("context"):
+            legacy_context_blueprints.append(blueprint.name)
+    if legacy_context_blueprints:
+        lines.append(
+            "warning: resources.context is supported for compatibility; prefer resources.guides in: "
+            + ", ".join(legacy_context_blueprints)
+        )
 
     stale_schema = False
     unsupported = {root_schema_version, *blueprint_versions} - SUPPORTED_SCHEMA_VERSIONS

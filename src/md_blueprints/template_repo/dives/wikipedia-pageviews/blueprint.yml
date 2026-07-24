@@ -1,0 +1,24 @@
+schemaVersion: 1
+name: wikipedia-pageviews
+title: Wikipedia Pageviews
+description: Visualizes the pageview dataset published by the Wikipedia ingest Flight.
+
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+resources:
+  dives:
+    pageviews:
+      title: Wikipedia Pageviews
+      source: src/dive.tsx
+      description: Recent daily pageviews for selected Wikipedia articles, loaded from Wikimedia by a MotherDuck Flight.
+      status: ready
+      requiredResources:
+        - input: pageviews
+          alias: wikipedia_pageviews
+      targets:
+        preview:
+          title: Wikipedia Pageviews:${target.branch} (Preview)
+          status: draft

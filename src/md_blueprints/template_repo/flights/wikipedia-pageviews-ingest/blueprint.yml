@@ -1,0 +1,68 @@
+schemaVersion: 1
+name: wikipedia-pageviews-ingest
+title: Wikipedia Pageviews Ingest
+description: Loads public Wikimedia pageview data and publishes it for downstream analytics.
+
+variables:
+  database:
+    default: wikipedia_pageviews
+  share:
+    default: wikipedia_pageviews
+  schema:
+    default: main
+  articles:
+    default: DuckDB,MotherDuck,Wikipedia
+  days_back:
+    default: "30"
+  user_agent:
+    default: motherduck-blueprints-wikipedia-pageviews/1.0 (https://github.com/motherduckdb/motherduck-blueprints)
+
+outputs:
+  pageviews:
+    share: pageviews
+
+resources:
+  shares:
+    pageviews:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    pageviews_loader:
+      name: wikipedia-pageviews
+      source: src/flight.py
+      requirements: src/requirements.txt
+      scheduleCron: 17 6 * * *
+      accessTokenName: ""
+      runOnDeploy: true
+      waitForRun: success
+      secrets: []
+      config:
+        project: en.wikipedia.org
+        articles: ${var.articles}
+        access: all-access
+        agent: user
+        granularity: daily
+        days_back: ${var.days_back}
+        database: ${resources.shares.pageviews.database}
+        schema: ${var.schema}
+        share: ${resources.shares.pageviews.name}
+        share_access: ${resources.shares.pageviews.access}
+        share_visibility: ${resources.shares.pageviews.visibility}
+        user_agent: ${var.user_agent}
+      targets:
+        preview:
+          name: wikipedia-pageviews:${target.branch} (Preview)
+          scheduleCron: ""
+          runOnDeploy: true
