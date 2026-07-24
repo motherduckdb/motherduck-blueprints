@@ -128,7 +128,7 @@ Required fields are `name` and `database`. Defaults are `access: ORGANIZATION`, 
 
 A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`.
 
-`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged; an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
+`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
 
 ## Flights
 
@@ -204,7 +204,7 @@ resources:
 
 A validation-only Guide requires `source`; a deployed Guide also requires `title`. `topic`, `description`, `access`, `references`, `changeComment`, `externalId`, `cleanup`, and target overrides are optional. `deploy` defaults to `false` for compatibility; `deploy: true` creates the Guide and publishes versioned content and references during selected deployments. `access` is `user` by default or `organization`, which requires an admin deployment identity.
 
-Catalog references require exactly one of `url`, `share`, or `input`, and may narrow to a schema plus one table, view, or macro. Dive, Flight, and Guide references require either `uuid` or a repository `resource`; set `blueprint` for a resource in another package. These references participate in dependency ordering. Set a stable `id` when topic and title are not sufficient to identify an existing Guide. Preview Guides cannot use a production ID and their title or topic must be branch-scoped.
+Catalog references require exactly one of `url`, `share`, or `input`, and may narrow to a schema plus one table, view, or macro. Dive, Flight, and Guide references require either `uuid` or a repository `resource`; set `blueprint` for a resource in another package. These references participate in dependency ordering and are resolved during planning before any mutation. A referenced validation-only Guide must declare its stable `id`; set `deploy: true` instead when this repository owns its lifecycle. Set a stable `id` on a deployed Guide when topic and title are not sufficient to identify an existing Guide. Preview Guides cannot use a production ID and their title or topic must be branch-scoped.
 
 `resources.context` retains its validation-only compatibility behavior; `md-blueprints doctor` recommends `resources.guides`.
 

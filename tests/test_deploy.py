@@ -128,6 +128,48 @@ def test_cleanup_plan_refuses_flight_and_dive_names_that_match_production(
         deployer.ensure_plan_succeeds(records)
 
 
+def test_cleanup_plan_accepts_validation_only_production_guide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_list_guide_ids", lambda title, topic: ["guide-id"])
+    preview = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        guides={
+            "runbook": {
+                "title": "Runbook:feature/docs (Preview)",
+                "sourcePath": "runbook.md",
+                "deploy": True,
+            }
+        },
+    )
+    production = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        guides={"runbook": {"sourcePath": "runbook.md", "deploy": False}},
+    )
+
+    records = deployer._build_cleanup_plan(
+        [preview],
+        "feature_docs",
+        branch="feature/docs",
+        production={"knowledge": production},
+    )
+
+    assert [(record.type, record.action) for record in records] == [("guide", "delete")]
+
+
 def test_deploy_plan_is_idempotent_for_same_live_state(monkeypatch: pytest.MonkeyPatch) -> None:
     project = Project(FIXTURES / "complex")
     deployer = Deployer(project)
@@ -415,6 +457,85 @@ def test_share_reconciliation_manages_filter_and_grants(monkeypatch: pytest.Monk
     assert 'REVOKE READ ON SHARE "finance share" FROM USER "old-user";' in calls
 
 
+def test_share_reconciliation_resets_filter_when_null(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    deployer._reconcile_share({"name": "finance share", "includePattern": None})
+
+    assert calls == ['ALTER SHARE "finance share" RESET INCLUDE_PATTERN;']
+
+
+def test_plan_preflights_role_dependencies_and_share_grants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    blueprint = RenderedBlueprint(
+        name="access",
+        title="Access",
+        description="",
+        shares={
+            "finance": {
+                "name": "finance",
+                "database": "finance",
+                "grants": {"roles": ["missing-grantee"]},
+            }
+        },
+        flights={},
+        dives={},
+        contexts={},
+        roles={
+            "team": {
+                "name": "finance-team",
+                "includedRoles": ["missing-parent"],
+                "deploy": True,
+            }
+        },
+    )
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"explorer"})
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
+
+    records = deployer._build_deploy_plan([blueprint])
+
+    role_record = next(record for record in records if record.type == "role")
+    share_record = next(record for record in records if record.type == "share")
+    assert role_record.action == "error"
+    assert "missing-parent" in role_record.notes
+    assert share_record.action == "error"
+    assert "missing-grantee" in share_record.notes
+
+
+def test_existing_managed_share_plan_reports_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    blueprint = RenderedBlueprint(
+        name="data",
+        title="Data",
+        description="",
+        shares={
+            "finance": {
+                "name": "finance",
+                "database": "finance",
+                "includePattern": None,
+            }
+        },
+        flights={},
+        dives={},
+        contexts={},
+    )
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
+
+    record = deployer._build_deploy_plan([blueprint])[0]
+
+    assert record.action == "update"
+    assert "reconciled" in record.notes
+
+
 def test_role_reconciliation_supports_authoritative_memberships(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []
@@ -535,6 +656,88 @@ def test_guide_deploy_uses_version_metadata_and_access(
     assert "MD_SET_GUIDE_ACCESS" in statement
     assert "'sync definitions'" in statement
     assert "'abc123'" in statement
+
+
+def test_guide_resource_reference_uses_explicit_managed_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    guide_id = "00000000-0000-0000-0000-000000000042"
+    blueprint = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        guides={
+            "canonical": {
+                "id": guide_id,
+                "sourcePath": "guide.md",
+                "deploy": False,
+            }
+        },
+    )
+    deployer.rendered_by_name = {"knowledge": blueprint}
+    monkeypatch.setattr(
+        deployer,
+        "_get_guide_rows_by_id",
+        lambda resource_id: [(resource_id,)],
+    )
+
+    references_sql = deployer._guide_references_sql(
+        blueprint,
+        [{"type": "guide", "resource": "canonical"}],
+    )
+
+    assert f"'{guide_id}'::UUID" in references_sql
+
+
+def test_guide_plan_rejects_missing_unselected_reference_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    producer = RenderedBlueprint(
+        name="producer",
+        title="Producer",
+        description="",
+        shares={},
+        flights={"loader": {"name": "historical-loader"}},
+        dives={},
+        contexts={},
+    )
+    consumer = RenderedBlueprint(
+        name="consumer",
+        title="Consumer",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        guides={
+            "runbook": {
+                "title": "Runbook",
+                "sourcePath": "runbook.md",
+                "deploy": True,
+                "references": [
+                    {
+                        "type": "flight",
+                        "blueprint": "producer",
+                        "resource": "loader",
+                    }
+                ],
+            }
+        },
+    )
+    deployer.rendered_by_name = {"producer": producer}
+    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: [])
+
+    records = deployer._build_deploy_plan([consumer])
+
+    guide_record = next(record for record in records if record.type == "guide")
+    assert guide_record.action == "error"
+    assert "expected exactly one" in guide_record.notes
 
 
 def test_cleanup_flight_delete_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:

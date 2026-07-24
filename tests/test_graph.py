@@ -279,3 +279,34 @@ resources:
 
     with pytest.raises(ValidationError, match="cannot declare resource group.*shares"):
         Project(tmp_path)
+
+
+def test_deployed_guide_cannot_reference_validation_only_guide_without_id(
+    tmp_path: Path,
+) -> None:
+    write_graph_project(tmp_path)
+    package = tmp_path / "projects" / "knowledge"
+    package.mkdir(parents=True)
+    (package / "base.md").write_text("# Base\n", encoding="utf-8")
+    (package / "runbook.md").write_text("# Runbook\n", encoding="utf-8")
+    (package / "blueprint.yml").write_text(
+        """schemaVersion: 1
+name: knowledge
+title: Knowledge
+resources:
+  guides:
+    base:
+      source: base.md
+    runbook:
+      title: Runbook
+      source: runbook.md
+      deploy: true
+      references:
+        - type: guide
+          resource: base
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="validation-only Guide knowledge.base"):
+        Project(tmp_path).validate(targets=["prod"])

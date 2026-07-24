@@ -123,7 +123,7 @@ def test_blueprint_schema_accepts_current_guide_rbac_and_runtime_features() -> N
                 "data": {
                     "name": "finance",
                     "database": "finance",
-                    "includePattern": ["reporting.*"],
+                    "includePattern": None,
                     "grants": {"roles": ["finance"], "mode": "authoritative"},
                 }
             },

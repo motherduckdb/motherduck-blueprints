@@ -103,9 +103,14 @@
         "access": { "type": "string" },
         "visibility": { "type": "string" },
         "includePattern": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            }
+          ]
         },
         "grants": { "$ref": "#/$defs/grants" },
         "cleanup": { "type": "boolean" },

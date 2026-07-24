@@ -229,8 +229,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb", marker = "extra == 'deploy'", specifier = ">=1.1" },
-    { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.1" },
+    { name = "duckdb", marker = "extra == 'deploy'", specifier = ">=1.1,<1.5.5" },
+    { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.1,<1.5.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

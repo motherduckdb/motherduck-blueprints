@@ -225,6 +225,18 @@ class Deployer:
         self.rendered_by_name.update({blueprint.name: blueprint for blueprint in rendered})
         records: list[PlanRecord] = []
         selected_names = {blueprint.name for blueprint in rendered}
+        managed_role_names = {
+            str(role["name"])
+            for blueprint in rendered
+            for role in blueprint.roles.values()
+            if role.get("deploy")
+        }
+        needs_role_catalog = bool(managed_role_names) or any(
+            isinstance(grants := share.get("grants"), dict) and bool(grants.get("roles"))
+            for blueprint in rendered
+            for share in blueprint.shares.values()
+        )
+        live_role_names = self._live_role_names() if needs_role_catalog else set()
         can_produce = {
             blueprint.name: any(flight.get("runOnDeploy") is True for flight in blueprint.flights.values())
             for blueprint in rendered
@@ -246,20 +258,29 @@ class Deployer:
                         )
                     )
                     continue
-                exists = bool(
-                    self._query_rows(
-                        f"SELECT role_name FROM md_list_roles() WHERE role_name = {sql_string(name)}"
-                    )
+                raw_included_roles = role.get("includedRoles", [])
+                included_roles = (
+                    {str(value) for value in raw_included_roles}
+                    if isinstance(raw_included_roles, list)
+                    else set()
                 )
+                missing_roles = sorted(included_roles - live_role_names - managed_role_names)
+                exists = name in live_role_names
                 records.append(
                     PlanRecord(
                         blueprint.name,
                         "role",
                         key,
                         name,
-                        "update" if exists else "create",
+                        "error" if missing_roles else ("update" if exists else "create"),
                         exists,
                         name if exists else None,
+                        (
+                            "included role(s) do not exist and are not selected for deployment: "
+                            f"{', '.join(missing_roles)}"
+                            if missing_roles
+                            else ""
+                        ),
                     )
                 )
 
@@ -277,7 +298,26 @@ class Deployer:
 
             for key, share in blueprint.shares.items():
                 url = self._find_share_url(str(share["name"]))
-                if url:
+                grants = share.get("grants")
+                desired_grant_roles = (
+                    {str(value) for value in grants.get("roles", [])}
+                    if isinstance(grants, dict)
+                    else set()
+                )
+                missing_grant_roles = sorted(
+                    desired_grant_roles - live_role_names - managed_role_names
+                )
+                manages_share = "includePattern" in share or isinstance(grants, dict)
+                if missing_grant_roles:
+                    action = "error"
+                    notes = (
+                        "grant role(s) do not exist and are not selected for deployment: "
+                        f"{', '.join(missing_grant_roles)}"
+                    )
+                elif url and manages_share:
+                    action = "update"
+                    notes = "share is available; filter and/or grants will be reconciled"
+                elif url:
                     action = "present"
                     notes = "share is available"
                 elif can_produce[blueprint.name]:
@@ -350,7 +390,26 @@ class Deployer:
                     )
                 )
             for key, guide in blueprint.guides.items():
-                records.append(self._guide_plan_record(blueprint, key, guide))
+                reference_error = self._guide_reference_plan_error(
+                    blueprint,
+                    guide,
+                    selected_names,
+                )
+                if reference_error:
+                    records.append(
+                        PlanRecord(
+                            blueprint.name,
+                            "guide",
+                            key,
+                            str(guide.get("title") or Path(str(guide["sourcePath"])).name),
+                            "error",
+                            None,
+                            str(guide.get("id")) if guide.get("id") else None,
+                            reference_error,
+                        )
+                    )
+                else:
+                    records.append(self._guide_plan_record(blueprint, key, guide))
         return records
 
     def _build_cleanup_plan(
@@ -372,7 +431,9 @@ class Deployer:
                 title = str(guide["title"])
                 production_title = None
                 if production_blueprint and key in production_blueprint.guides:
-                    production_title = str(production_blueprint.guides[key]["title"])
+                    raw_production_title = production_blueprint.guides[key].get("title")
+                    if raw_production_title is not None:
+                        production_title = str(raw_production_title)
                 safety_error = self._preview_scope_error(
                     "Guide", title, branch, rendered_branch_slug, production_title
                 )
@@ -663,6 +724,104 @@ class Deployer:
             ",".join(ids),
             "duplicate Guide topic/title; set id explicitly",
         )
+
+    def _guide_reference_plan_error(
+        self,
+        blueprint: RenderedBlueprint,
+        guide: dict[str, object],
+        selected_names: set[str],
+    ) -> str | None:
+        if not guide.get("deploy"):
+            return None
+        references = guide.get("references", [])
+        if not isinstance(references, list):
+            return "Guide references must be an array"
+
+        for reference in references:
+            if not isinstance(reference, dict) or reference.get("type") == "catalog":
+                continue
+            reference_type = str(reference["type"])
+            if reference.get("uuid"):
+                uuid_value = str(reference["uuid"])
+                ids = self._resource_ids_by_uuid(reference_type, uuid_value)
+                if len(ids) != 1:
+                    return (
+                        f"Guide {reference_type} reference {uuid_value} does not resolve "
+                        "to exactly one live resource"
+                    )
+                continue
+
+            producer_name = str(reference.get("blueprint", blueprint.name))
+            producer = self.rendered_by_name.get(producer_name)
+            if producer is None:
+                return f"Guide reference blueprint {producer_name!r} is not available"
+            resource_key = str(reference["resource"])
+            selected_resource_will_deploy = producer_name in selected_names
+            if reference_type == "guide":
+                referenced_guide = producer.guides[resource_key]
+                selected_resource_will_deploy = (
+                    selected_resource_will_deploy and bool(referenced_guide.get("deploy"))
+                )
+            if selected_resource_will_deploy:
+                continue
+
+            ids = self._resource_ids_for_reference(reference_type, producer, resource_key)
+            if len(ids) != 1:
+                return (
+                    f"Guide reference {producer_name}.{reference_type}.{resource_key} "
+                    f"resolved to {len(ids)} live resources; expected exactly one"
+                )
+        return None
+
+    def _resource_ids_by_uuid(self, reference_type: str, uuid_value: str) -> list[str]:
+        uuid_sql = f"{sql_string(uuid_value)}::UUID"
+        if reference_type == "dive":
+            rows = self._query_rows(f"SELECT id FROM MD_LIST_DIVES() WHERE id = {uuid_sql}")
+        elif reference_type == "flight":
+            rows = self._query_rows(
+                "SELECT flight_id FROM MD_LIST_FLIGHTS("
+                '"offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) '
+                f"WHERE flight_id = {uuid_sql}"
+            )
+        else:
+            rows = self._get_guide_rows_by_id(uuid_value)
+        return [str(row[0]) for row in rows]
+
+    def _resource_ids_for_reference(
+        self,
+        reference_type: str,
+        producer: RenderedBlueprint,
+        resource_key: str,
+    ) -> list[str]:
+        if reference_type == "dive":
+            return [
+                state[0]
+                for state in self._list_dive_states(str(producer.dives[resource_key]["title"]))
+            ]
+        if reference_type == "flight":
+            return self._list_flight_ids(str(producer.flights[resource_key]["name"]))
+
+        referenced_guide = producer.guides[resource_key]
+        if referenced_guide.get("id"):
+            return [
+                str(row[0])
+                for row in self._get_guide_rows_by_id(str(referenced_guide["id"]))
+            ]
+        return self._list_guide_ids(
+            str(referenced_guide["title"]),
+            str(referenced_guide.get("topic", "")),
+        )
+
+    def _get_guide_rows_by_id(self, guide_id: str) -> list[tuple[object, ...]]:
+        try:
+            return self._query_rows(
+                f"SELECT id FROM MD_GET_GUIDE(id := {sql_string(guide_id)}::UUID)"
+            )
+        except CommandError as exc:
+            message = str(exc).lower()
+            if "does not exist" in message or "not found" in message:
+                return []
+            raise
 
     def _cleanup_record(
         self,
@@ -965,6 +1124,12 @@ class Deployer:
                 f"the deployment identity has: {', '.join(sorted(roles)) or 'no roles'}"
             )
 
+    def _live_role_names(self) -> set[str]:
+        return {
+            str(row[0])
+            for row in self._query_rows("SELECT role_name FROM md_list_roles()")
+        }
+
     def _deploy_role(self, role: dict[str, object], plan: PlanRecord) -> None:
         name = str(role["name"])
         name_sql = quote_name(name)
@@ -1031,13 +1196,16 @@ class Deployer:
 
     def _reconcile_share(self, share: dict[str, object]) -> None:
         name = str(share["name"])
-        include_pattern = share.get("includePattern")
-        if include_pattern is not None:
-            assert isinstance(include_pattern, list)
-            pattern = ", ".join(str(value) for value in include_pattern)
-            self._sql(
-                f"ALTER SHARE {quote_name(name)} SET INCLUDE_PATTERN {sql_string(pattern)};"
-            )
+        if "includePattern" in share:
+            include_pattern = share["includePattern"]
+            if include_pattern is None:
+                self._sql(f"ALTER SHARE {quote_name(name)} RESET INCLUDE_PATTERN;")
+            else:
+                assert isinstance(include_pattern, list)
+                pattern = ", ".join(str(value) for value in include_pattern)
+                self._sql(
+                    f"ALTER SHARE {quote_name(name)} SET INCLUDE_PATTERN {sql_string(pattern)};"
+                )
 
         grants = share.get("grants")
         if not isinstance(grants, dict):
@@ -1197,10 +1365,10 @@ class Deployer:
                 elif reference_type == "flight":
                     ids = self._list_flight_ids(str(producer.flights[resource_key]["name"]))
                 else:
-                    referenced_guide = producer.guides[resource_key]
-                    ids = self._list_guide_ids(
-                        str(referenced_guide["title"]),
-                        str(referenced_guide.get("topic", "")),
+                    ids = self._resource_ids_for_reference(
+                        reference_type,
+                        producer,
+                        resource_key,
                     )
                 if len(ids) != 1:
                     raise CommandError(

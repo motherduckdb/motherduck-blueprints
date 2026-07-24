@@ -136,6 +136,7 @@ class Project:
             self._validate_role_graph(rendered)
             for blueprint in rendered:
                 self._validate_rendered_blueprint(target, rendered_branch, blueprint)
+            self._validate_guide_reference_targets(rendered)
             if target == "preview":
                 self._validate_preview_separation(rendered, self.render_all("prod"))
         return True
@@ -716,7 +717,7 @@ class Project:
                 raise ValidationError(f"hidden share {blueprint.name}.{key} must use RESTRICTED access")
             include_pattern = share.get("includePattern")
             if include_pattern is not None and not isinstance(include_pattern, list):
-                raise ValidationError(f"shares.{key}.includePattern must be an array")
+                raise ValidationError(f"shares.{key}.includePattern must be an array or null")
             self._validate_grants(share.get("grants"), f"shares.{key}.grants")
             if (
                 target == "preview"
@@ -956,6 +957,35 @@ class Project:
                 remaining.pop(key)
             for values in remaining.values():
                 values.difference_update(ready)
+
+    def _validate_guide_reference_targets(
+        self,
+        rendered_blueprints: list[RenderedBlueprint],
+    ) -> None:
+        by_name = {blueprint.name: blueprint for blueprint in rendered_blueprints}
+        for blueprint in rendered_blueprints:
+            for guide_key, guide in blueprint.guides.items():
+                if not guide.get("deploy"):
+                    continue
+                references = guide.get("references", [])
+                if not isinstance(references, list):
+                    continue
+                for index, reference in enumerate(references):
+                    if not (
+                        isinstance(reference, dict)
+                        and reference.get("type") == "guide"
+                        and reference.get("resource")
+                    ):
+                        continue
+                    producer_name = str(reference.get("blueprint", blueprint.name))
+                    producer = by_name[producer_name]
+                    resource_key = str(reference["resource"])
+                    referenced_guide = producer.guides[resource_key]
+                    if not referenced_guide.get("deploy") and not referenced_guide.get("id"):
+                        raise ValidationError(
+                            f"guides.{guide_key}.references[{index}] targets validation-only Guide "
+                            f"{producer_name}.{resource_key}; set deploy: true or configure its id"
+                        )
 
 def nested_dict(node: object, *path: str) -> object | None:
     current = node

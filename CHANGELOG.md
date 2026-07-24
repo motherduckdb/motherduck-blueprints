@@ -32,6 +32,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Pinned DuckDB below 1.5.5 until MotherDuck supports that client release, preventing live action installs from selecting an incompatible runtime.
+- Made plans reject missing Guide references, inherited roles, and share-grant roles before deployment can mutate earlier resources.
+- Made Guide resource references honor explicit IDs, filtered shares support declarative reset, and preview Guide cleanup tolerate validation-only production definitions.
 - Made standalone Dive scaffolds query the connected share's catalog instead of assuming starter Flight tables.
 - Enforced exactly one Dive data-source selector in editor and runtime schemas.
 - Allowed scaffolded Dive inputs to reference any non-empty output key supported by the manifest contract.
