@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 #
-# Verify one-time external release infrastructure before publishing a tagged release.
+# Verify the generated-template repository before publishing a tagged release.
 #
 set -euo pipefail
 
 TEMPLATE_REPOSITORY="${TEMPLATE_REPOSITORY:-motherduckdb/blueprints-template}"
-PYPI_PROJECT="${PYPI_PROJECT:-md-blueprints}"
-PYPI_JSON_BASE_URL="${PYPI_JSON_BASE_URL:-https://pypi.org/pypi}"
-ALLOW_PYPI_PENDING_PUBLISHER="${ALLOW_PYPI_PENDING_PUBLISHER:-1}"
-export PYPI_JSON_BASE_URL ALLOW_PYPI_PENDING_PUBLISHER
 
 if [ -z "${TEMPLATE_PUSH_TOKEN:-}" ]; then
   echo "BLUEPRINTS_TEMPLATE_PUSH_TOKEN is not configured." >&2
@@ -43,37 +39,4 @@ if payload.get("permissions", {}).get("push") is not True:
         "Grant Contents: Read and write access to the template repository and approve any pending org request."
     )
 print(f"Template repository OK: {repository}")
-PY
-
-python3 - "$PYPI_PROJECT" <<'PY'
-from __future__ import annotations
-
-import json
-import os
-import sys
-import urllib.error
-import urllib.request
-
-project = sys.argv[1]
-base_url = os.environ["PYPI_JSON_BASE_URL"].rstrip("/")
-allow_pending = os.environ["ALLOW_PYPI_PENDING_PUBLISHER"] == "1"
-url = f"{base_url}/{project}/json"
-try:
-    with urllib.request.urlopen(url, timeout=10) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-except urllib.error.HTTPError as exc:
-    if exc.code == 404:
-        if allow_pending:
-            print(
-                f"PyPI project {project!r} is not registered yet; assuming a pending trusted publisher "
-                "is configured to create it on first publish."
-            )
-            raise SystemExit(0) from exc
-        raise SystemExit(
-            f"PyPI project {project!r} is not registered. Register a pending trusted publisher "
-            "for this repository, release.yaml, and the pypi environment before tagging a release."
-        ) from exc
-    raise
-
-print(f"PyPI project OK: {payload['info']['name']}")
 PY

@@ -10,7 +10,7 @@ Install the released CLI and generate the customer file set:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install md-blueprints
+.venv/bin/python -m pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0"
 .venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
@@ -164,9 +164,9 @@ You can then:
 
 ## 11. Keep Tooling in Sync
 
-After repository creation, treat `md-blueprints` as the long-term upgrade surface. The generated files are the starting point, while the package and action carry schema validation, deployment behavior, and migrations.
+After repository creation, treat the versioned `md-blueprints` repository tags as the long-term upgrade surface. The generated files are the starting point, while the CLI source and action carry schema validation, deployment behavior, and migrations.
 
-The generated `Makefile` pins the CLI version in `CLI_VERSION`, so local installs stay aligned with the release that generated the repository. Install and validate with:
+The generated `Makefile` pins the CLI version in `CLI_VERSION` and installs it from the matching Git tag, so local installs stay aligned with the release that generated the repository. Install and validate with:
 
 ```bash
 make setup
@@ -179,7 +179,7 @@ Use `make install-deploy` before live local plan/deploy/cleanup commands. It ins
 make install-deploy
 ```
 
-To upgrade, bump `CLI_VERSION` in `Makefile` together with the action tag in `.github/workflows/`.
+To upgrade, bump `CLI_VERSION` in `Makefile`. Change the action tag in `.github/workflows/` when adopting a new major release; the floating major tag receives compatible minor and patch updates automatically.
 
 The action tag is the preferred CI path for customer repositories.
 

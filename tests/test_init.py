@@ -55,6 +55,12 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     requirements = (target / "flights/wikipedia-pageviews-ingest/src/requirements.txt").read_text(encoding="utf-8")
 
     assert f"CLI_VERSION := {__version__}" in makefile
+    assert "CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)" in makefile
+    assert 'installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version' in makefile
+    assert 'if [ "$$installed_version" != "$(CLI_VERSION)" ]; then' in makefile
+    assert '.venv/bin/python -m pip install "md-blueprints @ $(CLI_SOURCE)"' in makefile
+    assert "install-deploy: $(CLI)" in makefile
+    assert '.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"' in makefile
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in deploy_workflow
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in cleanup_workflow
     assert "github.event.pull_request.head.sha" in cleanup_workflow

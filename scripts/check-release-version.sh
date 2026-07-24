@@ -33,7 +33,13 @@ if package_version != module_version:
     )
 
 if expected_tag:
-    expected_version = expected_tag.removeprefix("refs/tags/").removeprefix("v")
+    release_tag = expected_tag.removeprefix("refs/tags/")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", release_tag):
+        raise SystemExit(
+            f"Release tag {expected_tag!r} must match vMAJOR.MINOR.PATCH; "
+            "prerelease and floating tags do not publish the customer template"
+        )
+    expected_version = release_tag.removeprefix("v")
     if expected_version != package_version:
         raise SystemExit(
             f"Tag mismatch: {expected_tag} implies {expected_version}, "
