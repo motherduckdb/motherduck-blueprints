@@ -49,7 +49,7 @@ In GitHub:
 6. Enable "Require review from Code Owners" after updating `.github/CODEOWNERS`.
 7. Require status checks once the first workflow runs have created them.
 
-The repo includes cleanup workflows for preview blueprints. Keep those workflows enabled so PR previews do not linger after branches are closed or deleted.
+The repo includes cleanup workflows for preview blueprints. On pull-request close, cleanup checks both the branch and base manifests so resources introduced or removed by the branch are covered. Keep those workflows enabled so PR previews do not linger after branches are closed or deleted.
 
 Pull requests validate even when `MOTHERDUCK_TOKEN` is not configured. Preview deployment is skipped in that case; add the secret when you want PRs to create live MotherDuck previews.
 
@@ -57,22 +57,25 @@ If a target uses a different service account secret, set `targets.<target>.deplo
 
 ## 5. Add Assets
 
-Add every deployable asset inside a blueprint package:
+Add every deployable asset inside a typed or project package:
 
 ```text
-blueprints/<name>/blueprint.yml
-blueprints/<name>/src/...
+flights/<name>/blueprint.yml
+dives/<name>/blueprint.yml
+guides/<name>/blueprint.yml
+roles/<name>/blueprint.yml
+projects/<name>/blueprint.yml
 ```
 
-Use lowercase slug names for blueprint packages. No workflow filter registration is needed: the deploy workflow computes changed blueprints from `motherduck.yml` includes and `blueprints/<name>/**` paths.
+Use lowercase slug names. No per-package workflow registration is needed: the deploy workflow computes direct changes from `motherduck.yml`, then expands dependencies according to the target.
 
 For a new project, start with:
 
 ```bash
-make new-blueprint <blueprint-name>
+make new-project <blueprint-name>
 ```
 
-The generated package is intentionally small but deployable: it creates starter metrics, publishes a share, and renders a Dive that reads the share.
+For separately owned resources, use `make new-flight`, `make new-dive`, `make new-guide`, and `make new-role` instead.
 
 Before opening a PR, run:
 

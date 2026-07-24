@@ -27,9 +27,9 @@ rsync -a \
 
 echo "==> Creating generated blueprint example"
 make -C "$SCAFFOLD_ROOT" new-blueprint "$EXAMPLE_NAME"
-test -f "$SCAFFOLD_ROOT/blueprints/$EXAMPLE_NAME/README.md"
+test -f "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME/README.md"
 
-if grep -R "__BLUEPRINT_NAME__\|__DATABASE_NAME__" "$SCAFFOLD_ROOT/blueprints/$EXAMPLE_NAME"; then
+if grep -R "__BLUEPRINT_NAME__\|__DATABASE_NAME__" "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"; then
   echo "Generated blueprint still contains template placeholders" >&2
   exit 1
 fi
@@ -48,9 +48,17 @@ grep -q '"scheduleCron": ""' "$TMP_DIR/render.out"
 echo "==> Building generated blueprint Dive"
 make -C "$SCAFFOLD_ROOT" preview-smoke "$EXAMPLE_NAME"
 
+echo "==> Building generated external-share Dive"
+"$SCAFFOLD_ROOT/tools/md_blueprints" new dive "external-share-example" \
+  --root "$SCAFFOLD_ROOT" \
+  --url "md:_share/example/00000000-0000-0000-0000-000000000000"
+make -C "$SCAFFOLD_ROOT" preview-smoke "external-share-example"
+
 echo "==> Destroying generated blueprint example"
-rm -rf "$SCAFFOLD_ROOT/blueprints/$EXAMPLE_NAME"
-test ! -e "$SCAFFOLD_ROOT/blueprints/$EXAMPLE_NAME"
+rm -rf "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"
+rm -rf "$SCAFFOLD_ROOT/dives/external-share-example"
+test ! -e "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"
+test ! -e "$SCAFFOLD_ROOT/dives/external-share-example"
 make -C "$SCAFFOLD_ROOT" validate
 
 echo "Generated blueprint example smoke test passed."

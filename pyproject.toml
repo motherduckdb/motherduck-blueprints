@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-blueprints"
-version = "0.3.0"
+version = "0.4.0"
 description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,8 +39,6 @@ md_blueprints = [
   "template_repo/.dive-preview/**/*",
   "template_repo/.github/**/*",
   "template_repo/.gitignore",
-  "template_repo/context/policies/.gitkeep",
-  "template_repo/context/schemas/.gitkeep",
 ]
 
 [tool.mypy]

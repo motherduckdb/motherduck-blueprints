@@ -2,7 +2,7 @@
 
 MotherDuck Blueprints lets you manage MotherDuck resources the same way you manage application code: in a Git repository, reviewed through pull requests, and deployed by CI.
 
-A blueprint is a small package that declares one data project — its [Flights](https://motherduck.com/docs/concepts/flights/) (scheduled Python jobs), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/) (interactive data apps), and [shares](https://motherduck.com/docs/key-tasks/sharing-data/sharing-overview/) — in a `blueprint.yml` manifest next to its source code. From there:
+A blueprint is an independently deployable package with a `blueprint.yml` manifest next to its source. Typed roots make [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), Guides, and RBAC roles easy to find; explicit inputs and outputs connect packages that share data. From there:
 
 - **Pull requests** validate every blueprint, deploy branch-scoped previews, and leave a comment on the PR with the deployment plan and preview links.
 - **Merges to `main`** deploy stable production resources through a protected GitHub Environment.
@@ -56,7 +56,7 @@ make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-The repository ships with a working example, [wikipedia-pageviews](docs/examples/wikipedia-pageviews.md): a Flight that loads public data and publishes a share, plus a Dive that reads that share.
+The repository ships with a working [Wikipedia Pageviews](docs/examples/wikipedia-pageviews.md) graph: a Flight producer publishes a named output and an independently owned Dive consumes it.
 
 ### 3. Connect MotherDuck
 
@@ -67,33 +67,37 @@ The repository ships with a working example, [wikipedia-pageviews](docs/examples
 
 See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup flow and [GitHub Setup](docs/github-setup.md) for the GitHub checklist.
 
-## Add a blueprint
+## Add a Blueprint
 
-A blueprint is one logical project or data product. Keep its manifest, Flight, Dive, and README together:
+Use the root that matches the package's ownership boundary:
 
 ```text
-blueprints/<blueprint-name>/
-  blueprint.yml
-  README.md
-  src/
-    flight.py
-    requirements.txt
-    dive.tsx
+flights/   # producers, shares, and named outputs
+dives/     # dashboards with declared inputs
+guides/    # version-controlled agent context
+roles/     # production RBAC roles and memberships
+projects/  # resources that genuinely ship together
+shared/    # human convention; no deployment behavior
 ```
 
-Start from the scaffold, then replace the starter Flight and Dive with your real project logic:
+Create a producer and consumer:
 
 ```bash
-make new-blueprint revenue-overview
+make new-flight events-ingest
+make new-dive events-dashboard INPUT=events-ingest.data
 make validate
-make preview-smoke revenue-overview
+make preview-smoke events-dashboard
 ```
+
+Use `make new-project revenue-overview` when a Flight and Dive genuinely preview and roll back as one unit. Existing `blueprints/<name>/` repositories remain supported indefinitely; no migration is required.
+
+Guide packages can publish versioned Markdown with catalog, Dive, Flight, and Guide references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before any mutation.
 
 Once a MotherDuck token is configured, you can inspect live create/update/delete actions before applying them:
 
 ```bash
-.venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints revenue-overview
-.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints revenue-overview
+.venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints events-dashboard
+.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints events-dashboard
 ```
 
 ## How deployments work
@@ -111,6 +115,7 @@ Every pull request gets a comment with the deployment plan and preview links:
 - **Preview** deployments are branch-scoped: preview share and database names include the branch slug, Flight schedules are disabled, and resources are cleaned up when the branch goes away.
 - **Production** deployments run only from `main`, through the `motherduck-production` GitHub Environment, so you can require manual approval before anything changes.
 - **Dive status** is reconciled only when declared. Omitting it preserves the live status; setting `endorsed` requires an organization-admin deployment identity.
+- **Dependency selection** expands both upstream and downstream for preview. Production expands downstream only, so a consumer-only change does not rerun an unchanged producer.
 
 ## Versioning and upgrades
 
@@ -132,7 +137,8 @@ Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which inclu
 
 ## Best practices
 
-- Keep one project or data product per `blueprints/<name>/` package.
+- Use typed roots for independently owned assets and `projects/` only for resources that truly ship together.
+- Declare same-repository dependencies through `inputs` and `outputs`; use literal share URLs across repositories.
 - Use lowercase slug names such as `account-360` or `revenue-ops`.
 - Run a deployment plan before live deploys and use cleanup dry-runs before deleting previews.
 - Deploy from CI with a service account token; store secrets in GitHub Actions, never in the repo.

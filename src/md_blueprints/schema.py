@@ -118,6 +118,20 @@ class SchemaValidator:
             if not matched:
                 raise ValidationError(f"{path} did not match any allowed shape: {'; '.join(errors)}")
 
+        one_of = schema.get("oneOf")
+        if isinstance(one_of, list):
+            matches = 0
+            errors = []
+            for candidate in one_of:
+                try:
+                    self._validate_node(data, candidate, path, root_schema)
+                    matches += 1
+                except ValidationError as exc:
+                    errors.append(str(exc))
+            if matches != 1:
+                detail = f"; {'; '.join(errors)}" if matches == 0 and errors else ""
+                raise ValidationError(f"{path} must match exactly one allowed shape (matched {matches}){detail}")
+
         expected_type = schema.get("type")
         if expected_type is not None:
             self._validate_type(data, expected_type, path)

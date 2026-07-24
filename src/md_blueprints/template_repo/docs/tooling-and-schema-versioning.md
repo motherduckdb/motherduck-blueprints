@@ -21,7 +21,7 @@ Upgrade by bumping `CLI_VERSION` in `Makefile` together with the action tag in `
 Customer workflows should pin the action major. While the package is `0.x`, the floating major tag is `v0`; switch examples to `v1` when the first stable customer contract is cut.
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+- uses: motherduckdb/motherduck-blueprints@v0
   with:
     command: validate
 ```
@@ -115,7 +115,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.3.0
+make release-check TAG=v0.4.0
 make release-external-check
 make validate
 make mock-test
@@ -137,7 +137,7 @@ That command writes the customer file set, stamps the installed CLI version into
 Before the first stable customer handoff, split the generated customer template from tooling:
 
 - Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
-- Template repo: `motherduck.yml`, `blueprints/`, `context/`, customer docs, thin Makefile, customer workflows, Dependabot, CODEOWNERS, and `.gitignore`.
+- Template repo: `motherduck.yml`, typed `flights/`, `dives/`, `guides/`, and `roles/` roots, `projects/`, `shared/`, customer docs, thin Makefile, customer workflows, Dependabot, CODEOWNERS, and `.gitignore`.
 
 The release workflow generates `motherduckdb/blueprints-template` from the same `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout so pre-release PRs can validate before the floating major tag exists; generated customer workflows use the stamped public action tag.
 

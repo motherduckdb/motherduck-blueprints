@@ -27,7 +27,7 @@ make preview-smoke <blueprint-name>
 A few repository rules, enforced by review and tests:
 
 - Update `CHANGELOG.md` in every pull request, including docs-only changes. Add entries under `Unreleased`.
-- The customer template under `src/md_blueprints/template_repo/` mirrors several top-level paths (`docs/`, `blueprints/`, `schemas/`, `.dive-preview/`, `templates/blueprint/`, `context/`, `motherduck.yml`). A drift test fails if the copies diverge, so change both together.
+- The customer template under `src/md_blueprints/template_repo/` mirrors the typed roots, `projects/`, `shared/`, `docs/`, schemas, Dive preview harness, legacy scaffold templates, and `motherduck.yml`. A drift test fails if the copies diverge, so change both together.
 - When changing layout, commands, target behavior, or resource semantics, update the matching public docs in the same pull request.
 
 ## Reporting issues

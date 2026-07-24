@@ -1,6 +1,6 @@
 # MotherDuck Blueprints
 
-This repository deploys MotherDuck [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), [shares](https://motherduck.com/docs/key-tasks/sharing-data/sharing-overview/), and future context assets from GitHub. Pull requests validate blueprints, deploy branch-scoped previews, and leave a PR comment with the deployment plan and preview links. Merges to `main` deploy stable production resources through the `motherduck-production` GitHub Environment.
+This repository deploys MotherDuck [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), shares, Guides, and RBAC roles from GitHub. Typed roots make ownership visible, while explicit inputs and outputs connect independently deployed packages. Pull requests deploy branch-scoped dependency graphs; merges deploy stable production resources through the protected `motherduck-production` environment.
 
 Dive previews are always `draft`. Production blueprints can declare `ready`, `endorsed`, or `archived`, and deployment plans show status transitions before applying them. Omitting status preserves the current live value.
 
@@ -34,34 +34,36 @@ See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup f
 
 ## Add a Blueprint
 
-A blueprint is one logical project or data product. Keep its manifest, Flight, Dive, and README together:
+A blueprint is an independently deployable package. Use the root matching its ownership boundary:
 
 ```text
-blueprints/<blueprint-name>/
-  blueprint.yml
-  README.md
-  src/
-    flight.py
-    requirements.txt
-    dive.tsx
+flights/   # producers, shares, and named outputs
+dives/     # dashboards with declared inputs
+guides/    # version-controlled agent context
+roles/     # production RBAC roles and memberships
+projects/  # resources that genuinely ship together
+shared/    # human convention; no deployment behavior
 ```
 
-Start with the scaffold:
+Create a producer and consumer:
 
 ```bash
-make new-blueprint revenue-overview
+make new-flight events-ingest
+make new-dive events-dashboard INPUT=events-ingest.data
 make validate
-make preview-smoke revenue-overview
+make preview-smoke events-dashboard
 ```
 
-Then replace the starter Flight and Dive with your real project logic.
+Use `make new-project revenue-overview` when several resources genuinely ship together. `make new-blueprint` remains a compatibility alias, and existing `blueprints/<name>/` packages continue to work.
+
+Guide packages can publish versioned Markdown with catalog and resource references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before mutation.
 
 When you have a MotherDuck token configured, inspect live create/update/delete actions before applying them:
 
 ```bash
 make install-deploy
-.venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints revenue-overview
-.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints revenue-overview
+.venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints events-dashboard
+.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints events-dashboard
 ```
 
 ## Versioning

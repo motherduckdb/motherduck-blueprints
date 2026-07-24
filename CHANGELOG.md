@@ -9,18 +9,37 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ### Added
 
 - Added declarative Dive governance statuses (`draft`, `ready`, `endorsed`, and `archived`) with live status transitions in deployment plans, status reconciliation through `MD_UPDATE_DIVE_STATUS`, and backward-compatible preservation when production status is omitted.
+- Added typed `flights/`, `dives/`, `guides/`, `roles/`, and `projects/` roots with recursive discovery, root-specific validation, and typed CLI/Make scaffolds.
+- Added same-repository `inputs` and share-backed `outputs`, `${inputs.<name>.*}` rendering, and Dive mounts through `requiredResources[].input`.
+- Added dependency graph validation, preview connected-component expansion, production downstream expansion, deterministic producer-first deployment, and dependency-safe cleanup.
+- Added full Guide create/update/version/metadata/access/delete lifecycle support, typed catalog and resource references, dependency ordering, and opt-in deployment through `resources.guides`.
+- Added production RBAC role and membership reconciliation, additive or authoritative share grants, and an admin capability preflight.
+- Added filtered-share `includePattern`, Flight `maxRuntimeSec`, and Dive governance `status` support.
+- Kept `resources.context` compatible while recommending `resources.guides`.
 
 ### Changed
 
 - Enforced `draft` status for all preview Dives and made generated examples deploy production Dives as `ready`.
-- Hardened preview cleanup so Flights, Dives, shares, and databases must be branch-scoped, cannot reuse their production identifiers, and require an explicit target-policy opt-in.
+- Split the Wikipedia example into an independently deployable Flight producer and Dive consumer, preserving its stable production resource names.
+- Made local Dive preview source lookup manifest-driven and added multi-Dive selection with `DIVE=<resource-key>`.
+- Prepared the package and generated repository template for `md-blueprints` v0.4.0 while keeping `schemaVersion: 1` and legacy `blueprints/` packages compatible.
+- Hardened preview cleanup so Flights, Dives, deployed Guides, shares, and databases must be branch-scoped, cannot reuse their production identifiers, and require an explicit target-policy opt-in.
 - Validated live preview operations with the requested branch instead of the validator's mock branch.
 - Restricted included manifests and resource source files to their repository and blueprint package boundaries, including after symlink resolution.
 - Made `md-blueprints init --force` refuse template destinations that resolve outside the target directory through symlinks.
 - Delayed GitHub Release publication and floating-tag updates until release preflight, PyPI publishing, and generated-template publishing succeed, and narrowed the default release workflow permission to read-only.
+- Made closed-pull-request cleanup evaluate both the branch and base manifests so previews for added and removed packages are deleted.
 
 ### Fixed
 
+- Made standalone Dive scaffolds query the connected share's catalog instead of assuming starter Flight tables.
+- Enforced exactly one Dive data-source selector in editor and runtime schemas.
+- Allowed scaffolded Dive inputs to reference any non-empty output key supported by the manifest contract.
+- Made scaffolded Dives validate local producer outputs and preserve the actual share URL or rendered share name used by local preview.
+- Attached declared Dive databases before local preview queries run and surfaced share-resolution or attach failures in the connection state.
+- Made `render` and `dive-source` validate their target before returning generated output or source paths.
+- Rejected duplicate aliases within a Dive's required resources.
+- Failed deployment planning immediately when a required share is missing and no selected Flight is configured to produce it on deploy.
 - Serialized cleanup events per branch and made delete operations idempotent when another cleanup run removes a resource after planning.
 - Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
 

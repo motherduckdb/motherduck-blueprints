@@ -38,6 +38,10 @@ def quote_ident(value: object) -> str:
     return f'"{rendered}"'
 
 
+def quote_name(value: object) -> str:
+    return '"' + str(value).replace('"', '""') + '"'
+
+
 def format_sql_value(value: object) -> str:
     if value is None:
         return ""
@@ -138,18 +142,24 @@ class Deployer:
     def __init__(self, project: Project) -> None:
         self.project = project
         self.sql_env: dict[str, DuckDBConfigValue] | None = None
+        self.rendered_by_name: dict[str, RenderedBlueprint] = {}
 
     def plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "plan")
+        self._preflight_rbac(rendered)
         return self._build_deploy_plan(rendered)
 
     def deploy(self, *, target: str, branch: str | None, names: list[str] | None) -> None:
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "deploy")
+        self._preflight_rbac(rendered)
         records = self._build_deploy_plan(rendered)
         self.ensure_plan_succeeds(records)
         plan_index = self._index_by_resource(records)
+
+        for blueprint, key, role in self._role_deployment_order(rendered):
+            self._deploy_role(role, plan_index[(blueprint.name, "role", key)])
 
         for blueprint in rendered:
             self._deploy_blueprint(blueprint, target, plan_index)
@@ -163,9 +173,10 @@ class Deployer:
 
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "cleanup")
+        rendered_names = [blueprint.name for blueprint in rendered]
         production = {
             blueprint.name: blueprint
-            for blueprint in self.project.render_all("prod", names=names)
+            for blueprint in self.project.render_all("prod", names=rendered_names)
         }
         return self._build_cleanup_plan(
             rendered,
@@ -193,7 +204,12 @@ class Deployer:
         names: list[str] | None,
     ) -> list[RenderedBlueprint]:
         self.project.validate(targets=[target], branch=branch)
-        return self.project.render_all(target, branch=branch, names=names)
+        expanded_names = self.project.deployment_blueprint_names(target, names)
+        self.rendered_by_name = {
+            blueprint.name: blueprint
+            for blueprint in self.project.render_all(target, branch=branch)
+        }
+        return self.project.render_all(target, branch=branch, names=expanded_names)
 
     def _prepare_live_command(self, target: str, operation: str) -> None:
         deployment = self.project.target_config(target).get("deployment", {})
@@ -206,8 +222,47 @@ class Deployer:
         self.sql_env = {"motherduck_token": token}
 
     def _build_deploy_plan(self, rendered: list[RenderedBlueprint]) -> list[PlanRecord]:
+        self.rendered_by_name.update({blueprint.name: blueprint for blueprint in rendered})
         records: list[PlanRecord] = []
+        selected_names = {blueprint.name for blueprint in rendered}
+        can_produce = {
+            blueprint.name: any(flight.get("runOnDeploy") is True for flight in blueprint.flights.values())
+            for blueprint in rendered
+        }
         for blueprint in rendered:
+            for key, role in blueprint.roles.items():
+                name = str(role["name"])
+                if not role.get("deploy"):
+                    records.append(
+                        PlanRecord(
+                            blueprint.name,
+                            "role",
+                            key,
+                            name,
+                            "skipped",
+                            None,
+                            None,
+                            "roles deploy only when resources.roles.<key>.deploy is true",
+                        )
+                    )
+                    continue
+                exists = bool(
+                    self._query_rows(
+                        f"SELECT role_name FROM md_list_roles() WHERE role_name = {sql_string(name)}"
+                    )
+                )
+                records.append(
+                    PlanRecord(
+                        blueprint.name,
+                        "role",
+                        key,
+                        name,
+                        "update" if exists else "create",
+                        exists,
+                        name if exists else None,
+                    )
+                )
+
             for key, flight in blueprint.flights.items():
                 records.append(
                     self._existing_resource_record(
@@ -222,16 +277,59 @@ class Deployer:
 
             for key, share in blueprint.shares.items():
                 url = self._find_share_url(str(share["name"]))
+                if url:
+                    action = "present"
+                    notes = "share is available"
+                elif can_produce[blueprint.name]:
+                    action = "pending"
+                    notes = "will be produced by a Flight configured with runOnDeploy"
+                else:
+                    action = "error"
+                    notes = "share is missing and no Flight in this blueprint is configured with runOnDeploy"
                 records.append(
                     PlanRecord(
                         blueprint=blueprint.name,
                         type="share",
                         key=key,
                         name=str(share["name"]),
-                        action="present" if url else "missing",
+                        action=action,
                         exists=bool(url),
                         id=url or None,
-                        notes="produced by Flight/project code; deployer waits for the share URL before dependent Dives",
+                        notes=notes,
+                    )
+                )
+
+            for key, input_value in blueprint.inputs.items():
+                share_name = str(input_value["name"])
+                producer = str(input_value["blueprint"])
+                output = str(input_value["output"])
+                url = self._find_share_url(share_name)
+                producer_selected = producer in selected_names
+                if url:
+                    action = "present"
+                    notes = f"resolved from {producer}.{output}"
+                elif producer_selected and can_produce.get(producer, False):
+                    action = "pending"
+                    notes = f"will be produced by selected blueprint {producer}.{output}"
+                elif producer_selected:
+                    action = "error"
+                    notes = (
+                        f"selected blueprint {producer}.{output} is missing and has no Flight configured "
+                        "with runOnDeploy"
+                    )
+                else:
+                    action = "error"
+                    notes = f"required production output {producer}.{output} is not available"
+                records.append(
+                    PlanRecord(
+                        blueprint=blueprint.name,
+                        type="input",
+                        key=key,
+                        name=share_name,
+                        action=action,
+                        exists=bool(url),
+                        id=url or None,
+                        notes=notes,
                     )
                 )
 
@@ -251,6 +349,8 @@ class Deployer:
                         notes="context deployment is not available yet",
                     )
                 )
+            for key, guide in blueprint.guides.items():
+                records.append(self._guide_plan_record(blueprint, key, guide))
         return records
 
     def _build_cleanup_plan(
@@ -262,7 +362,36 @@ class Deployer:
         production: dict[str, RenderedBlueprint] | None = None,
     ) -> list[PlanRecord]:
         records: list[PlanRecord] = []
-        for blueprint in rendered:
+        dependency_safe = list(reversed(rendered))
+        for blueprint in dependency_safe:
+            production_blueprint = production.get(blueprint.name) if production else None
+            for key in reversed(self._guide_deployment_order(blueprint)):
+                guide = blueprint.guides[key]
+                if not guide.get("deploy") or not guide.get("cleanup", True):
+                    continue
+                title = str(guide["title"])
+                production_title = None
+                if production_blueprint and key in production_blueprint.guides:
+                    production_title = str(production_blueprint.guides[key]["title"])
+                safety_error = self._preview_scope_error(
+                    "Guide", title, branch, rendered_branch_slug, production_title
+                )
+                if safety_error:
+                    records.append(
+                        self._cleanup_record(blueprint, "guide", key, title, "error", None, None, safety_error)
+                    )
+                    continue
+                topic = str(guide.get("topic", ""))
+                ids = self._list_guide_ids(title, topic)
+                if not ids:
+                    records.append(self._cleanup_record(blueprint, "guide", key, title, "missing", False, None))
+                else:
+                    for resource_id in ids:
+                        records.append(
+                            self._cleanup_record(blueprint, "guide", key, title, "delete", True, resource_id)
+                        )
+
+        for blueprint in dependency_safe:
             production_blueprint = production.get(blueprint.name) if production else None
             for key, dive in blueprint.dives.items():
                 title = str(dive["title"])
@@ -284,6 +413,8 @@ class Deployer:
                     for resource_id in ids:
                         records.append(self._cleanup_record(blueprint, "dive", key, title, "delete", True, resource_id))
 
+        for blueprint in dependency_safe:
+            production_blueprint = production.get(blueprint.name) if production else None
             for key, flight in blueprint.flights.items():
                 name = str(flight["name"])
                 production_name = None
@@ -304,6 +435,8 @@ class Deployer:
                     for resource_id in ids:
                         records.append(self._cleanup_record(blueprint, "flight", key, name, "delete", True, resource_id))
 
+        for blueprint in dependency_safe:
+            production_blueprint = production.get(blueprint.name) if production else None
             for key, share in blueprint.shares.items():
                 if not share.get("cleanup", True):
                     continue
@@ -462,6 +595,75 @@ class Deployer:
             desired_status=desired_status,
         )
 
+    def _guide_plan_record(
+        self,
+        blueprint: RenderedBlueprint,
+        key: str,
+        guide: dict[str, object],
+    ) -> PlanRecord:
+        if not guide.get("deploy"):
+            name = str(guide.get("title") or Path(str(guide["sourcePath"])).name)
+            return PlanRecord(
+                blueprint.name,
+                "guide",
+                key,
+                name,
+                "validated_only",
+                False,
+                None,
+                "set deploy: true to publish this Guide",
+            )
+
+        title = str(guide["title"])
+        guide_id = guide.get("id")
+        if guide_id:
+            try:
+                rows = self._query_rows(
+                    f"SELECT id FROM MD_GET_GUIDE(id := {sql_string(guide_id)}::UUID)"
+                )
+            except CommandError as exc:
+                if "does not exist" not in str(exc).lower() and "not found" not in str(exc).lower():
+                    raise
+                rows = []
+        else:
+            topic = str(guide.get("topic", ""))
+            topic_predicate = (
+                "topic IS NULL OR topic = ''"
+                if not topic
+                else f"topic = {sql_string(topic)}"
+            )
+            rows = self._query_rows(
+                "SELECT id FROM MD_LIST_GUIDES("
+                '"limit" := 1000::UINTEGER, "offset" := 0::UINTEGER) '
+                f"WHERE title = {sql_string(title)} AND ({topic_predicate})"
+            )
+        ids = [str(row[0]) for row in rows]
+        if not ids:
+            if guide_id:
+                return PlanRecord(
+                    blueprint.name,
+                    "guide",
+                    key,
+                    title,
+                    "error",
+                    False,
+                    str(guide_id),
+                    "configured Guide id does not exist",
+                )
+            return PlanRecord(blueprint.name, "guide", key, title, "create", False, None)
+        if len(ids) == 1:
+            return PlanRecord(blueprint.name, "guide", key, title, "update", True, ids[0])
+        return PlanRecord(
+            blueprint.name,
+            "guide",
+            key,
+            title,
+            "error",
+            True,
+            ",".join(ids),
+            "duplicate Guide topic/title; set id explicitly",
+        )
+
     def _cleanup_record(
         self,
         blueprint: RenderedBlueprint,
@@ -491,6 +693,7 @@ class Deployer:
         flight_rows: list[str] = []
         share_rows: list[str] = []
         dive_rows: list[str] = []
+        guide_rows: list[str] = []
 
         for key, flight in blueprint.flights.items():
             print(f"Deploying Flight {blueprint.name}.{key}...", file=sys.stderr)
@@ -500,14 +703,35 @@ class Deployer:
 
         for share in blueprint.shares.values():
             url = self._wait_for_share(str(share["name"]))
+            self._reconcile_share(share)
             if target == "preview":
                 share_rows.append(f"| {share['name']} | [Open Share]({url}) |")
 
         for key, dive in blueprint.dives.items():
             print(f"Deploying Dive {blueprint.name}.{key}...", file=sys.stderr)
-            row = self._deploy_dive(dive, blueprint.shares, target, plan_index[(blueprint.name, "dive", key)])
+            row = self._deploy_dive(
+                dive,
+                blueprint.shares,
+                blueprint.inputs,
+                target,
+                plan_index[(blueprint.name, "dive", key)],
+            )
             if row:
                 dive_rows.append(row)
+
+        for key in self._guide_deployment_order(blueprint):
+            guide = blueprint.guides[key]
+            if not guide.get("deploy"):
+                continue
+            print(f"Deploying Guide {blueprint.name}.{key}...", file=sys.stderr)
+            row = self._deploy_guide(
+                blueprint,
+                guide,
+                target,
+                plan_index[(blueprint.name, "guide", key)],
+            )
+            if row:
+                guide_rows.append(row)
 
         if target != "preview":
             return
@@ -517,6 +741,7 @@ class Deployer:
         self._print_section("Flights", "| Flight | ID | Run started |", "|--------|----|-------------|", flight_rows)
         self._print_section("Shares", "| Share | Link |", "|-------|------|", share_rows)
         self._print_section("Dives", "| Dive | Status | Link |", "|------|--------|------|", dive_rows)
+        self._print_section("Guides", "| Guide | ID |", "|-------|----|", guide_rows)
 
     def _print_section(self, title: str, header: str, separator: str, rows: list[str]) -> None:
         if not rows:
@@ -552,6 +777,8 @@ class Deployer:
         access_token_name = str(flight.get("accessTokenName", ""))
         if access_token_name:
             common_args.insert(3, f'"access_token_name" => {sql_string(access_token_name)}')
+        if "maxRuntimeSec" in flight:
+            common_args.insert(3, f'"max_runtime_sec" => {int(str(flight["maxRuntimeSec"]))}::UINTEGER')
         common_args_sql = ", ".join(common_args)
 
         if plan.action == "create":
@@ -638,11 +865,12 @@ class Deployer:
         self,
         dive: dict[str, object],
         shares: dict[str, dict[str, object]],
+        inputs: dict[str, dict[str, object]],
         target: str,
         plan: PlanRecord,
     ) -> str | None:
         title = str(dive["title"])
-        required_resources_sql = self._required_resources_sql(dive["requiredResources"], shares)
+        required_resources_sql = self._required_resources_sql(dive["requiredResources"], shares, inputs)
         content_sql = (
             "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') "
             f"FROM read_text({sql_string(dive['sourcePath'])}))"
@@ -696,6 +924,7 @@ class Deployer:
         self,
         resources_value: object,
         shares: dict[str, dict[str, object]],
+        inputs: dict[str, dict[str, object]] | None = None,
     ) -> str:
         if not isinstance(resources_value, list):
             raise ValidationError("requiredResources must be a list")
@@ -706,14 +935,311 @@ class Deployer:
                 raise ValidationError("requiredResources entries must be objects")
             if resource.get("share"):
                 url = self._wait_for_share(str(shares[str(resource["share"])]["name"]))
+            elif resource.get("input"):
+                input_values = inputs or {}
+                url = self._wait_for_share(str(input_values[str(resource["input"])]["name"]))
             else:
                 url = str(resource["url"])
             expressions.append(f"{{'url': {sql_string(url)}, 'alias': {sql_string(resource['alias'])}}}")
         return f"[{', '.join(expressions)}]"
 
+    def _preflight_rbac(self, rendered: list[RenderedBlueprint]) -> None:
+        admin_reasons: list[str] = []
+        for blueprint in rendered:
+            if any(role.get("deploy") for role in blueprint.roles.values()):
+                admin_reasons.append(f"{blueprint.name} manages roles")
+            if any(
+                guide.get("deploy") and guide.get("access") == "organization"
+                for guide in blueprint.guides.values()
+            ):
+                admin_reasons.append(f"{blueprint.name} publishes organization Guides")
+        if not admin_reasons:
+            return
+
+        rows = self._query_rows("SELECT role_name FROM md_list_roles_for_user(current_user)")
+        roles = {str(row[0]).lower() for row in rows}
+        if "admin" not in roles:
+            reasons = "; ".join(admin_reasons)
+            raise ValidationError(
+                f"RBAC preflight failed: target requires the admin role ({reasons}); "
+                f"the deployment identity has: {', '.join(sorted(roles)) or 'no roles'}"
+            )
+
+    def _deploy_role(self, role: dict[str, object], plan: PlanRecord) -> None:
+        name = str(role["name"])
+        name_sql = quote_name(name)
+        print(f"Reconciling role '{name}'...", file=sys.stderr)
+        self._sql(f"CREATE ROLE IF NOT EXISTS {name_sql};")
+
+        included_roles = role.get("includedRoles", [])
+        members = role.get("members", [])
+        if not isinstance(included_roles, list) or not isinstance(members, list):
+            raise ValidationError("Role includedRoles and members must be arrays")
+        desired_roles = {str(value) for value in included_roles}
+        desired_users = {str(value) for value in members}
+        current_roles: set[str] = set()
+        current_users: set[str] = set()
+        if role.get("mode") == "authoritative" or plan.action == "update":
+            current_roles = {
+                str(row[0])
+                for row in self._query_rows(f"SHOW ROLES TO ROLE {name_sql}")
+                if len(row) >= 3 and bool(row[2])
+            }
+            current_users = {
+                str(row[0])
+                for row in self._query_rows(f"SHOW USERS OF ROLE {name_sql}")
+            }
+
+        for included in sorted(desired_roles - current_roles):
+            self._sql(f"GRANT ROLE {quote_name(included)} TO ROLE {name_sql};")
+        for member in sorted(desired_users - current_users):
+            self._sql(f"GRANT ROLE {name_sql} TO USER {quote_name(member)};")
+        if role.get("mode") == "authoritative":
+            for included in sorted(current_roles - desired_roles):
+                self._sql(f"REVOKE ROLE {quote_name(included)} FROM ROLE {name_sql};")
+            for member in sorted(current_users - desired_users):
+                self._sql(f"REVOKE ROLE {name_sql} FROM USER {quote_name(member)};")
+
+    def _role_deployment_order(
+        self,
+        rendered: list[RenderedBlueprint],
+    ) -> list[tuple[RenderedBlueprint, str, dict[str, object]]]:
+        resources = {
+            str(role["name"]): (blueprint, key, role)
+            for blueprint in rendered
+            for key, role in blueprint.roles.items()
+            if role.get("deploy")
+        }
+        dependencies: dict[str, set[str]] = {name: set() for name in resources}
+        for name, (_, _, role) in resources.items():
+            included = role.get("includedRoles", [])
+            if isinstance(included, list):
+                dependencies[name] = {str(value) for value in included if str(value) in resources}
+
+        ordered: list[tuple[RenderedBlueprint, str, dict[str, object]]] = []
+        remaining = {name: set(values) for name, values in dependencies.items()}
+        while remaining:
+            ready = sorted(name for name, values in remaining.items() if not values)
+            if not ready:
+                raise ValidationError(f"Role dependency cycle: {', '.join(sorted(remaining))}")
+            for name in ready:
+                ordered.append(resources[name])
+                remaining.pop(name)
+            for values in remaining.values():
+                values.difference_update(ready)
+        return ordered
+
+    def _reconcile_share(self, share: dict[str, object]) -> None:
+        name = str(share["name"])
+        include_pattern = share.get("includePattern")
+        if include_pattern is not None:
+            assert isinstance(include_pattern, list)
+            pattern = ", ".join(str(value) for value in include_pattern)
+            self._sql(
+                f"ALTER SHARE {quote_name(name)} SET INCLUDE_PATTERN {sql_string(pattern)};"
+            )
+
+        grants = share.get("grants")
+        if not isinstance(grants, dict):
+            return
+        desired_roles = {str(value) for value in grants.get("roles", [])}
+        desired_users = {str(value) for value in grants.get("users", [])}
+        current_rows = self._query_rows(
+            "SELECT grantee_name, grantee_type "
+            f"FROM md_list_share_grantees({sql_string(name)})"
+        )
+        current_roles = {str(row[0]) for row in current_rows if str(row[1]).lower() == "role"}
+        current_users = {str(row[0]) for row in current_rows if str(row[1]).lower() == "user"}
+
+        for role in sorted(desired_roles - current_roles):
+            self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO ROLE {quote_name(role)};")
+        for user in sorted(desired_users - current_users):
+            self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO USER {quote_name(user)};")
+        if grants.get("mode") == "authoritative":
+            for role in sorted(current_roles - desired_roles):
+                self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM ROLE {quote_name(role)};")
+            for user in sorted(current_users - desired_users):
+                self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM USER {quote_name(user)};")
+
+    def _guide_deployment_order(self, blueprint: RenderedBlueprint) -> list[str]:
+        dependencies: dict[str, set[str]] = {key: set() for key in blueprint.guides}
+        for key, guide in blueprint.guides.items():
+            references = guide.get("references", [])
+            if not isinstance(references, list):
+                continue
+            for reference in references:
+                if (
+                    isinstance(reference, dict)
+                    and reference.get("type") == "guide"
+                    and reference.get("resource")
+                    and str(reference.get("blueprint", blueprint.name)) == blueprint.name
+                ):
+                    dependencies[key].add(str(reference["resource"]))
+
+        ordered: list[str] = []
+        remaining = {key: set(values) for key, values in dependencies.items()}
+        while remaining:
+            ready = sorted(key for key, values in remaining.items() if not values)
+            if not ready:
+                cycle = ", ".join(sorted(remaining))
+                raise ValidationError(f"Guide reference cycle in blueprint {blueprint.name}: {cycle}")
+            for key in ready:
+                ordered.append(key)
+                remaining.pop(key)
+            for values in remaining.values():
+                values.difference_update(ready)
+        return ordered
+
+    def _deploy_guide(
+        self,
+        blueprint: RenderedBlueprint,
+        guide: dict[str, object],
+        target: str,
+        plan: PlanRecord,
+    ) -> str | None:
+        title = str(guide["title"])
+        content_sql = f"(SELECT content FROM read_text({sql_string(guide['sourcePath'])}))"
+        references_sql = self._guide_references_sql(blueprint, guide.get("references", []))
+        change_comment = str(guide.get("changeComment", "deployed by md-blueprints"))
+        external_id = str(guide.get("externalId") or os.environ.get("GITHUB_SHA", ""))
+        version_args = [
+            '"content" := getvariable(\'guide_content\')',
+            f'"change_comment" := {sql_string(change_comment)}',
+            f'"references" := {references_sql}',
+        ]
+        if external_id:
+            version_args.append(f'"external_id" := {sql_string(external_id)}')
+
+        if plan.action == "create":
+            create_args = [
+                f'"title" := {sql_string(title)}',
+                *version_args,
+                f'"description" := {sql_string(guide.get("description", ""))}',
+                f'"access" := {sql_string(guide.get("access", "user"))}',
+            ]
+            topic = str(guide.get("topic", ""))
+            if topic:
+                create_args.append(f'"topic" := {sql_string(topic)}')
+            guide_id = self._sql(
+                f"SET VARIABLE guide_content = {content_sql}; "
+                f"SELECT id FROM MD_CREATE_GUIDE({', '.join(create_args)});"
+            ).strip()
+        elif plan.action == "update":
+            guide_id = str(plan.id)
+            existing = self._query_rows(
+                "SELECT content, version_external_id "
+                f"FROM MD_GET_GUIDE(id := '{guide_id}'::UUID)"
+            )
+            current_content = str(existing[0][0]) if existing else ""
+            current_external_id = (
+                str(existing[0][1]) if existing and existing[0][1] is not None else ""
+            )
+            source_content = Path(str(guide["sourcePath"])).read_text(encoding="utf-8")
+            append_version = bool(guide.get("references")) or not (
+                current_content == source_content
+                and (not external_id or current_external_id == external_id)
+            )
+            version_statement = (
+                f"FROM MD_UPDATE_GUIDE(\"id\" := '{guide_id}'::UUID, {', '.join(version_args)}); "
+                if append_version
+                else ""
+            )
+            self._sql(
+                f"SET VARIABLE guide_content = {content_sql}; "
+                f"{version_statement}"
+                "FROM MD_UPDATE_GUIDE_METADATA("
+                f"\"id\" := '{guide_id}'::UUID, "
+                f"\"title\" := {sql_string(title)}, "
+                f"\"description\" := {sql_string(guide.get('description', ''))}, "
+                f"\"topic\" := {sql_string(guide.get('topic', ''))}); "
+                "FROM MD_SET_GUIDE_ACCESS("
+                f"\"id\" := '{guide_id}'::UUID, "
+                f"\"access\" := {sql_string(guide.get('access', 'user'))});"
+            )
+        else:
+            raise ValidationError(f"Cannot deploy Guide {title} with plan action {plan.action}")
+
+        return f"| {title} | {guide_id} |" if target == "preview" else None
+
+    def _guide_references_sql(
+        self,
+        blueprint: RenderedBlueprint,
+        references_value: object,
+    ) -> str:
+        if not isinstance(references_value, list):
+            raise ValidationError("Guide references must be an array")
+        rendered: list[str] = []
+        for reference_value in references_value:
+            if not isinstance(reference_value, dict):
+                raise ValidationError("Guide references entries must be objects")
+            reference = reference_value
+            reference_type = str(reference["type"])
+            url: str | None = None
+            uuid_value: str | None = None
+            if reference_type == "catalog":
+                if reference.get("share"):
+                    url = self._wait_for_share(str(blueprint.shares[str(reference["share"])]["name"]))
+                elif reference.get("input"):
+                    url = self._wait_for_share(str(blueprint.inputs[str(reference["input"])]["name"]))
+                else:
+                    url = str(reference["url"])
+            elif reference.get("uuid"):
+                uuid_value = str(reference["uuid"])
+            else:
+                producer_name = str(reference.get("blueprint", blueprint.name))
+                producer = self.rendered_by_name.get(producer_name)
+                if producer is None:
+                    raise ValidationError(f"Guide reference blueprint {producer_name!r} was not selected")
+                resource_key = str(reference["resource"])
+                if reference_type == "dive":
+                    states = self._list_dive_states(str(producer.dives[resource_key]["title"]))
+                    ids = [state[0] for state in states]
+                elif reference_type == "flight":
+                    ids = self._list_flight_ids(str(producer.flights[resource_key]["name"]))
+                else:
+                    referenced_guide = producer.guides[resource_key]
+                    ids = self._list_guide_ids(
+                        str(referenced_guide["title"]),
+                        str(referenced_guide.get("topic", "")),
+                    )
+                if len(ids) != 1:
+                    raise CommandError(
+                        f"Expected one {reference_type} for Guide reference "
+                        f"{producer_name}.{resource_key}, found {len(ids)}"
+                    )
+                uuid_value = ids[0]
+
+            def nullable_string(field: str, value: str | None = None) -> str:
+                raw = value if value is not None else reference.get(field)
+                return "NULL::VARCHAR" if raw in {None, ""} else sql_string(raw)
+
+            uuid_sql = "NULL::UUID" if uuid_value is None else f"{sql_string(uuid_value)}::UUID"
+            rendered.append(
+                "{"
+                f"'type': {sql_string(reference_type)}, "
+                f"'url': {nullable_string('url', url)}, "
+                f"'schema': {nullable_string('schema')}, "
+                f"'table': {nullable_string('table')}, "
+                f"'column': {nullable_string('column')}, "
+                f"'view': {nullable_string('view')}, "
+                f"'macro': {nullable_string('macro')}, "
+                f"'uuid': {uuid_sql}, "
+                f"'description': {nullable_string('description')}"
+                "}"
+            )
+        return f"[{', '.join(rendered)}]"
+
     def _apply_cleanup_plan(self, records: list[PlanRecord]) -> None:
         for record in records:
-            if (record.type, record.action) == ("dive", "missing"):
+            if (record.type, record.action) == ("guide", "missing"):
+                print(f"No preview Guide found for '{record.name}'")
+            elif (record.type, record.action) == ("guide", "delete"):
+                print(f"Deleting preview Guide {record.id} ({record.name})")
+                self._delete_if_present(
+                    f"FROM MD_DELETE_GUIDE(id := '{record.id}'::UUID)",
+                    f"preview Guide {record.name}",
+                )
+            elif (record.type, record.action) == ("dive", "missing"):
                 print(f"No preview Dive found for '{record.name}'")
             elif (record.type, record.action) == ("dive", "delete"):
                 print(f"Deleting preview Dive {record.id} ({record.name})")
@@ -765,21 +1291,32 @@ class Deployer:
         ]
 
     def _list_dive_states(self, title: str) -> list[tuple[str, str | None]]:
-        states: list[tuple[str, str | None]] = []
-        output = self._sql(f"SELECT id, status FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}")
-        for line in output.splitlines():
-            if not line.strip():
-                continue
-            dive_id, separator, raw_status = line.partition(",")
-            status = raw_status.strip().lower() if separator and raw_status.strip() else None
-            states.append((dive_id.strip(), status))
-        return states
+        return [
+            (str(row[0]), str(row[1]).lower() if row[1] is not None else None)
+            for row in self._query_rows(
+                f"SELECT id, status FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}"
+            )
+        ]
+
+    def _list_guide_ids(self, title: str, topic: str) -> list[str]:
+        topic_predicate = "topic IS NULL OR topic = ''" if not topic else f"topic = {sql_string(topic)}"
+        return [
+            str(row[0])
+            for row in self._query_rows(
+                "SELECT id FROM MD_LIST_GUIDES("
+                '"limit" := 1000::UINTEGER, "offset" := 0::UINTEGER) '
+                f"WHERE title = {sql_string(title)} AND ({topic_predicate})"
+            )
+        ]
 
     def _find_share_url(self, name: str) -> str:
         lines = self._sql(f"SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = {sql_string(name)}").splitlines()
         return lines[0].strip() if lines else ""
 
     def _sql(self, statement: str) -> str:
+        return format_sql_rows(self._query_rows(statement)).strip()
+
+    def _query_rows(self, statement: str) -> list[tuple[object, ...]]:
         if self.sql_env is None:
             raise ValidationError("MotherDuck token was not prepared for live command")
         try:
@@ -800,4 +1337,4 @@ class Deployer:
         finally:
             if connection is not None:
                 connection.close()
-        return format_sql_rows(rows).strip()
+        return rows

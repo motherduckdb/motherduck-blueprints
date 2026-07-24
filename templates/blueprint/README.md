@@ -1,6 +1,6 @@
 # __BLUEPRINT_NAME__ Blueprint
 
-This generated blueprint is a complete starter project. It deploys a Flight that writes sample daily metrics, publishes the database as a share, and deploys a Dive that reads that share through the `__DATABASE_NAME__` alias.
+This generated blueprint is a complete `projects/` starter. It deploys a Flight that writes sample daily metrics, exports the database share as the `data` output, and deploys a Dive that reads it through the `__DATABASE_NAME__` alias.
 
 ## Resources
 

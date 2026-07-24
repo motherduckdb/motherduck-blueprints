@@ -321,6 +321,220 @@ def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPa
     assert '"flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID' in run_call
 
 
+def test_flight_deploy_passes_max_runtime_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    deployer._deploy_flight(
+        {
+            "name": "bounded-flight",
+            "sourcePath": "src/flight.py",
+            "requirementsPath": "src/requirements.txt",
+            "scheduleCron": "",
+            "maxRuntimeSec": 900,
+        },
+        "prod",
+        PlanRecord("ops", "flight", "loader", "bounded-flight", "update", True, "flight-id"),
+    )
+
+    update = next(call for call in calls if "MD_UPDATE_FLIGHT" in call)
+    assert '"max_runtime_sec" => 900::UINTEGER' in update
+
+
+def test_dive_deploy_reconciles_governance_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(deployer, "_required_resources_sql", lambda *args: "[]")
+
+    deployer._deploy_dive(
+        {
+            "title": "Revenue",
+            "sourcePath": "src/dive.tsx",
+            "requiredResources": [],
+            "status": "endorsed",
+        },
+        {},
+        {},
+        "prod",
+        PlanRecord(
+            "ops",
+            "dive",
+            "dashboard",
+            "Revenue",
+            "update",
+            True,
+            "dive-id",
+            current_status="ready",
+            desired_status="endorsed",
+        ),
+    )
+
+    assert any("MD_UPDATE_DIVE_STATUS" in call and "'endorsed'" in call for call in calls)
+
+
+def test_share_reconciliation_manages_filter_and_grants(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(
+        deployer,
+        "_query_rows",
+        lambda statement: [("old-role", "role"), ("old-user", "user")],
+    )
+
+    deployer._reconcile_share(
+        {
+            "name": "finance share",
+            "includePattern": ["reporting.*", "finance.salaries"],
+            "grants": {
+                "roles": ["finance"],
+                "users": ["analyst@example.com"],
+                "mode": "authoritative",
+            },
+        }
+    )
+
+    assert (
+        'ALTER SHARE "finance share" SET INCLUDE_PATTERN '
+        "'reporting.*, finance.salaries';"
+    ) in calls
+    assert 'GRANT READ ON SHARE "finance share" TO ROLE "finance";' in calls
+    assert 'REVOKE READ ON SHARE "finance share" FROM USER "old-user";' in calls
+
+
+def test_role_reconciliation_supports_authoritative_memberships(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        if "SHOW ROLES" in statement:
+            return [("analyst", "preset", True, None), ("inherited", "custom", False, None)]
+        return [("old@example.com", "old@example.com", False, None)]
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    deployer._deploy_role(
+        {
+            "name": "finance team",
+            "includedRoles": ["explorer"],
+            "members": ["new@example.com"],
+            "mode": "authoritative",
+        },
+        PlanRecord("access", "role", "finance", "finance team", "update", True, "finance team"),
+    )
+
+    assert 'CREATE ROLE IF NOT EXISTS "finance team";' in calls
+    assert 'GRANT ROLE "explorer" TO ROLE "finance team";' in calls
+    assert 'REVOKE ROLE "analyst" FROM ROLE "finance team";' in calls
+    assert 'REVOKE ROLE "finance team" FROM USER "old@example.com";' in calls
+
+
+def test_role_deployment_orders_managed_inheritance() -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    blueprint = RenderedBlueprint(
+        name="access",
+        title="Access",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        roles={
+            "senior": {
+                "name": "senior-analysts",
+                "includedRoles": ["analysts"],
+                "deploy": True,
+            },
+            "base": {"name": "analysts", "includedRoles": [], "deploy": True},
+        },
+    )
+
+    ordered = deployer._role_deployment_order([blueprint])
+
+    assert [str(role["name"]) for _, _, role in ordered] == ["analysts", "senior-analysts"]
+
+
+def test_rbac_preflight_rejects_admin_only_resources_without_admin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [("builder",)])
+    blueprint = RenderedBlueprint(
+        name="access",
+        title="Access",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        roles={"finance": {"name": "finance", "deploy": True}},
+    )
+
+    with pytest.raises(ValidationError, match="requires the admin role"):
+        deployer._preflight_rbac([blueprint])
+
+
+def test_guide_deploy_uses_version_metadata_and_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [("old content", "old-sha")])
+    guide_source = tmp_path / "guide.md"
+    guide_source.write_text("# Revenue\n", encoding="utf-8")
+    blueprint = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+    )
+
+    deployer._deploy_guide(
+        blueprint,
+        {
+            "title": "Revenue definitions",
+            "topic": "finance/revenue",
+            "description": "Canonical metrics",
+            "sourcePath": str(guide_source),
+            "access": "organization",
+            "references": [],
+            "changeComment": "sync definitions",
+            "externalId": "abc123",
+        },
+        "prod",
+        PlanRecord("knowledge", "guide", "revenue", "Revenue definitions", "update", True, "guide-id"),
+    )
+
+    statement = calls[0]
+    assert "MD_UPDATE_GUIDE" in statement
+    assert "MD_UPDATE_GUIDE_METADATA" in statement
+    assert "MD_SET_GUIDE_ACCESS" in statement
+    assert "'sync definitions'" in statement
+    assert "'abc123'" in statement
+
+
 def test_cleanup_flight_delete_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []

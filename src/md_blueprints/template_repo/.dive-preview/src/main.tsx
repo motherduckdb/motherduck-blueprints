@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactNode } from "react";
 import { MotherDuckSDKProvider, useConnectionStatus } from "./md-sdk";
 import { Loader2, AlertCircle } from "lucide-react";
-import Dive from "./dive";
+import Dive, { REQUIRED_DATABASES } from "./dive";
 
 function ConnectionGate({ children }: { children: ReactNode }) {
   const { isConnected, isConnecting, error } = useConnectionStatus();
@@ -28,7 +28,7 @@ if (!token) {
     '<p style="padding:2rem;color:red">Missing VITE_MOTHERDUCK_TOKEN in .env</p>';
 } else {
   createRoot(document.getElementById("root")!).render(
-    <MotherDuckSDKProvider token={token}>
+    <MotherDuckSDKProvider token={token} requiredDatabases={REQUIRED_DATABASES}>
       <ConnectionGate>
         <Dive />
       </ConnectionGate>

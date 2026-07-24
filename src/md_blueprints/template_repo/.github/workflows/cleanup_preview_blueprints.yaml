@@ -16,10 +16,12 @@ concurrency:
 jobs:
   cleanup:
     name: Delete Preview Blueprints for Branch
-    if: github.event_name == 'pull_request' || github.event.ref_type == 'branch'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'delete' && github.event.ref_type == 'branch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Resolve cleanup branch
         id: cleanup-branch
@@ -53,11 +55,35 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Cleanup preview blueprints
+      - name: Cleanup preview blueprints from the branch manifest
+        id: cleanup-branch-manifest
         if: steps.cleanup-token.outputs.available == 'true'
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: cleanup
           args: --target preview --branch "${{ steps.cleanup-branch.outputs.branch }}"
+
+      - name: Check out the pull request base manifest
+        if: github.event_name == 'pull_request' && steps.cleanup-token.outputs.available == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Cleanup preview blueprints from the base manifest
+        if: github.event_name == 'pull_request' && steps.cleanup-token.outputs.available == 'true'
+        uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: cleanup
+          args: --target preview --branch "${{ steps.cleanup-branch.outputs.branch }}"
+
+      - name: Report branch-manifest cleanup failure
+        if: always() && steps.cleanup-branch-manifest.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "Cleanup using the pull request branch manifest failed; the base manifest cleanup was still attempted." >&2
+          exit 1

@@ -1,8 +1,8 @@
 # Set Up Your Repository
 
-Use `md-blueprints init` to generate a MotherDuck Blueprints repository, connect it to MotherDuck with a service account token, then customize or add blueprint packages under `blueprints/`.
+Use `md-blueprints init` to generate a typed MotherDuck Blueprints repository, connect it to MotherDuck with a service account token, then customize or add independently deployable packages.
 
-Blueprints are project-level packages. Each package should represent one logical project or data product, not an entire organization, service account, user, or database owner. Do not create top-level `dives/`, `flights/`, or `bundles/` directories in your repo.
+Use `flights/`, `dives/`, `guides/`, and `roles/` when those resources have different owners or lifecycles. Use `projects/` when several resource types genuinely ship, preview, and roll back together. Existing `blueprints/` packages remain supported.
 
 ## 1. Generate the Repository
 
@@ -29,13 +29,11 @@ gh repo create <your-org>/motherduck-blueprints --private --source . --remote or
 In your MotherDuck organization:
 
 1. Create a service account for CI deployments.
-2. Grant it the minimum database privileges needed by the blueprints.
+2. Grant it the minimum database privileges needed by the blueprints. Use the `admin` preset role when the repository manages custom roles or organization-wide Guides.
 3. Generate a read/write token.
 4. Store the token somewhere secure long enough to add it to GitHub.
 
 Use a service account token rather than a personal token so deployed Dives, Flights, tables, and shares are owned by a shared automation identity.
-
-The normal service account can manage `draft`, `ready`, and `archived` on Dives it owns. Only an organization admin can set `endorsed`; if your blueprints declare that status, protect an admin-capable production token with required GitHub Environment reviewers. Do not grant admin merely to make every Dive endorsed.
 
 ## 3. Add GitHub Secrets
 
@@ -91,7 +89,7 @@ PR validation still runs if `MOTHERDUCK_TOKEN` has not been added yet, but live 
 
 ## 7. Run a Preview PR
 
-Create a branch in your repo and make a small change, for example edit the Wikipedia blueprint docs or metadata.
+Create a branch and make a small change, for example edit the Wikipedia Dive docs or metadata.
 
 ```bash
 git checkout -b test/wikipedia-blueprint
@@ -103,14 +101,14 @@ gh pr create --fill
 Expected preview flow:
 
 1. `Deploy Blueprints` validates manifests.
-2. The changed blueprint packages are discovered from `motherduck.yml`.
+2. Directly changed packages are discovered from `motherduck.yml`, then the preview selection expands upstream and downstream.
 3. The workflow runs a read-only preview plan.
 4. Preview Flights deploy with schedules disabled.
 5. Preview Flights run when `runOnDeploy` is true.
 6. Preview databases and shares are created with the branch slug.
 7. Dives deploy after required shares are resolvable.
-8. Preview Dives are enforced as `draft`.
-9. A PR comment lists the plan, Dive status, and preview Flight, share, and Dive links.
+8. Opt-in preview Guides deploy after their references resolve.
+9. A PR comment lists the plan plus preview Flight, share, Dive, and Guide details.
 
 ## 8. Verify Cleanup
 
@@ -118,10 +116,11 @@ Close the PR or delete the branch.
 
 Expected cleanup flow:
 
-1. Preview Dives are deleted.
-2. Preview Flights are deleted.
-3. Preview shares are dropped.
-4. Preview databases are dropped when `dropDatabase: true`.
+1. Preview Guides are deleted.
+2. Preview Dives are deleted.
+3. Preview Flights are deleted.
+4. Preview shares are dropped.
+5. Preview databases are dropped when `dropDatabase: true`.
 
 Cleanup refuses to drop share/database names that do not include the branch slug.
 
@@ -140,23 +139,24 @@ Expected production flow:
 1. `Deploy Blueprints` runs on `main`.
 2. GitHub waits for approval in `motherduck-production`.
 3. The workflow writes a read-only production plan to the GitHub job summary.
-4. Production Flights deploy.
-5. Flights run when `runOnDeploy` is true.
-6. Required shares are resolved.
-7. Production Dives deploy and reconcile an explicitly declared status.
-
-The generated examples use `ready` in production and `draft` in preview. Omitting production `status` preserves the live value. A plan that promotes a Dive to `endorsed` or moves an endorsed Dive to another status calls out that transition for the environment reviewer.
+4. Production roles and memberships reconcile.
+5. Production Flights deploy.
+6. Flights run when `runOnDeploy` is true.
+7. Required shares, filters, and grants reconcile.
+8. Production Dives deploy.
+9. Production Guides deploy after their references resolve.
 
 ## 10. Customize the Blueprints
 
 You can then:
 
-- Scaffold a starter package with `make new-blueprint <blueprint-name>`. The generated Flight creates daily metric tables and a share, and the generated Dive reads that share.
-- Replace the Wikipedia example with your own blueprint package.
-- Add standalone Dives or Flights as one-resource blueprints.
-- Add paired Flight + Dive packages that declare shared data products in `resources.shares`.
+- Scaffold a producer with `make new-flight events-ingest` and consume it with `make new-dive events-dashboard INPUT=events-ingest.data`.
+- Scaffold a complete co-owned package with `make new-project revenue-overview`.
+- Connect same-repository packages through `outputs` and `inputs`; use literal share URLs for external repositories.
+- Replace the split Wikipedia producer/Dive example with your own packages.
 - Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
-- Version context-layer assets under `context/` or package-local `resources.context` entries with `deploy: false`.
+- Publish versioned Guide assets below `guides/` with `resources.guides` and `deploy: true`.
+- Manage custom roles below `roles/` with `resources.roles`; use `mode: authoritative` only when the repository owns the complete membership set.
 - Update `.github/CODEOWNERS`.
 
 ## 11. Keep Tooling in Sync
@@ -183,7 +183,7 @@ The action tag is the preferred CI path for customer repositories.
 When using the repository action, pin the action major version in customer workflows:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+- uses: motherduckdb/motherduck-blueprints@v0
   with:
     command: validate
 ```

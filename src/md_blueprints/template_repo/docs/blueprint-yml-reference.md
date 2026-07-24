@@ -1,10 +1,6 @@
 # blueprint.yml Reference
 
-Use this page as a machine-readable reference for `blueprints/<blueprint-name>/blueprint.yml`.
-
-`blueprint.yml` describes one deployable MotherDuck blueprint package. It declares metadata, optional variables, target-specific overrides, and resources such as shares, Flights, Dives, and context files.
-
-The `md-blueprints` package is the validation source of truth for this schema. The repo-local `schemas/v1/` files mirror the packaged schema for editor and documentation support.
+A `blueprint.yml` describes one independently deployable package. Runtime validation uses the schema packaged with `md-blueprints`; `schemas/v1/` is the editor-facing mirror.
 
 ## File Shape
 
@@ -12,363 +8,234 @@ The `md-blueprints` package is the validation source of truth for this schema. T
 schemaVersion: 1
 name: wikipedia-pageviews
 title: Wikipedia Pageviews
-description: Loads public Wikimedia pageview data with a Flight and visualizes it in a Dive.
+description: A dashboard backed by a declared producer output.
 
-variables:
-  database:
-    description: MotherDuck database that stores data.
-    default: wikipedia_pageviews
-
-targets:
-  preview:
-    variables:
-      database: wikipedia_pageviews_preview_${target.branch_slug}
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
 
 resources:
-  shares: {}
-  flights: {}
-  dives: {}
-  context: {}
+  dives:
+    dashboard:
+      title: Wikipedia Pageviews
+      source: src/dive.tsx
+      requiredResources:
+        - input: pageviews
+          alias: wikipedia_pageviews
 ```
 
-The `resources` object is required. Each resource group inside it is optional, so a blueprint can contain any combination of shares, Flights, Dives, and context resources.
+Required top-level fields are `schemaVersion`, `name`, `title`, and `resources`. Optional fields are `description`, `variables`, `targets`, `inputs`, and `outputs`.
 
-All resource `source` and `requirements` paths must resolve inside the blueprint package directory. Absolute paths, `..` traversal, and symlinks that escape the package are rejected so validation and deployment cannot read files from elsewhere on the runner.
+`name` must match `^[a-z0-9][a-z0-9-]*$`. In canonical typed roots, it must also equal the package's immediate parent directory.
 
-## Rendering Model
+## Typed Roots
 
-`blueprint.yml` is first validated as YAML and then rendered for a target such as `preview` or `prod`.
-
-| Rule | Behavior |
+| Root | Permitted resource groups |
 | --- | --- |
-| Template syntax | Strings can contain `${path.to.value}` references. Escape a literal placeholder as `\${path.to.value}`. |
-| Available template roots | `repository`, `target`, `var`, and `resources.shares`. |
-| Target values | `target.name`, `target.branch`, and `target.branch_slug`. |
-| Branch slug | Lowercase branch name with non-alphanumeric runs replaced by `_`, trimmed to 48 characters. Empty slugs render as `preview`. |
-| Variable precedence | Root `motherduck.yml` variables, root target variables, blueprint variables, then blueprint target variables. Later values override earlier values. |
-| Variable rendering | Variables render recursively for up to 5 passes, then all variable values are stringified. |
-| Resource target overrides | `resources.<type>.<key>.targets.<target>` is deep-merged over the base resource before template rendering. |
-| Share references | Shares render before Flights and Dives, so Flights and Dives can reference `${resources.shares.<key>.<field>}`. |
+| `flights/` | `flights` plus supporting `shares`; top-level inputs and outputs are allowed |
+| `dives/` | `dives`; top-level inputs are allowed |
+| `guides/` | `guides` or compatibility `context`; top-level inputs are allowed |
+| `roles/` | `roles` |
+| `projects/` | Any resource combination |
+| `blueprints/` or custom roots | Compatibility behavior; any resource combination |
 
-Example share reference:
+Typed packages may declare multiple resources of their permitted type. Recursive organization is allowed.
 
-```yaml
-resources:
-  shares:
-    data:
-      name: ${var.database}
-      database: ${var.database}
-  flights:
-    loader:
-      name: load-${resources.shares.data.name}
-      source: src/flight.py
-      requirements: src/requirements.txt
-      config:
-        database: ${resources.shares.data.database}
-```
+All `source` and `requirements` paths must stay inside the package, including after symlink resolution.
 
-## Top-Level Fields
+## Rendering
 
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `schemaVersion` | Yes | `1` | None | Manifest schema version. The only accepted value is `1`. |
-| `name` | Yes | String matching `^[a-z0-9][a-z0-9-]*$` | None | Blueprint package name. Use the same lowercase slug as `blueprints/<name>/`. |
-| `title` | Yes | Non-empty string | None | Human-readable blueprint title. Rendered as a template string. |
-| `description` | No | String | `""` after render | Human-readable blueprint description. Rendered as a template string. |
-| `variables` | No | Object of variable definitions | `{}` | Blueprint-local variables. |
-| `targets` | No | Object keyed by target name | `{}` | Blueprint-level target overrides. Currently, `targets.<target>.variables` is the interpreted field. |
-| `resources` | Yes | Object | None | Resource declarations. Allowed keys are `shares`, `flights`, `dives`, and `context`. |
+Strings can contain `${path.to.value}`. Escape a literal placeholder as `\${path.to.value}`.
 
-Unknown top-level keys are invalid.
+Available template roots are:
 
-## Variables
+- `repository`
+- `target.name`, `target.branch`, and `target.branch_slug`
+- `var`
+- `resources.shares`
+- `resources.roles`
+- `inputs`
 
-Variables can be short scalar values or objects with metadata.
+Variables render with this precedence: root variables, root target variables, blueprint variables, blueprint target variables. Resource target overrides are deep-merged over the base resource.
 
-| Shape | YAML example | Notes |
-| --- | --- | --- |
-| String | `database: analytics` | Accepted. Rendered value is stringified. |
-| Number | `days_back: 30` | Accepted. Rendered value is stringified. |
-| Boolean | `enabled: true` | Accepted. Rendered value is stringified. |
-| Object | `database: { description: Data database, default: analytics }` | Requires `default`. `description` is optional. |
+An input exposes:
 
-Object variable fields:
+| Field | Description |
+| --- | --- |
+| `blueprint` | Producer blueprint name |
+| `output` | Producer output key |
+| `share` | Producer's package-local share key |
+| `name` | Target-rendered MotherDuck share name |
+| `database` | Target-rendered database name |
+| `access` | Target-rendered share access |
+| `visibility` | Target-rendered share visibility |
 
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `variables.<key>.description` | No | String | None | Reader-facing description. |
-| `variables.<key>.default` | Yes | Any YAML value | None | Variable value used during rendering. |
+For example, a Guide or Flight can use `${inputs.events.database}` in its rendered configuration. Share URLs are resolved from live MotherDuck state during plan/deploy and are not a static template field.
 
-Unknown fields inside object variables are invalid.
+## Inputs and Outputs
 
-## Blueprint Target Overrides
-
-Blueprint-level target overrides are keyed by target name:
+A producer exports a share:
 
 ```yaml
-targets:
-  preview:
-    variables:
-      database: ${var.database}${var.preview_suffix}
+outputs:
+  events:
+    share: events
 ```
 
-The deploy tool currently reads `targets.<target>.variables` from this object. Use resource-level `targets` for resource field overrides such as preview Flight names or preview share names.
+`outputs.<key>.share` must reference a key under the same blueprint's `resources.shares`.
 
-## Resource Groups
+A consumer imports it:
 
-| Path | Required | Type | Description |
-| --- | --- | --- | --- |
-| `resources.shares` | No | Object keyed by share resource key | Declares named data products that Flights can produce and Dives can consume. |
-| `resources.flights` | No | Object keyed by Flight resource key | Declares Python MotherDuck Flights. |
-| `resources.dives` | No | Object keyed by Dive resource key | Declares MotherDuck Dives. |
-| `resources.context` | No | Object keyed by context resource key | Declares future context-layer assets. These validate only and must not deploy yet. |
+```yaml
+inputs:
+  events:
+    blueprint: events-ingest
+    output: events
+```
 
-Resource keys are local identifiers. Dives refer to share resource keys with `requiredResources[].share`.
+`inputs.<key>.blueprint` and `output` are required non-empty strings. References are repository-local. Use a literal required-resource `url` for cross-repository shares.
+
+Blueprint names are globally unique. Missing producers, missing outputs, output/share mismatches, self-references, and cycles are validation errors.
 
 ## Shares
 
-Example:
-
 ```yaml
 resources:
   shares:
-    pageviews:
-      name: ${var.share}
-      database: ${var.database}
+    events:
+      name: events
+      database: events
       access: ORGANIZATION
       visibility: DISCOVERABLE
+      includePattern:
+        - reporting.*
+      grants:
+        roles: [analysts]
+        mode: authoritative
       cleanup: true
       dropDatabase: false
       targets:
         preview:
-          name: ${var.share}${var.preview_suffix}
-          database: ${var.database}${var.preview_suffix}
+          name: events${var.preview_suffix}
+          database: events${var.preview_suffix}
           access: RESTRICTED
           visibility: HIDDEN
           dropDatabase: true
 ```
 
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `resources.shares.<key>.name` | Yes | Non-empty string | None | MotherDuck share name after rendering. |
-| `resources.shares.<key>.database` | Yes | Non-empty string | None | Database that backs the share. |
-| `resources.shares.<key>.access` | No | String | `ORGANIZATION` | Share access mode passed to project code. Current examples use `ORGANIZATION`, `UNRESTRICTED`, or `RESTRICTED`. |
-| `resources.shares.<key>.visibility` | No | String | `DISCOVERABLE` | Share visibility passed to project code. Current examples use `DISCOVERABLE` or `HIDDEN`. |
-| `resources.shares.<key>.cleanup` | No | Boolean | `true` during preview cleanup | Whether preview cleanup should drop this share. |
-| `resources.shares.<key>.dropDatabase` | No | Boolean | `false` | Whether preview cleanup should also drop the backing database. |
-| `resources.shares.<key>.targets` | No | Object keyed by target name | `{}` | Target-specific share overrides. |
+Required fields are `name` and `database`. Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
 
-Rendered share validation:
+A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`.
 
-- `name` and `database` must be non-empty after rendering.
-- If `visibility` renders as `HIDDEN`, `access` must render as `RESTRICTED`.
-- In the default preview target, share names must include `${target.branch_slug}`.
-- In the default preview target, databases must include `${target.branch_slug}` when `dropDatabase: true`.
-- Preview cleanup refuses to drop shares or databases whose rendered names do not include the branch slug.
+`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged; an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
 
 ## Flights
-
-Example:
-
-```yaml
-resources:
-  flights:
-    pageviews_loader:
-      name: wikipedia-pageviews
-      source: src/flight.py
-      requirements: src/requirements.txt
-      scheduleCron: 17 6 * * *
-      accessTokenName: ""
-      runOnDeploy: true
-      waitForRun: success
-      secrets: []
-      config:
-        database: ${resources.shares.pageviews.database}
-      targets:
-        preview:
-          name: wikipedia-pageviews:${target.branch} (Preview)
-          scheduleCron: ""
-```
-
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `resources.flights.<key>.name` | Yes | Non-empty string | None | MotherDuck Flight name after rendering. Must be unique per rendered target. |
-| `resources.flights.<key>.source` | Yes | Non-empty string | None | Path to the Python Flight source, relative to the blueprint directory. |
-| `resources.flights.<key>.requirements` | Yes | Non-empty string | None | Path to the Flight `requirements.txt`, relative to the blueprint directory. |
-| `resources.flights.<key>.scheduleCron` | No | String | `""` | Five-field UTC cron expression, or empty string for no schedule. |
-| `resources.flights.<key>.accessTokenName` | No | String | `""` | Named MotherDuck access token to pass to Flight deployment. Empty strings are omitted. |
-| `resources.flights.<key>.runOnDeploy` | No | Boolean | `false` | Whether deployment starts a Flight run immediately. |
-| `resources.flights.<key>.waitForRun` | No | `success` or `false` | `false` | When set to `success`, deployment waits for the immediate run to succeed. |
-| `resources.flights.<key>.secrets` | No | Array of strings | `[]` | MotherDuck Flight secret names. |
-| `resources.flights.<key>.config` | No | Object with any values | `{}` | Flight runtime config. Values are rendered and stringified before deployment. |
-| `resources.flights.<key>.targets` | No | Object keyed by target name | `{}` | Target-specific Flight overrides. |
-
-Rendered Flight validation:
-
-- `name`, `source`, and `requirements` must be non-empty after rendering.
-- `source` and `requirements` files must exist.
-- `source` and `requirements` must stay inside the blueprint package, including after resolving symlinks.
-- `source` must parse as valid Python.
-- Non-empty `scheduleCron` values must contain exactly 5 fields.
-- In the default preview target, schedules are disabled by policy and render as `""` even if the base Flight sets `scheduleCron`.
-- `waitForRun: success` only waits when `runOnDeploy: true` starts a run.
-
-## Dives
-
-Example using a local share resource:
-
-```yaml
-resources:
-  dives:
-    pageviews:
-      title: Wikipedia Pageviews
-      source: src/dive.tsx
-      description: Recent daily pageviews.
-      status: ready
-      requiredResources:
-        - share: pageviews
-          alias: wikipedia_pageviews
-      targets:
-        preview:
-          title: Wikipedia Pageviews:${target.branch} (Preview)
-          status: draft
-```
-
-Example using a direct share URL:
-
-```yaml
-resources:
-  dives:
-    external:
-      title: External Share Dive
-      source: src/dive.tsx
-      requiredResources:
-        - url: md:_share/example/00000000-0000-0000-0000-000000000000
-          alias: external_data
-```
-
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `resources.dives.<key>.title` | Yes | Non-empty string | None | MotherDuck Dive title after rendering. Must be unique per rendered target. |
-| `resources.dives.<key>.source` | Yes | Non-empty string | None | Path to the Dive source, relative to the blueprint directory. |
-| `resources.dives.<key>.description` | No | String | `""` | Dive description passed to MotherDuck. |
-| `resources.dives.<key>.status` | No | `draft`, `ready`, `endorsed`, or `archived` | Unmanaged | Desired MotherDuck governance status. When omitted, updates preserve the live status and new Dives use MotherDuck's `draft` default. |
-| `resources.dives.<key>.requiredResources` | Yes | Non-empty array | None | Share resources or direct share URLs that the Dive mounts. |
-| `resources.dives.<key>.targets` | No | Object keyed by target name | `{}` | Target-specific Dive overrides. |
-
-Rendered Dive validation:
-
-- `title` and `source` must be non-empty after rendering.
-- `source` file must exist.
-- Preview Dives always render as `draft`; a non-draft preview override is rejected.
-- `requiredResources` must contain at least one item.
-- Each required resource must set `alias`.
-- Each required resource must set either `share` or `url`.
-- If `share` is set, it must reference a key under `resources.shares` in the same blueprint.
-
-Status is declarative only when it is present. Production deployments reconcile an explicit value with `MD_UPDATE_DIVE_STATUS`; plans show the current and desired values. Use `ready` for reviewed production Dives, reserve `endorsed` for intentionally rare organization-approved sources of truth, and use `archived` to retire a Dive without deleting its URL or history. Only MotherDuck organization admins can set `endorsed`, so a deployment that requests it must use an appropriately governed credential. Updating content without declaring `status` never resets or changes a live status.
-
-Required resource fields:
-
-| Path | Required | Type or allowed values | Description |
-| --- | --- | --- | --- |
-| `share` | Required when `url` is absent | Non-empty string | Local share resource key. The deployer resolves this to the rendered share URL. |
-| `url` | Required when `share` is absent | Non-empty string | Direct MotherDuck share URL. |
-| `alias` | Yes | Non-empty string | Database alias exposed to the Dive. |
-
-## Context Resources
-
-Example:
-
-```yaml
-resources:
-  context:
-    policy:
-      source: context/policy.md
-      deploy: false
-```
-
-| Path | Required | Type or allowed values | Default | Description |
-| --- | --- | --- | --- | --- |
-| `resources.context.<key>.source` | Yes | Non-empty string | None | Path to a context file, relative to the blueprint directory. |
-| `resources.context.<key>.deploy` | No | Boolean | `false` | Must be `false` or omitted until MotherDuck exposes a context deployment API. |
-| `resources.context.<key>.targets` | No | Object keyed by target name | `{}` | Target-specific context overrides. |
-
-Rendered context validation:
-
-- `source` file must exist.
-- `deploy: true` is invalid for every target until context deployment is supported.
-
-## Target Override Pattern
-
-Every resource type supports a `targets` object. The override key must match a target in `motherduck.yml` to affect that rendered target.
-
-```yaml
-resources:
-  shares:
-    data:
-      name: analytics
-      database: analytics
-      targets:
-        preview:
-          name: analytics${var.preview_suffix}
-          database: analytics${var.preview_suffix}
-```
-
-Target overrides are deep-merged. Nested objects such as `config` can override one key without repeating the full object:
 
 ```yaml
 resources:
   flights:
     loader:
-      name: analytics-loader
+      name: events-ingest
       source: src/flight.py
       requirements: src/requirements.txt
+      scheduleCron: 17 6 * * *
+      maxRuntimeSec: 1800
+      runOnDeploy: true
+      waitForRun: success
+      secrets: []
       config:
-        mode: full
-        database: analytics
+        database: ${resources.shares.events.database}
       targets:
         preview:
-          config:
-            mode: sample
+          name: events-ingest:${target.branch} (Preview)
+          scheduleCron: ""
 ```
 
-Rendered preview `config`:
+Required fields are `name`, `source`, and `requirements`. Optional fields include `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
 
-```json
-{
-  "mode": "sample",
-  "database": "analytics"
-}
-```
+Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 
-## Related Root Target Fields
+## Dives
 
-`blueprint.yml` target overrides are rendered against targets declared in the root `motherduck.yml`. Live commands also read optional deployment metadata from the root target:
+A Dive mount chooses exactly one data source:
 
 ```yaml
-targets:
-  preview:
-    mode: preview
-    deployment:
-      tokenEnvVar: MOTHERDUCK_TOKEN
-      identity: GitHub Actions preview service account
+requiredResources:
+  - share: local_share_key
+    alias: local_data
+  - input: repository_contract
+    alias: contract_data
+  - url: md:_share/external/id
+    alias: external_data
 ```
 
-| Path | Required | Type | Default | Description |
-| --- | --- | --- | --- | --- |
-| `targets.<target>.deployment.tokenEnvVar` | No | Non-empty string | `MOTHERDUCK_TOKEN` | Environment variable that contains the MotherDuck token for live `plan`, `deploy`, and `cleanup` commands. |
-| `targets.<target>.deployment.identity` | No | Non-empty string | None | Non-secret human label for the deployment identity. |
+Each item requires `alias` and exactly one of:
 
-The deploy tool passes the selected token value to the DuckDB Python connection config and never prints it.
+- `share`: a share in the same blueprint.
+- `input`: a declared top-level input.
+- `url`: a literal MotherDuck share URL, normally owned outside this repository.
 
-## Validation Summary
+A Dive requires `title`, `source`, and at least one required resource. `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
-Run these checks before opening a pull request:
+The deployer strips the one-line `export const REQUIRED_DATABASES = ...` declaration from local-preview source and passes the rendered mounts to MotherDuck.
 
-```bash
-make validate
-make preview-smoke <blueprint-name>
+## Guides
+
+```yaml
+resources:
+  guides:
+    trusted-metrics:
+      title: Trusted metrics
+      topic: finance/revenue
+      source: guide.md
+      description: Canonical finance definitions.
+      access: organization
+      deploy: true
+      references:
+        - type: catalog
+          share: events
+          schema: reporting
+          table: metrics
+        - type: dive
+          blueprint: revenue-dashboard
+          resource: dashboard
 ```
 
-`make validate` checks schemas, renders preview and production targets, enforces uniqueness, verifies file paths, parses Flight Python sources, and checks rendered resource rules. Run `make preview-smoke <blueprint-name>` for every blueprint that includes a Dive.
+A validation-only Guide requires `source`; a deployed Guide also requires `title`. `topic`, `description`, `access`, `references`, `changeComment`, `externalId`, `cleanup`, and target overrides are optional. `deploy` defaults to `false` for compatibility; `deploy: true` creates the Guide and publishes versioned content and references during selected deployments. `access` is `user` by default or `organization`, which requires an admin deployment identity.
+
+Catalog references require exactly one of `url`, `share`, or `input`, and may narrow to a schema plus one table, view, or macro. Dive, Flight, and Guide references require either `uuid` or a repository `resource`; set `blueprint` for a resource in another package. These references participate in dependency ordering. Set a stable `id` when topic and title are not sufficient to identify an existing Guide. Preview Guides cannot use a production ID and their title or topic must be branch-scoped.
+
+`resources.context` retains its validation-only compatibility behavior; `md-blueprints doctor` recommends `resources.guides`.
+
+## Roles
+
+```yaml
+resources:
+  roles:
+    finance:
+      name: finance
+      includedRoles: [explorer]
+      members:
+        - finance-service-account
+      mode: authoritative
+      deploy: true
+```
+
+Roles deploy only to production and require an admin deployment identity. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+
+## Target and Deployment Semantics
+
+Every resource accepts a `targets.<target>` override. Preview and production rendering validate uniqueness for Flight names, Dive titles, deployed Guide identities, role names, and share names.
+
+Inputs and repository-local Guide references form a DAG:
+
+- Preview selection expands recursively upstream and downstream.
+- Production selection expands recursively downstream only.
+- Producers deploy before consumers.
+- A consumer-only production plan requires the producer's output to exist in MotherDuck and fails before mutation otherwise.
+- Cleanup runs in reverse dependency order.
+
+## Compatibility
+
+These fields are additive to `schemaVersion: 1` and require `md-blueprints >=0.4.0`. Existing manifests without inputs, outputs, Guides, or roles continue to validate, including manifests discovered below `blueprints/`.

@@ -11,6 +11,7 @@ from .init import run_init
 from .maintenance import run_check_updates, run_doctor
 from .migrations import run_migrate
 from .project import CommandError, Project
+from .scaffold import run_new
 from .schema import ValidationError
 
 
@@ -38,15 +39,23 @@ def add_common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--check-updates", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--version", action="store_true")
+    parser.add_argument("--input", dest="input_ref")
+    parser.add_argument("--url", dest="share_url")
+    parser.add_argument("--alias")
+    parser.add_argument("--dive")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="md-blueprints",
-        usage="md-blueprints <init|validate|render|changed|plan|deploy|cleanup|doctor|check-updates|migrate> [options]",
+        usage=(
+            "md-blueprints <init|new|validate|render|dive-source|changed|plan|deploy|cleanup|doctor|"
+            "check-updates|migrate> [options]"
+        ),
     )
     parser.add_argument("command", nargs="?")
     parser.add_argument("init_dir", nargs="?")
+    parser.add_argument("new_name", nargs="?")
     add_common_options(parser)
     options = parser.parse_args(argv)
 
@@ -66,6 +75,17 @@ def main(argv: list[str] | None = None) -> int:
         names = parse_blueprints(options.blueprints)
         if command == "init":
             run_init(Path(options.init_dir or "."), force=options.force)
+        elif command == "new":
+            if not options.init_dir or not options.new_name:
+                raise ValidationError("Usage: md-blueprints new <flight|dive|guide|role|project> NAME [options]")
+            run_new(
+                root,
+                options.init_dir,
+                options.new_name,
+                input_ref=options.input_ref,
+                share_url=options.share_url,
+                alias=options.alias,
+            )
         elif command == "doctor":
             run_doctor(
                 root,
@@ -85,8 +105,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Validation passed for {len(project.all_blueprint_names())} blueprint(s).")
             elif command == "render":
                 target = options.target or "prod"
-                rendered = project.render_all(target, branch=options.branch, names=names)
+                project.validate(targets=[target], branch=options.branch)
+                expanded_names = project.deployment_blueprint_names(target, names)
+                rendered = project.render_all(target, branch=options.branch, names=expanded_names)
                 print(json.dumps([blueprint.to_dict() for blueprint in rendered], indent=2))
+            elif command == "dive-source":
+                if not names or len(names) != 1:
+                    raise ValidationError("dive-source requires exactly one --blueprints NAME")
+                project.validate(targets=["prod"])
+                rendered = project.render_all("prod", names=names)
+                dives = rendered[0].dives
+                if options.dive:
+                    if options.dive not in dives:
+                        raise ValidationError(f"Unknown Dive {options.dive!r} in blueprint {names[0]!r}")
+                    selected_dive = dives[options.dive]
+                elif len(dives) == 1:
+                    selected_dive = next(iter(dives.values()))
+                elif not dives:
+                    raise ValidationError(f"Blueprint {names[0]!r} does not declare a Dive")
+                else:
+                    raise ValidationError(
+                        f"Blueprint {names[0]!r} declares multiple Dives; select one with --dive RESOURCE_KEY"
+                    )
+                print(Path(str(selected_dive["sourcePath"])).relative_to(project.root))
             elif command == "changed":
                 changed = (
                     project.all_blueprint_names()
