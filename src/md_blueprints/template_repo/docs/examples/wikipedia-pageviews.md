@@ -39,6 +39,8 @@ resources:
 
 ## What It Deploys
 
+The producer package deploys the Flight and share. The consumer package deploys the Dive with `ready` status in production and `draft` status in preview.
+
 The Flight creates or updates:
 
 - database: `wikipedia_pageviews`
@@ -53,7 +55,7 @@ The public data comes from Wikimedia's Pageviews API. The defaults load `DuckDB`
 
 ## Deployment Behavior
 
-Both packages are discovered recursively by `motherduck.yml`. On preview, selecting either package expands to the complete connected graph: the branch-scoped Flight runs, its share becomes available, and the Dive deploys against that preview output.
+Both packages are discovered recursively by `motherduck.yml`. On preview, selecting either package expands to the complete connected graph: the branch-scoped Flight runs, its share becomes available, and the Dive deploys against that preview output as `draft`.
 
 For branch `feature/mock-test`, the share and database render as:
 
@@ -61,7 +63,7 @@ For branch `feature/mock-test`, the share and database render as:
 wikipedia_pageviews_preview_feature_mock_test
 ```
 
-In production, a producer change also redeploys the Dive. A Dive-only change uses the existing production output and does not rerun the Flight.
+In production, a producer change also redeploys the Dive and reconciles its declared `ready` status. A Dive-only change uses the existing production output and does not rerun the Flight.
 
 Cleanup reverses dependencies: it removes the Dive before the Flight, share, and preview database.
 

@@ -141,6 +141,10 @@ md-blueprints doctor
 
 `make validate` renders preview and production, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected production producer must already expose its declared share or planning fails before deployment.
 
+## Dives
+
+Preview Dives always use `draft`. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
+
 ## Guides
 
 Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.

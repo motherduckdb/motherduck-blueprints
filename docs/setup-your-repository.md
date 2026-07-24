@@ -107,8 +107,9 @@ Expected preview flow:
 5. Preview Flights run when `runOnDeploy` is true.
 6. Preview databases and shares are created with the branch slug.
 7. Dives deploy after required shares are resolvable.
-8. Opt-in preview Guides deploy after their references resolve.
-9. A PR comment lists the plan plus preview Flight, share, Dive, and Guide details.
+8. Preview Dives are enforced as `draft`.
+9. Opt-in preview Guides deploy after their references resolve.
+10. A PR comment lists the plan plus preview Flight, share, Dive, and Guide details.
 
 ## 8. Verify Cleanup
 
@@ -143,8 +144,10 @@ Expected production flow:
 5. Production Flights deploy.
 6. Flights run when `runOnDeploy` is true.
 7. Required shares, filters, and grants reconcile.
-8. Production Dives deploy.
+8. Production Dives deploy and reconcile explicitly declared governance statuses.
 9. Production Guides deploy after their references resolve.
+
+The generated examples use `ready` in production and `draft` in preview. Omitting production `status` preserves the live value. Endorsing a Dive requires an organization-admin deployment identity.
 
 ## 10. Customize the Blueprints
 
