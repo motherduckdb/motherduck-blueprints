@@ -191,6 +191,7 @@ def test_dive_deploy_updates_explicit_status(monkeypatch: pytest.MonkeyPatch) ->
             "status": "ready",
         },
         {},
+        {},
         "prod",
         PlanRecord(
             blueprint="simple-dive",
@@ -226,6 +227,7 @@ def test_dive_deploy_preserves_status_when_unmanaged(monkeypatch: pytest.MonkeyP
             "description": "",
             "requiredResources": [{"url": "md:_share/example/id", "alias": "example"}],
         },
+        {},
         {},
         "prod",
         PlanRecord(
