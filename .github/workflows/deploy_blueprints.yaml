@@ -72,7 +72,7 @@ jobs:
       changed_blueprints: ${{ steps.changed.outputs.changed_blueprints }}
       changed_csv: ${{ steps.changed.outputs.changed_csv }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -147,7 +147,7 @@ jobs:
     if: needs.compute_changes.outputs.changed_blueprints != '[]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./
         with:
@@ -161,7 +161,7 @@ jobs:
     if: needs.compute_changes.outputs.changed_blueprints != '[]' && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'preview'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve preview branch
         id: preview-branch
@@ -277,7 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: motherduck-production
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check production token
         id: prod-token
