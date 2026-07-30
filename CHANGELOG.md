@@ -33,6 +33,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Made Guide deployments reconcile content, resolved references, metadata, and access independently, preventing duplicate versions and unauthorized redundant access mutations while still clearing removed references.
+- Made CI and production deployment workflows react to `roles/**` changes in both this repository and generated customer repositories.
+- Updated the Dive preview lockfiles to resolve the PostCSS source-map path traversal advisory.
 - Made generated repositories reinstall local tooling after `CLI_VERSION` changes instead of silently reusing an older executable.
 - Excluded floating action tags from release triggers and rejected prerelease release-tag shapes before they can update the generated template or stable action major.
 - Pinned DuckDB below 1.5.5 until MotherDuck supports that client release, preventing live action installs from selecting an incompatible runtime.

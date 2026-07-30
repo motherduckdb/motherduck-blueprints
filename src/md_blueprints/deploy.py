@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -58,6 +59,42 @@ def format_sql_rows(rows: list[tuple[object, ...]]) -> str:
         else:
             lines.append(",".join(format_sql_value(value) for value in row))
     return "\n".join(lines)
+
+
+def normalize_guide_references(value: object) -> object:
+    try:
+        parsed: object = json.loads(str(value))
+    except json.JSONDecodeError:
+        return str(value)
+    if not isinstance(parsed, list):
+        return parsed
+
+    normalized: list[dict[str, object]] = []
+    for raw_reference in parsed:
+        if not isinstance(raw_reference, dict):
+            return parsed
+        reference_type = str(raw_reference.get("type", ""))
+        uuid_value = raw_reference.get("uuid")
+        if uuid_value is None:
+            uuid_value = raw_reference.get(f"{reference_type}_id")
+        normalized.append(
+            {
+                "type": reference_type,
+                "url": raw_reference.get("url"),
+                "schema": raw_reference.get("schema"),
+                "table": raw_reference.get("table"),
+                "column": raw_reference.get("column"),
+                "view": raw_reference.get("view"),
+                "macro": raw_reference.get("macro"),
+                "uuid": uuid_value,
+                "description": raw_reference.get("description"),
+            }
+        )
+    return normalized
+
+
+def guide_references_equal(left: object, right: object) -> bool:
+    return bool(normalize_guide_references(left) == normalize_guide_references(right))
 
 
 @dataclass
@@ -1295,35 +1332,68 @@ class Deployer:
         elif plan.action == "update":
             guide_id = str(plan.id)
             existing = self._query_rows(
-                "SELECT content, version_external_id "
+                f"SET VARIABLE desired_guide_references = {references_sql}; "
+                "SELECT content, version_external_id, "
+                'to_json("references")::VARCHAR, '
+                "to_json(getvariable('desired_guide_references'))::VARCHAR, "
+                "title, topic, description, access "
                 f"FROM MD_GET_GUIDE(id := '{guide_id}'::UUID)"
             )
             current_content = str(existing[0][0]) if existing else ""
             current_external_id = (
                 str(existing[0][1]) if existing and existing[0][1] is not None else ""
             )
+            references_match = bool(
+                existing
+                and len(existing[0]) >= 4
+                and guide_references_equal(existing[0][2], existing[0][3])
+            )
             source_content = Path(str(guide["sourcePath"])).read_text(encoding="utf-8")
-            append_version = bool(guide.get("references")) or not (
+            append_version = not (
                 current_content == source_content
                 and (not external_id or current_external_id == external_id)
+                and references_match
             )
-            version_statement = (
-                f"FROM MD_UPDATE_GUIDE(\"id\" := '{guide_id}'::UUID, {', '.join(version_args)}); "
-                if append_version
-                else ""
+            statements = [f"SET VARIABLE guide_content = {content_sql};"]
+            if append_version:
+                statements.append(
+                    f"FROM MD_UPDATE_GUIDE(\"id\" := '{guide_id}'::UUID, {', '.join(version_args)});"
+                )
+
+            desired_metadata = {
+                "title": title,
+                "description": str(guide.get("description", "")),
+                "topic": str(guide.get("topic", "")),
+            }
+            current_metadata = {
+                "title": str(existing[0][4]) if existing and existing[0][4] is not None else "",
+                "topic": str(existing[0][5]) if existing and existing[0][5] is not None else "",
+                "description": str(existing[0][6]) if existing and existing[0][6] is not None else "",
+            }
+            changed_metadata = [
+                f'"{field}" := {sql_string(value)}'
+                for field, value in desired_metadata.items()
+                if current_metadata[field] != value
+            ]
+            if changed_metadata:
+                statements.append(
+                    "FROM MD_UPDATE_GUIDE_METADATA("
+                    f"\"id\" := '{guide_id}'::UUID, {', '.join(changed_metadata)});"
+                )
+
+            desired_access = str(guide.get("access", "user"))
+            current_access = (
+                str(existing[0][7]) if existing and existing[0][7] is not None else ""
             )
-            self._sql(
-                f"SET VARIABLE guide_content = {content_sql}; "
-                f"{version_statement}"
-                "FROM MD_UPDATE_GUIDE_METADATA("
-                f"\"id\" := '{guide_id}'::UUID, "
-                f"\"title\" := {sql_string(title)}, "
-                f"\"description\" := {sql_string(guide.get('description', ''))}, "
-                f"\"topic\" := {sql_string(guide.get('topic', ''))}); "
-                "FROM MD_SET_GUIDE_ACCESS("
-                f"\"id\" := '{guide_id}'::UUID, "
-                f"\"access\" := {sql_string(guide.get('access', 'user'))});"
-            )
+            if current_access != desired_access:
+                statements.append(
+                    "FROM MD_SET_GUIDE_ACCESS("
+                    f"\"id\" := '{guide_id}'::UUID, "
+                    f"\"access\" := {sql_string(desired_access)});"
+                )
+
+            if len(statements) > 1:
+                self._sql(" ".join(statements))
         else:
             raise ValidationError(f"Cannot deploy Guide {title} with plan action {plan.action}")
 

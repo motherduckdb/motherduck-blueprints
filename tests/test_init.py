@@ -62,6 +62,8 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert "install-deploy: $(CLI)" in makefile
     assert '.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"' in makefile
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in deploy_workflow
+    assert '"guides/**"' in deploy_workflow
+    assert '"roles/**"' in deploy_workflow
     assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in cleanup_workflow
     assert "github.event.pull_request.head.sha" in cleanup_workflow
     assert "github.event.pull_request.base.sha" in cleanup_workflow
@@ -72,6 +74,13 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert "package-smoke" not in makefile
 
     Project(target).validate()
+
+
+def test_tooling_workflows_watch_all_deployable_roots() -> None:
+    for workflow_name in ["ci.yaml", "deploy_blueprints.yaml"]:
+        workflow = (REPO_ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8")
+        for root in ["flights", "dives", "guides", "roles", "projects"]:
+            assert f'"{root}/**"' in workflow
 
 
 def test_init_refuses_non_empty_directory_without_force(tmp_path: Path) -> None:
