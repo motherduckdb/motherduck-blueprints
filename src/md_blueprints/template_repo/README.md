@@ -59,6 +59,15 @@ Use `make new-project revenue-overview` when several resources genuinely ship to
 
 Guide packages can publish versioned Markdown with catalog and resource references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before mutation.
 
+Create a Guide package and validate it without publishing:
+
+```bash
+make new-guide revenue-metrics
+make validate
+```
+
+When the content is ready, follow [Manage Guides as code](docs/guides-as-code.md) to enable deployment, add branch-scoped previews, and attach resource references.
+
 When you have a MotherDuck token configured, inspect live create/update/delete actions before applying them:
 
 ```bash
@@ -97,6 +106,7 @@ Compatible minor and patch releases move the floating action major and are valid
 
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
+- [Manage Guides as code](docs/guides-as-code.md): scaffold, preview, reference, and deploy version-controlled Guides.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): a Flight that loads public data, publishes a share, and deploys a Dive that reads that share.
-- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md): a complete public-data project with a Flight, share, and Dive.
+- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, and Dive.

@@ -208,6 +208,8 @@ Catalog references require exactly one of `url`, `share`, or `input`, and may na
 
 `resources.context` retains its validation-only compatibility behavior; `md-blueprints doctor` recommends `resources.guides`.
 
+For a complete scaffold-to-deployment workflow, see [Manage Guides as code](guides-as-code.md).
+
 ## Roles
 
 ```yaml

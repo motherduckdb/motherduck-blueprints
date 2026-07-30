@@ -158,7 +158,7 @@ You can then:
 - Connect same-repository packages through `outputs` and `inputs`; use literal share URLs for external repositories.
 - Replace the bundled Wikipedia and NCS public-data examples with your own packages.
 - Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
-- Publish versioned Guide assets below `guides/` with `resources.guides` and `deploy: true`.
+- Publish versioned Guide assets below `guides/` with `resources.guides` and `deploy: true`; follow [Manage Guides as code](guides-as-code.md) for preview naming, access, and references.
 - Manage custom roles below `roles/` with `resources.roles`; use `mode: authoritative` only when the repository owns the complete membership set.
 - Update `.github/CODEOWNERS`.
 
