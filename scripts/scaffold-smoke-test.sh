@@ -29,7 +29,21 @@ echo "==> Creating generated blueprint example"
 make -C "$SCAFFOLD_ROOT" new-blueprint "$EXAMPLE_NAME"
 test -f "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME/README.md"
 
-if grep -R "__BLUEPRINT_NAME__\|__DATABASE_NAME__" "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"; then
+echo "==> Creating typed and edge-case blueprint examples"
+make -C "$SCAFFOLD_ROOT" new-flight true
+make -C "$SCAFFOLD_ROOT" new-dive 1-dashboard INPUT=true.data
+make -C "$SCAFFOLD_ROOT" new-guide on
+make -C "$SCAFFOLD_ROOT" new-role null
+make -C "$SCAFFOLD_ROOT" new-project 123
+
+if grep -R \
+  "__BLUEPRINT_NAME__\|__BLUEPRINT_TITLE__\|__DATABASE_NAME__" \
+  "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME" \
+  "$SCAFFOLD_ROOT/flights/true" \
+  "$SCAFFOLD_ROOT/dives/1-dashboard" \
+  "$SCAFFOLD_ROOT/guides/on" \
+  "$SCAFFOLD_ROOT/roles/null" \
+  "$SCAFFOLD_ROOT/projects/123"; then
   echo "Generated blueprint still contains template placeholders" >&2
   exit 1
 fi
@@ -44,6 +58,13 @@ make -C "$SCAFFOLD_ROOT" validate
 grep -q "${DATABASE_NAME}_preview_feature_generated_example" "$TMP_DIR/render.out"
 grep -q "\"alias\": \"${DATABASE_NAME}\"" "$TMP_DIR/render.out"
 grep -q '"scheduleCron": ""' "$TMP_DIR/render.out"
+"$SCAFFOLD_ROOT/tools/md_blueprints" render \
+  --root "$SCAFFOLD_ROOT" \
+  --target preview \
+  --branch "$BRANCH_NAME" \
+  --blueprints "123" > "$TMP_DIR/numeric-render.out"
+grep -q "_123_preview_feature_generated_example" "$TMP_DIR/numeric-render.out"
+grep -q '"alias": "_123"' "$TMP_DIR/numeric-render.out"
 
 echo "==> Building generated blueprint Dive"
 make -C "$SCAFFOLD_ROOT" preview-smoke "$EXAMPLE_NAME"
@@ -54,9 +75,20 @@ echo "==> Building generated external-share Dive"
   --url "md:_share/example/00000000-0000-0000-0000-000000000000"
 make -C "$SCAFFOLD_ROOT" preview-smoke "external-share-example"
 
+echo "==> Building generated input-backed Dive"
+make -C "$SCAFFOLD_ROOT" preview-smoke "1-dashboard"
+
+echo "==> Building generated numeric-leading project Dive"
+make -C "$SCAFFOLD_ROOT" preview-smoke "123"
+
 echo "==> Destroying generated blueprint example"
 rm -rf "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"
 rm -rf "$SCAFFOLD_ROOT/dives/external-share-example"
+rm -rf "$SCAFFOLD_ROOT/flights/true"
+rm -rf "$SCAFFOLD_ROOT/dives/1-dashboard"
+rm -rf "$SCAFFOLD_ROOT/guides/on"
+rm -rf "$SCAFFOLD_ROOT/roles/null"
+rm -rf "$SCAFFOLD_ROOT/projects/123"
 test ! -e "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME"
 test ! -e "$SCAFFOLD_ROOT/dives/external-share-example"
 make -C "$SCAFFOLD_ROOT" validate

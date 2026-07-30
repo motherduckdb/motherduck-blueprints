@@ -1,6 +1,6 @@
 schemaVersion: 1
-name: __BLUEPRINT_NAME__
-title: __BLUEPRINT_NAME__
+name: "__BLUEPRINT_NAME__"
+title: "__BLUEPRINT_TITLE__"
 description: Starter project that publishes a small daily metrics dataset and reads it from a Dive.
 
 outputs:
@@ -10,10 +10,10 @@ outputs:
 variables:
   database:
     description: MotherDuck database that stores this project's data.
-    default: __DATABASE_NAME__
+    default: "__DATABASE_NAME__"
   share:
     description: MotherDuck share published by the loader Flight.
-    default: __DATABASE_NAME__
+    default: "__DATABASE_NAME__"
   schema:
     description: Schema that contains the starter tables and views.
     default: main
@@ -37,7 +37,7 @@ resources:
 
   flights:
     loader:
-      name: __BLUEPRINT_NAME__
+      name: "__BLUEPRINT_NAME__"
       source: src/flight.py
       requirements: src/requirements.txt
       scheduleCron: ""
@@ -51,17 +51,17 @@ resources:
         share_visibility: ${resources.shares.data.visibility}
       targets:
         preview:
-          name: __BLUEPRINT_NAME__:${target.branch} (Preview)
+          name: "__BLUEPRINT_NAME__:${target.branch} (Preview)"
 
   dives:
     dashboard:
-      title: __BLUEPRINT_NAME__
+      title: "__BLUEPRINT_TITLE__"
       source: src/dive.tsx
       status: ready
       requiredResources:
         - share: data
-          alias: __DATABASE_NAME__
+          alias: "__DATABASE_NAME__"
       targets:
         preview:
-          title: __BLUEPRINT_NAME__:${target.branch} (Preview)
+          title: "__BLUEPRINT_TITLE__:${target.branch} (Preview)"
           status: draft

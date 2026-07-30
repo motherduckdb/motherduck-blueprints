@@ -16,8 +16,21 @@ def _title(name: str) -> str:
     return " ".join(part.capitalize() for part in name.split("-"))
 
 
+def _yaml_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def _default_alias(name: str) -> str:
+    alias = name.replace("-", "_")
+    return alias if not alias[0].isdigit() else f"_{alias}"
+
+
 def _render(text: str, *, name: str, alias: str, required_database: str | None = None) -> str:
-    rendered = text.replace("__BLUEPRINT_NAME__", name).replace("__DATABASE_NAME__", alias)
+    rendered = (
+        text.replace("__BLUEPRINT_NAME__", name)
+        .replace("__BLUEPRINT_TITLE__", _title(name))
+        .replace("__DATABASE_NAME__", alias)
+    )
     if required_database is not None:
         rendered = rendered.replace("__REQUIRED_DATABASE__", required_database)
     return rendered
@@ -55,8 +68,24 @@ def run_new(
     if destination.exists():
         raise ValidationError(f"Blueprint already exists: {destination.relative_to(root)}")
 
-    resource_alias = alias or name.replace("-", "_")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", resource_alias):
+    if kind != "dive" and (input_ref is not None or share_url is not None):
+        raise ValidationError("--input and --url are only valid for new dive")
+    if kind in {"guide", "role"} and alias is not None:
+        raise ValidationError("--alias is only valid for new flight, dive, or project")
+    if alias is not None and not alias:
+        raise ValidationError("--alias must not be empty")
+    if share_url is not None:
+        share_url = share_url.strip()
+
+    from .project import Project
+
+    if name in Project(root).all_blueprint_names():
+        raise ValidationError(f"Blueprint name already exists: {name}")
+
+    resource_alias = alias or _default_alias(name)
+    if kind in {"flight", "dive", "project"} and not re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*", resource_alias
+    ):
         raise ValidationError("Alias must be a SQL identifier using letters, numbers, and underscores")
 
     if kind == "dive":
@@ -89,15 +118,20 @@ def run_new(
     elif kind == "role":
         _write(destination / "blueprint.yml", _role_manifest(name))
     else:
-        _write(destination / "blueprint.yml", _project_manifest(name, resource_alias))
+        _write(
+            destination / "blueprint.yml",
+            _render(_starter_source("blueprint.yml"), name=name, alias=resource_alias),
+        )
         _write(destination / "src/flight.py", _render(_starter_source("flight.py"), name=name, alias=resource_alias))
         _write(destination / "src/requirements.txt", _starter_source("requirements.txt"))
         _write(destination / "src/dive.tsx", _render(_starter_source("dive.tsx"), name=name, alias=resource_alias))
 
-    _write(
-        destination / "README.md",
-        f"# {_title(name)}\n\nGenerated `{kind}` blueprint. Run `make validate` before opening a PR.\n",
+    readme = (
+        _render(_starter_source("README.md"), name=name, alias=resource_alias)
+        if kind == "project"
+        else f"# {_title(name)}\n\nGenerated `{kind}` blueprint. Run `make validate` before opening a PR.\n"
     )
+    _write(destination / "README.md", readme)
     print(f"Created {destination.relative_to(root)}")
     return destination
 
@@ -105,9 +139,9 @@ def run_new(
 def _share_and_flight(name: str, alias: str) -> str:
     return f"""variables:
   database:
-    default: {alias}
+    default: {_yaml_string(alias)}
   share:
-    default: {alias}
+    default: {_yaml_string(alias)}
   schema:
     default: main
 
@@ -129,7 +163,7 @@ resources:
           dropDatabase: true
   flights:
     loader:
-      name: {name}
+      name: {_yaml_string(name)}
       source: src/flight.py
       requirements: src/requirements.txt
       scheduleCron: ""
@@ -143,14 +177,14 @@ resources:
         share_visibility: ${{resources.shares.data.visibility}}
       targets:
         preview:
-          name: {name}:${{target.branch}} (Preview)
+          name: {_yaml_string(f"{name}:${{target.branch}} (Preview)")}
 """
 
 
 def _flight_manifest(name: str, alias: str) -> str:
     return f"""schemaVersion: 1
-name: {name}
-title: {_title(name)}
+name: {_yaml_string(name)}
+title: {_yaml_string(_title(name))}
 description: Flight package that publishes a share for downstream blueprints.
 
 outputs:
@@ -165,8 +199,8 @@ def _dive_manifest(name: str, alias: str, *, input_ref: str | None, share_url: s
         producer, output = _parse_input_ref(input_ref)
         contract = f"""inputs:
   data:
-    blueprint: {producer}
-    output: {json.dumps(output)}
+    blueprint: {_yaml_string(producer)}
+    output: {_yaml_string(output)}
 
 """
         required = "input: data"
@@ -177,21 +211,21 @@ def _dive_manifest(name: str, alias: str, *, input_ref: str | None, share_url: s
         contract = ""
         required = f"url: {json.dumps(share_url)}"
     return f"""schemaVersion: 1
-name: {name}
-title: {_title(name)}
+name: {_yaml_string(name)}
+title: {_yaml_string(_title(name))}
 description: Dive package backed by a declared data input.
 
 {contract}resources:
   dives:
     dashboard:
-      title: {_title(name)}
+      title: {_yaml_string(_title(name))}
       source: src/dive.tsx
       requiredResources:
         - {required}
-          alias: {alias}
+          alias: {_yaml_string(alias)}
       targets:
         preview:
-          title: {_title(name)}:${{target.branch}} (Preview)
+          title: {_yaml_string(f"{_title(name)}:${{target.branch}} (Preview)")}
 """
 
 
@@ -232,15 +266,15 @@ def _required_database(
 
 def _guide_manifest(name: str) -> str:
     return f"""schemaVersion: 1
-name: {name}
-title: {_title(name)}
+name: {_yaml_string(name)}
+title: {_yaml_string(_title(name))}
 description: Version-controlled Guide for agents and collaborators.
 
 resources:
   guides:
     guide:
-      title: {_title(name)}
-      topic: {name}
+      title: {_yaml_string(_title(name))}
+      topic: {_yaml_string(name)}
       source: guide.md
       deploy: false
 """
@@ -248,32 +282,16 @@ resources:
 
 def _role_manifest(name: str) -> str:
     return f"""schemaVersion: 1
-name: {name}
-title: {_title(name)}
+name: {_yaml_string(name)}
+title: {_yaml_string(_title(name))}
 description: Version-controlled MotherDuck role and membership assignments.
 
 resources:
   roles:
     role:
-      name: {name}
+      name: {_yaml_string(name)}
       includedRoles: []
       members: []
       mode: additive
       deploy: true
-"""
-
-
-def _project_manifest(name: str, alias: str) -> str:
-    base = _flight_manifest(name, alias)
-    return base + f"""
-  dives:
-    dashboard:
-      title: {_title(name)}
-      source: src/dive.tsx
-      requiredResources:
-        - share: data
-          alias: {alias}
-      targets:
-        preview:
-          title: {_title(name)}:${{target.branch}} (Preview)
 """
