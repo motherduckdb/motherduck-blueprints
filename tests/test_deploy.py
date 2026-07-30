@@ -617,11 +617,27 @@ def test_guide_deploy_uses_version_metadata_and_access(
 ) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []
+
     def fake_sql(statement: str) -> str:
         calls.append(statement)
         return ""
     monkeypatch.setattr(deployer, "_sql", fake_sql)
-    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [("old content", "old-sha")])
+    monkeypatch.setattr(
+        deployer,
+        "_query_rows",
+        lambda statement: [
+            (
+                "old content",
+                "old-sha",
+                "[]",
+                "[]",
+                "Old title",
+                "old-topic",
+                "Old description",
+                "user",
+            )
+        ],
+    )
     guide_source = tmp_path / "guide.md"
     guide_source.write_text("# Revenue\n", encoding="utf-8")
     blueprint = RenderedBlueprint(
@@ -656,6 +672,130 @@ def test_guide_deploy_uses_version_metadata_and_access(
     assert "MD_SET_GUIDE_ACCESS" in statement
     assert "'sync definitions'" in statement
     assert "'abc123'" in statement
+
+
+def test_guide_deploy_does_not_append_unchanged_reference_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    guide_id = "00000000-0000-0000-0000-000000000042"
+    current_references = (
+        '[{"type":"guide","url":null,"schema":null,"table":null,"column":null,'
+        f'"view":null,"macro":null,"guide_id":"{guide_id}","dive_id":null,'
+        '"flight_id":null,"description":null}]'
+    )
+    desired_references = (
+        '[{"type":"guide","url":null,"schema":null,"table":null,"column":null,'
+        '"view":null,"macro":null,"uuid":"'
+        + guide_id
+        + '","description":null}]'
+    )
+    monkeypatch.setattr(
+        deployer,
+        "_query_rows",
+        lambda statement: [
+            (
+                "# Revenue\n",
+                "abc123",
+                current_references,
+                desired_references,
+                "Revenue definitions",
+                None,
+                None,
+                "user",
+            )
+        ],
+    )
+    guide_source = tmp_path / "guide.md"
+    guide_source.write_text("# Revenue\n", encoding="utf-8")
+    blueprint = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+    )
+
+    deployer._deploy_guide(
+        blueprint,
+        {
+            "title": "Revenue definitions",
+            "sourcePath": str(guide_source),
+            "references": [{"type": "guide", "uuid": guide_id}],
+            "externalId": "abc123",
+        },
+        "prod",
+        PlanRecord("knowledge", "guide", "revenue", "Revenue definitions", "update", True, "guide-id"),
+    )
+
+    assert calls == []
+
+
+def test_guide_deploy_appends_version_when_references_are_cleared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(
+        deployer,
+        "_query_rows",
+        lambda statement: [
+            (
+                "# Revenue\n",
+                "abc123",
+                '[{"type":"catalog","url":"md:analytics"}]',
+                "[]",
+                "Revenue definitions",
+                None,
+                None,
+                "user",
+            )
+        ],
+    )
+    guide_source = tmp_path / "guide.md"
+    guide_source.write_text("# Revenue\n", encoding="utf-8")
+    blueprint = RenderedBlueprint(
+        name="knowledge",
+        title="Knowledge",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+    )
+
+    deployer._deploy_guide(
+        blueprint,
+        {
+            "title": "Revenue definitions",
+            "sourcePath": str(guide_source),
+            "references": [],
+            "externalId": "abc123",
+        },
+        "prod",
+        PlanRecord("knowledge", "guide", "revenue", "Revenue definitions", "update", True, "guide-id"),
+    )
+
+    assert "FROM MD_UPDATE_GUIDE(" in calls[0]
+    assert "MD_UPDATE_GUIDE_METADATA" not in calls[0]
+    assert "MD_SET_GUIDE_ACCESS" not in calls[0]
 
 
 def test_guide_resource_reference_uses_explicit_managed_id(
