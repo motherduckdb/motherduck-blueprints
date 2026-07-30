@@ -59,6 +59,30 @@ fi
 "$INSTALL_VENV/bin/md-blueprints" migrate --root "$REPO_ROOT" --to latest
 "$INSTALL_VENV/bin/md-blueprints" init "$TMP_DIR/generated-template"
 "$INSTALL_VENV/bin/md-blueprints" validate --root "$TMP_DIR/generated-template"
+
+echo "==> Exercising installed scaffold commands"
+"$INSTALL_VENV/bin/md-blueprints" new flight true --root "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" new dive 1-wheel-dashboard \
+  --root "$TMP_DIR/generated-template" \
+  --input true.data
+"$INSTALL_VENV/bin/md-blueprints" new dive external-wheel-dashboard \
+  --root "$TMP_DIR/generated-template" \
+  --url "  md:_share/example/00000000-0000-0000-0000-000000000000  " \
+  --alias off
+"$INSTALL_VENV/bin/md-blueprints" new guide null --root "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" new role on --root "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" new project 123 --root "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" validate --root "$TMP_DIR/generated-template"
+"$INSTALL_VENV/bin/md-blueprints" render \
+  --root "$TMP_DIR/generated-template" \
+  --target preview \
+  --branch feature/package-smoke \
+  --blueprints 123 > "$TMP_DIR/generated-project-render.json"
+grep -q "_123_preview_feature_package_smoke" "$TMP_DIR/generated-project-render.json"
+grep -q '"alias": "_123"' "$TMP_DIR/generated-project-render.json"
+grep -q 'url: "md:_share/example/00000000-0000-0000-0000-000000000000"' \
+  "$TMP_DIR/generated-template/dives/external-wheel-dashboard/blueprint.yml"
+
 grep -q "CLI_VERSION := ${CLI_VERSION}" "$TMP_DIR/generated-template/Makefile"
 grep -Fq 'CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)' "$TMP_DIR/generated-template/Makefile"
 grep -Fq 'installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version' "$TMP_DIR/generated-template/Makefile"

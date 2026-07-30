@@ -46,6 +46,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.
+- Rejected duplicate blueprint names across typed roots and command options that do not apply to the selected scaffold kind before writing files.
+- Made `new project` use the complete canonical starter manifest and README instead of a reduced duplicate implementation.
 - Made the NCS field ingestion transactional, collision-safe across concurrent runs, and covered by source pagination, transformation, and rollback tests.
 - Improved the NCS Field Recovery Dive's mobile layout, keyboard focus, toggle state, loading/error announcements, chart description, and table semantics.
 - Made update checks reject only newer releases instead of treating an unreleased local version as outdated, and made the scheduled doctor close resolved upgrade issues.
