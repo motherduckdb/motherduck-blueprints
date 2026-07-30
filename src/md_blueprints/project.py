@@ -711,8 +711,8 @@ class Project:
         target_policies = nested_dict(target_settings, target, "policies") or {}
 
         for key, share in blueprint.shares.items():
-            for field in ["name", "database"]:
-                require_nonempty(share.get(field), f"shares.{key}.{field}")
+            for required_field in ["name", "database"]:
+                require_nonempty(share.get(required_field), f"shares.{key}.{required_field}")
             if share.get("visibility", "DISCOVERABLE") == "HIDDEN" and share.get("access", "ORGANIZATION") != "RESTRICTED":
                 raise ValidationError(f"hidden share {blueprint.name}.{key} must use RESTRICTED access")
             include_pattern = share.get("includePattern")
@@ -734,8 +734,8 @@ class Project:
                     )
 
         for key, flight in blueprint.flights.items():
-            for field in ["name", "sourcePath", "requirementsPath"]:
-                require_nonempty(flight.get(field), f"flights.{key}.{field}")
+            for required_field in ["name", "sourcePath", "requirementsPath"]:
+                require_nonempty(flight.get(required_field), f"flights.{key}.{required_field}")
             require_file(Path(str(flight["sourcePath"])))
             require_file(Path(str(flight["requirementsPath"])))
             validate_python(Path(str(flight["sourcePath"])))
@@ -761,8 +761,8 @@ class Project:
                 raise ValidationError(f"flights.{key}.maxRuntimeSec must be a non-negative integer")
 
         for key, dive in blueprint.dives.items():
-            for field in ["title", "sourcePath"]:
-                require_nonempty(dive.get(field), f"dives.{key}.{field}")
+            for required_field in ["title", "sourcePath"]:
+                require_nonempty(dive.get(required_field), f"dives.{key}.{required_field}")
             require_file(Path(str(dive["sourcePath"])))
             required_resources = dive.get("requiredResources")
             status = dive.get("status")
@@ -866,15 +866,18 @@ class Project:
             prod = production.get(preview.name)
             if prod is None:
                 continue
-            for label, group_name, field in resource_fields:
+            for label, group_name, resource_field in resource_fields:
                 preview_group = cast(dict[str, dict[str, object]], getattr(preview, group_name))
                 production_group = cast(dict[str, dict[str, object]], getattr(prod, group_name))
                 for key, resource in preview_group.items():
                     production_resource = production_group.get(key)
-                    if production_resource is not None and resource.get(field) == production_resource.get(field):
+                    if (
+                        production_resource is not None
+                        and resource.get(resource_field) == production_resource.get(resource_field)
+                    ):
                         raise ValidationError(
-                            f"preview {label} {preview.name}.{key} must not match its production {field}: "
-                            f"{resource.get(field)}"
+                            f"preview {label} {preview.name}.{key} must not match its production {resource_field}: "
+                            f"{resource.get(resource_field)}"
                         )
             for key, guide in preview.guides.items():
                 production_guide = prod.guides.get(key)

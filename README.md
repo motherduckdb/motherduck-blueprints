@@ -56,7 +56,10 @@ make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-The repository ships with a working [Wikipedia Pageviews](docs/examples/wikipedia-pageviews.md) graph: a Flight producer publishes a named output and an independently owned Dive consumes it.
+The repository ships with two working public-data examples:
+
+- [Wikipedia Pageviews](docs/examples/wikipedia-pageviews.md) demonstrates independently owned Flight producer and Dive consumer packages connected by a named output.
+- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md) demonstrates a complete project whose Flight, share, and Dive deploy and roll back together.
 
 ### 3. Connect MotherDuck
 
@@ -149,6 +152,7 @@ make install-deploy
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): the end-to-end example blueprint.
+- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md): a complete public-data project with a Flight, share, and Dive.
 - [MotherDuck documentation](https://motherduck.com/docs/getting-started) and the [MotherDuck Community Slack](https://slack.motherduck.com/) for product questions and support.
 
 ## Contributing

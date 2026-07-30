@@ -6,8 +6,11 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.4.0 - 2026-07-30
+
 ### Added
 
+- Added the `projects/ncs-field-recovery` public-data project, with a SODIR FactMaps ingestion Flight, published share, transparent oil-recovery metrics, and an interactive field-comparison Dive.
 - Added declarative Dive governance statuses (`draft`, `ready`, `endorsed`, and `archived`) with live status transitions in deployment plans, status reconciliation through `MD_UPDATE_DIVE_STATUS`, and backward-compatible preservation when production status is omitted.
 - Added typed `flights/`, `dives/`, `guides/`, `roles/`, and `projects/` roots with recursive discovery, root-specific validation, and typed CLI/Make scaffolds.
 - Added same-repository `inputs` and share-backed `outputs`, `${inputs.<name>.*}` rendering, and Dive mounts through `requiredResources[].input`.
@@ -19,6 +22,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Updated the repository and generated-template workflows to the current `actions/checkout`, `actions/setup-python`, `actions/setup-node`, and `actions/github-script` releases.
 - Enforced `draft` status for all preview Dives and made generated examples deploy production Dives as `ready`.
 - Split the Wikipedia example into an independently deployable Flight producer and Dive consumer, preserving its stable production resource names.
 - Made local Dive preview source lookup manifest-driven and added multi-Dive selection with `DIVE=<resource-key>`.
@@ -33,6 +37,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Made the NCS field ingestion transactional, collision-safe across concurrent runs, and covered by source pagination, transformation, and rollback tests.
+- Improved the NCS Field Recovery Dive's mobile layout, keyboard focus, toggle state, loading/error announcements, chart description, and table semantics.
+- Made update checks reject only newer releases instead of treating an unreleased local version as outdated, and made the scheduled doctor close resolved upgrade issues.
+- Made CI run for every pull request and main-branch push so docs and generated-template drift cannot bypass the mirror tests.
 - Made Guide deployments reconcile content, resolved references, metadata, and access independently, preventing duplicate versions and unauthorized redundant access mutations while still clearing removed references.
 - Made CI and production deployment workflows react to `roles/**` changes in both this repository and generated customer repositories.
 - Updated the Dive preview lockfiles to resolve the PostCSS source-map path traversal advisory.

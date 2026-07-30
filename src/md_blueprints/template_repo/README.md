@@ -99,3 +99,4 @@ Compatible minor and patch releases move the floating action major and are valid
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): a Flight that loads public data, publishes a share, and deploys a Dive that reads that share.
+- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md): a complete public-data project with a Flight, share, and Dive.

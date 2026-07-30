@@ -14,7 +14,7 @@ jobs:
     name: Check Blueprint Tooling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run blueprints doctor
         id: doctor
@@ -24,37 +24,48 @@ jobs:
           command: doctor
           args: --format github-summary --check-updates
 
-      - name: Open issue if upgrade is needed
-        if: steps.doctor.outcome == 'failure'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+      - name: Reconcile upgrade issue
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DOCTOR_OUTPUT: ${{ steps.doctor.outputs.stdout }}
+          DOCTOR_OUTCOME: ${{ steps.doctor.outcome }}
         with:
           script: |
             const title = 'MotherDuck Blueprints upgrade needed';
             const marker = '<!-- motherduck-blueprints-upgrade-needed -->';
             const body = `${marker}
             ${process.env.DOCTOR_OUTPUT || 'The scheduled MotherDuck Blueprints doctor check failed. Bump the pinned action and run md-blueprints doctor locally.'}`.replace(/^ +/gm, '');
+            const failed = process.env.DOCTOR_OUTCOME === 'failure';
 
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              state: 'open',
+              state: 'all',
               labels: undefined,
             });
             const existing = issues.find(issue => issue.title === title);
-            if (existing) {
+            if (failed && existing) {
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existing.number,
                 body,
+                state: 'open',
               });
-            } else {
+            } else if (failed) {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
                 body,
+              });
+            } else if (existing?.state === 'open') {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
               });
             }
