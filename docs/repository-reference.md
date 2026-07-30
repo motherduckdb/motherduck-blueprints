@@ -149,6 +149,8 @@ Preview Dives always use `draft`. Production manifests can declare `draft`, `rea
 
 Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.
 
+See [Manage Guides as code](guides-as-code.md) for the end-to-end workflow, including branch-scoped previews and repository resource references.
+
 ## RBAC
 
 Declare custom roles under `resources.roles` or scaffold a role package with `make new-role`. Roles deploy only in production, before resources that may grant access to them. Share `grants` can target roles and users in additive or authoritative mode. Role and organization-Guide changes run an admin capability preflight before the first mutation.
@@ -156,3 +158,8 @@ Declare custom roles under `resources.roles` or scaffold a role package with `ma
 ## CI/CD
 
 Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with plans and preview links. Pushes to `main` expand production changes downstream and deploy through the protected production environment. Closing a PR or deleting a branch triggers dependency-safe preview cleanup.
+
+## Included examples
+
+- [Wikipedia Pageviews](examples/wikipedia-pageviews.md) uses independent Flight and Dive packages connected through a named output and input.
+- [NCS Field Recovery Explorer](examples/ncs-field-recovery.md) keeps its Flight, share, and Dive in one project because they deploy and roll back together.

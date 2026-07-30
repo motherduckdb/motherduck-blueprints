@@ -96,6 +96,15 @@ Use `make new-project revenue-overview` when a Flight and Dive genuinely preview
 
 Guide packages can publish versioned Markdown with catalog, Dive, Flight, and Guide references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before any mutation.
 
+Create a Guide package and validate it without publishing:
+
+```bash
+make new-guide revenue-metrics
+make validate
+```
+
+When the content is ready, follow [Manage Guides as code](docs/guides-as-code.md) to enable deployment, add branch-scoped previews, and attach resource references.
+
 Once a MotherDuck token is configured, you can inspect live create/update/delete actions before applying them:
 
 ```bash
@@ -150,9 +159,10 @@ make install-deploy
 
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
+- [Manage Guides as code](docs/guides-as-code.md): scaffold, preview, reference, and deploy version-controlled Guides.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): the end-to-end example blueprint.
-- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md): a complete public-data project with a Flight, share, and Dive.
+- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, and Dive.
 - [MotherDuck documentation](https://motherduck.com/docs/getting-started) and the [MotherDuck Community Slack](https://slack.motherduck.com/) for product questions and support.
 
 ## Contributing

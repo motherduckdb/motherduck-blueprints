@@ -6,6 +6,15 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+### Added
+
+- Added an end-to-end Guides-as-code how-to covering scaffolding, branch-scoped previews, access, references, planning, deployment, and troubleshooting.
+- Added a project-pattern walkthrough for the NCS Field Recovery Explorer.
+
+### Changed
+
+- Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
+
 ## v0.4.0 - 2026-07-30
 
 ### Added
