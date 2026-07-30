@@ -1,0 +1,73 @@
+schemaVersion: 1
+name: ncs-field-recovery
+title: NCS Field Recovery Explorer
+description: Loads official Norwegian Offshore Directorate field and reserve data and presents transparent field recovery comparisons.
+
+variables:
+  database:
+    description: MotherDuck database that stores the official NCS field data.
+    default: ncs_field_recovery
+  share:
+    description: MotherDuck share published for the Dive.
+    default: ncs_field_recovery
+  schema:
+    description: Schema containing the field, reserve history, and analytical view.
+    default: main
+  source_service:
+    description: Official SODIR FactMaps data-service root.
+    default: https://factmaps.sodir.no/api/rest/services/DataService/Data/MapServer
+
+outputs:
+  data:
+    share: data
+
+resources:
+  shares:
+    data:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    loader:
+      name: ncs-field-recovery-loader
+      source: src/flight.py
+      requirements: src/requirements.txt
+      scheduleCron: ""
+      runOnDeploy: true
+      waitForRun: success
+      config:
+        database: ${resources.shares.data.database}
+        schema: ${var.schema}
+        share: ${resources.shares.data.name}
+        share_access: ${resources.shares.data.access}
+        share_visibility: ${resources.shares.data.visibility}
+        source_service: ${var.source_service}
+        user_agent: motherduck-blueprints-ncs-field-recovery/1.0 (https://github.com/motherduckdb/motherduck-blueprints)
+      targets:
+        preview:
+          name: ncs-field-recovery-loader:${target.branch} (Preview)
+
+  dives:
+    explorer:
+      title: NCS Field Recovery Explorer
+      source: src/dive.tsx
+      description: Official SODIR field recovery estimates with filters, rankings, and remaining-resource context.
+      status: ready
+      requiredResources:
+        - share: data
+          alias: ncs_field_recovery
+      targets:
+        preview:
+          title: NCS Field Recovery Explorer:${target.branch} (Preview)
+          status: draft

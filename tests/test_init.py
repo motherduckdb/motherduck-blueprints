@@ -76,11 +76,28 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     Project(target).validate()
 
 
-def test_tooling_workflows_watch_all_deployable_roots() -> None:
-    for workflow_name in ["ci.yaml", "deploy_blueprints.yaml"]:
-        workflow = (REPO_ROOT / ".github/workflows" / workflow_name).read_text(encoding="utf-8")
-        for root in ["flights", "dives", "guides", "roles", "projects"]:
-            assert f'"{root}/**"' in workflow
+def test_deploy_workflow_watches_all_deployable_roots() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/deploy_blueprints.yaml").read_text(encoding="utf-8")
+
+    for root in ["flights", "dives", "guides", "roles", "projects"]:
+        assert f'"{root}/**"' in workflow
+
+
+def test_ci_runs_for_all_main_and_pull_request_changes() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+
+    assert "paths:" not in workflow
+
+
+def test_doctor_workflows_close_resolved_upgrade_issues() -> None:
+    for workflow in [
+        REPO_ROOT / ".github/workflows/blueprints_doctor.yaml",
+        REPO_ROOT / "src/md_blueprints/template_repo/.github/workflows/blueprints_doctor.yaml",
+    ]:
+        text = workflow.read_text(encoding="utf-8")
+        assert "DOCTOR_OUTCOME" in text
+        assert "state: 'all'" in text
+        assert "state_reason: 'completed'" in text
 
 
 def test_init_refuses_non_empty_directory_without_force(tmp_path: Path) -> None:

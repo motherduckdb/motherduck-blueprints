@@ -7,6 +7,8 @@ import urllib.request
 from importlib import resources, util
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
+
 from . import __version__
 from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
@@ -28,6 +30,15 @@ def emit_lines(lines: list[str], *, output_format: str) -> None:
 
 def normalize_version(value: str) -> str:
     return value.strip().removeprefix("v")
+
+
+def newer_release_available(latest_version: str) -> bool:
+    try:
+        installed = Version(normalize_version(__version__))
+        latest = Version(normalize_version(latest_version))
+    except InvalidVersion as exc:
+        raise ValidationError(f"Could not compare md-blueprints versions: {exc}") from exc
+    return latest > installed
 
 
 def fetch_latest_version(*, offline: bool) -> str | None:
@@ -131,11 +142,13 @@ def run_doctor(
             lines.append("latest md-blueprints: unknown (offline mode)")
         else:
             lines.append(f"latest md-blueprints: {latest_version}")
-            if normalize_version(__version__) != latest_version:
+            if newer_release_available(latest_version):
                 emit_lines(lines, output_format=output_format)
                 raise ValidationError(
-                    f"md-blueprints {__version__} is not the latest release {latest_version}; bump the action pin"
+                    f"md-blueprints {__version__} is older than release {latest_version}; bump the action pin"
                 )
+            if Version(normalize_version(__version__)) > Version(latest_version):
+                lines.append("version status: ahead of latest release")
 
     emit_lines(lines, output_format=output_format)
     if stale_schema and check_updates:
@@ -152,8 +165,8 @@ def run_check_updates(*, offline: bool = False, output_format: str = "text") -> 
 
     lines.append(f"latest md-blueprints: {latest_version}")
     emit_lines(lines, output_format=output_format)
-    if normalize_version(__version__) != latest_version:
-        raise ValidationError(f"md-blueprints {__version__} is not the latest release {latest_version}")
+    if newer_release_available(latest_version):
+        raise ValidationError(f"md-blueprints {__version__} is older than release {latest_version}")
 
 
 def schema_mirror_status(root: Path) -> str:
