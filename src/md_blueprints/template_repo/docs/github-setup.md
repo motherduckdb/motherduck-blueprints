@@ -75,6 +75,8 @@ For a new project, start with:
 make new-project <blueprint-name>
 ```
 
+This creates a Flight, share, Dive, and validation-only Guide in one package.
+
 For separately owned resources, use `make new-flight`, `make new-dive`, `make new-guide`, and `make new-role` instead.
 
 Before opening a PR, run:

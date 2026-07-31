@@ -33,7 +33,7 @@ Then connect MotherDuck:
 
 See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup flow and [GitHub Setup](docs/github-setup.md) for the GitHub checklist.
 
-## Add a Blueprint
+## Add a blueprint package
 
 A blueprint is an independently deployable package. Use the root matching its ownership boundary:
 
@@ -55,7 +55,7 @@ make validate
 make preview-smoke events-dashboard
 ```
 
-Use `make new-project revenue-overview` when several resources genuinely ship together. `make new-blueprint` remains a compatibility alias, and existing `blueprints/<name>/` packages continue to work.
+Use `make new-project revenue-overview` when a Flight, share, Dive, and Guide genuinely share one lifecycle. The generated Guide starts validation-only and can be published later by changing `deploy` to `true`. `make new-blueprint` remains a compatibility alias, and existing `blueprints/<name>/` packages continue to work; new packages should use the typed roots above.
 
 Guide packages can publish versioned Markdown with catalog and resource references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before mutation.
 
@@ -104,9 +104,10 @@ The scheduled Blueprints Doctor opens an issue when a newer release exists or th
 
 ## More Detail
 
+- [Blueprint Authoring Guide](guides/blueprint-authoring/README.md): a complete independently owned Guide package.
 - [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
 - [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
 - [Manage Guides as code](docs/guides-as-code.md): scaffold, preview, reference, and deploy version-controlled Guides.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): a Flight that loads public data, publishes a share, and deploys a Dive that reads that share.
-- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, and Dive.
+- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, Dive, and colocated Guide.

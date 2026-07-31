@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
 ARG := $(word 2,$(MAKECMDGOALS))
+POSITIONAL_TARGETS := preview preview-smoke new-blueprint new-flight new-dive new-guide new-role new-project render-preview
 CLI_VERSION := __MD_BLUEPRINTS_VERSION__
 CLI := .venv/bin/md-blueprints
 CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)
@@ -64,7 +65,7 @@ new-role: $(CLI) ## Scaffold a production RBAC role
 	@test -n "$(ARG)" || { echo "Usage: make new-role <name>"; exit 1; }
 	$(CLI) new role "$(ARG)"
 
-new-project: $(CLI) ## Scaffold a complete Flight + share + Dive project
+new-project: $(CLI) ## Scaffold a complete Flight + share + Dive + Guide project
 	@test -n "$(ARG)" || { echo "Usage: make new-project <name>"; exit 1; }
 	$(CLI) new project "$(ARG)"
 
@@ -90,4 +91,9 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 %:
-	@:
+	@if [ "$@" = "$(ARG)" ] && [ -n "$(filter $(firstword $(MAKECMDGOALS)),$(POSITIONAL_TARGETS))" ]; then \
+	  :; \
+	else \
+	  echo "Unknown make target '$@'. Run 'make help' to list supported targets." >&2; \
+	  exit 2; \
+	fi

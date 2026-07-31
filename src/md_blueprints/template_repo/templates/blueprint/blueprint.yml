@@ -65,3 +65,19 @@ resources:
         preview:
           title: "__BLUEPRINT_TITLE__:${target.branch} (Preview)"
           status: draft
+
+  guides:
+    project-guide:
+      title: "__BLUEPRINT_TITLE__ Guide"
+      topic: "projects/__BLUEPRINT_NAME__"
+      source: guide.md
+      description: Trusted definitions and operating context for this project.
+      deploy: false
+      references:
+        - type: flight
+          resource: loader
+        - type: dive
+          resource: dashboard
+      targets:
+        preview:
+          title: "__BLUEPRINT_TITLE__ Guide:${target.branch} (Preview)"

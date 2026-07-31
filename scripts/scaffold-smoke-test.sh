@@ -28,6 +28,7 @@ rsync -a \
 echo "==> Creating generated blueprint example"
 make -C "$SCAFFOLD_ROOT" new-blueprint "$EXAMPLE_NAME"
 test -f "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME/README.md"
+test -f "$SCAFFOLD_ROOT/projects/$EXAMPLE_NAME/guide.md"
 
 echo "==> Creating typed and edge-case blueprint examples"
 make -C "$SCAFFOLD_ROOT" new-flight true

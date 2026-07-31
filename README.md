@@ -19,6 +19,8 @@ This repository is the source for the Blueprints tooling. As a user, you interac
 | [`motherduckdb/blueprints-template`](https://github.com/motherduckdb/blueprints-template) | A GitHub template repository — the fastest way to start. It is generated from this repository on each release, so don't open pull requests there. |
 | `motherduckdb/motherduck-blueprints@v0.4.1` | The GitHub Action and CLI source for validating, planning, deploying, and migrating blueprints. Generated workflows and local setup use the same immutable release. |
 
+The customer commands below assume a repository created from `blueprints-template` or `md-blueprints init`. Contributors changing the tooling source should follow [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Prerequisites
 
 - Python 3.10 or newer.
@@ -56,10 +58,11 @@ make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-The repository ships with two working public-data examples:
+The repository ships with working public-data and Guide examples:
 
 - [Wikipedia Pageviews](docs/examples/wikipedia-pageviews.md) demonstrates independently owned Flight producer and Dive consumer packages connected by a named output.
-- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md) demonstrates a complete project whose Flight, share, and Dive deploy and roll back together.
+- [NCS Field Recovery Explorer](projects/ncs-field-recovery/README.md) demonstrates a complete project containing a Flight, share, Dive, and colocated Guide.
+- [Blueprint Authoring Guide](guides/blueprint-authoring/README.md) demonstrates an independently owned Guide package.
 
 ### 3. Connect MotherDuck
 
@@ -70,7 +73,7 @@ The repository ships with two working public-data examples:
 
 See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup flow and [GitHub Setup](docs/github-setup.md) for the GitHub checklist.
 
-## Add a Blueprint
+## Add a blueprint package
 
 Use the root that matches the package's ownership boundary:
 
@@ -92,7 +95,7 @@ make validate
 make preview-smoke events-dashboard
 ```
 
-Use `make new-project revenue-overview` when a Flight and Dive genuinely preview and roll back as one unit. Existing `blueprints/<name>/` repositories remain supported indefinitely; no migration is required.
+Use `make new-project revenue-overview` when a Flight, share, Dive, and Guide genuinely share one lifecycle. The generated Guide starts validation-only and can be published later by changing `deploy` to `true`. Existing `blueprints/<name>/` repositories remain supported indefinitely; new repositories should use the typed roots above.
 
 Guide packages can publish versioned Markdown with catalog, Dive, Flight, and Guide references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before any mutation.
 
@@ -108,6 +111,7 @@ When the content is ready, follow [Manage Guides as code](docs/guides-as-code.md
 Once a MotherDuck token is configured, you can inspect live create/update/delete actions before applying them:
 
 ```bash
+make install-deploy
 .venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints events-dashboard
 .venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints events-dashboard
 ```
@@ -141,11 +145,7 @@ Your repository pins the tooling in two places: an exact action tag in `.github/
 
 Every release requires an explicit action and CLI pin update so CI and local behavior cannot diverge. Major releases can also introduce a new manifest `schemaVersion`; run `md-blueprints doctor` and `md-blueprints migrate --to latest` first. See [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md) for the compatibility policy.
 
-For live local `plan`, `deploy`, and `cleanup` commands, install the deploy extra from the pinned repository tag:
-
-```bash
-make install-deploy
-```
+The `make install-deploy` step shown above installs the live MotherDuck runtime from the repository's pinned CLI source.
 
 ## Best practices
 
@@ -162,7 +162,8 @@ make install-deploy
 - [Manage Guides as code](docs/guides-as-code.md): scaffold, preview, reference, and deploy version-controlled Guides.
 - [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
 - [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): the end-to-end example blueprint.
-- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, and Dive.
+- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, Dive, and colocated Guide.
+- [Blueprint Authoring Guide](guides/blueprint-authoring/README.md): a complete independently owned Guide package.
 - [MotherDuck documentation](https://motherduck.com/docs/getting-started) and the [MotherDuck Community Slack](https://slack.motherduck.com/) for product questions and support.
 
 ## Contributing

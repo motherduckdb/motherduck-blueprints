@@ -21,7 +21,13 @@ guides/revenue-metrics/
   README.md
 ```
 
-The generated manifest uses `deploy: false`, so `make validate` checks the Guide source without publishing it. This is useful while the Guide is still being reviewed.
+The generated manifest uses `deploy: false`, so `make validate` checks the Guide source without publishing it. It already includes a branch-scoped preview title, making `deploy: true` the only required change when the content is ready to publish.
+
+### Standalone or colocated
+
+Use `guides/<name>/` when the Guide has its own owner or deployment lifecycle. [`guides/blueprint-authoring/`](../guides/blueprint-authoring/) is the included standalone example.
+
+Use `projects/<name>/guide.md` when the Guide must change and roll back with that project's Flight, share, or Dive. `make new-project revenue-overview` creates a validation-only `project-guide` resource with references to the generated Flight and Dive. [`projects/ncs-field-recovery/`](../projects/ncs-field-recovery/) demonstrates the same colocated shape in a complete project.
 
 ## 2. Write the Guide
 
@@ -51,7 +57,7 @@ Do not include tokens, credentials, personal data, or source excerpts that shoul
 
 ## 3. Configure deployment and references
 
-Set `deploy: true` when the repository should own the Guide lifecycle. The following package attaches the Guide to a table in an existing MotherDuck database and keeps previews private:
+Set `deploy: true` when the repository should own the Guide lifecycle. New scaffolds already contain the required branch-scoped preview title; the following expanded package also attaches the Guide to a table in an existing MotherDuck database and keeps previews private:
 
 ```yaml
 schemaVersion: 1
@@ -144,7 +150,7 @@ After review, merge the pull request. The production workflow publishes stable G
 ## Troubleshooting
 
 - **The plan says `validated_only`.** Set `deploy: true` after the Guide is ready to publish.
-- **Preview validation rejects the title.** Add `${target.branch}` or `${target.branch_slug}` to the preview title or topic.
+- **Preview validation rejects the title.** Older or handwritten manifests must add `${target.branch}` or `${target.branch_slug}` to the preview title or topic; current scaffolds include this already.
 - **The deployment requires the admin role.** Use an admin service account for `access: organization`, or use `access: user` to keep the Guide private to the deployment identity.
 - **The plan finds duplicate Guides.** Set the existing production Guide's UUID as `id` and set `targets.preview.id: null`.
 - **A reference does not resolve.** Check the `blueprint` and `resource` keys, or use the live resource's `uuid` for an externally managed Dive, Flight, or Guide.

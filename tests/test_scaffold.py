@@ -62,6 +62,19 @@ def test_all_typed_scaffolds_generate_a_valid_repository(tmp_path: Path) -> None
     assert (tmp_path / "guides/analytics-guide/guide.md").is_file()
     assert (tmp_path / "roles/analytics-team/blueprint.yml").is_file()
     assert (tmp_path / "projects/revenue/src/dive.tsx").is_file()
+    assert (tmp_path / "projects/revenue/guide.md").is_file()
+
+
+def test_guide_scaffold_is_ready_to_enable(tmp_path: Path) -> None:
+    write_root(tmp_path)
+    destination = run_new(tmp_path, "guide", "analytics-guide")
+    manifest = destination / "blueprint.yml"
+
+    source = manifest.read_text(encoding="utf-8")
+    assert "${target.branch}" in source
+    manifest.write_text(source.replace("deploy: false", "deploy: true"), encoding="utf-8")
+
+    assert Project(tmp_path).validate()
 
 
 @pytest.mark.parametrize("kind", ["flight", "dive", "guide", "role", "project"])
@@ -158,9 +171,18 @@ def test_new_project_uses_the_complete_starter_template(tmp_path: Path) -> None:
     assert "status: ready" in manifest
     assert "status: draft" in manifest
     assert "Starter project that publishes" in manifest
+    assert "project-guide:" in manifest
+    assert "source: guide.md" in manifest
+    assert (destination / "guide.md").is_file()
     assert "## Replace the Starter Logic" in readme
     assert "__BLUEPRINT_" not in manifest
     assert "__BLUEPRINT_" not in readme
+
+    (destination / "blueprint.yml").write_text(
+        manifest.replace("deploy: false", "deploy: true"),
+        encoding="utf-8",
+    )
+    assert Project(tmp_path).validate()
 
 
 def test_new_dive_requires_one_data_source(tmp_path: Path) -> None:
