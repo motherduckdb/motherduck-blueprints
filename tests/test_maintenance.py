@@ -6,7 +6,8 @@ import pytest
 from packaging.version import Version
 
 from md_blueprints import __version__
-from md_blueprints.maintenance import run_check_updates, run_doctor
+from md_blueprints.init import run_init
+from md_blueprints.maintenance import run_check_updates, run_doctor, tooling_pin_status
 from md_blueprints.schema import ValidationError
 
 
@@ -46,3 +47,22 @@ def test_doctor_reports_ahead_version_without_requesting_upgrade(
     output = capsys.readouterr().out
     assert f"latest md-blueprints: {earlier}" in output
     assert "version status: ahead of latest release" in output
+
+
+def test_generated_repository_tooling_pins_are_aligned(tmp_path: Path) -> None:
+    run_init(tmp_path)
+
+    assert tooling_pin_status(tmp_path) == (f"aligned at {__version__}", False)
+
+
+def test_doctor_rejects_action_and_cli_pin_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_init(tmp_path)
+    workflow = tmp_path / ".github/workflows/deploy_blueprints.yaml"
+    workflow.write_text(workflow.read_text(encoding="utf-8").replace(f"@v{__version__}", "@v0.0.0"), encoding="utf-8")
+    monkeypatch.setenv("MD_BLUEPRINTS_LATEST_VERSION", __version__)
+
+    with pytest.raises(ValidationError, match="action and CLI pins are not aligned"):
+        run_doctor(tmp_path, check_updates=True)

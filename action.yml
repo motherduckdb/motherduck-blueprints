@@ -1,5 +1,10 @@
 name: MotherDuck Blueprints
 description: Install and run the versioned MotherDuck Blueprints CLI.
+author: MotherDuck
+
+branding:
+  icon: layers
+  color: yellow
 
 inputs:
   command:
@@ -34,13 +39,28 @@ runs:
       run: |
         set -euo pipefail
         install_target="$GITHUB_ACTION_PATH"
+        install_mode="base"
         case "$MD_BLUEPRINTS_COMMAND" in
           plan|deploy|cleanup)
             install_target="${GITHUB_ACTION_PATH}[deploy]"
+            install_mode="deploy"
             ;;
         esac
-        python -m pip install --upgrade pip
-        python -m pip install "$install_target"
+        python_key="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+        action_key="$(printf '%s-%s' "$GITHUB_ACTION_PATH" "$python_key" | cksum | awk '{print $1}')"
+        marker_dir="${RUNNER_TEMP}/md-blueprints-action"
+        base_marker="${marker_dir}/${action_key}-base"
+        deploy_marker="${marker_dir}/${action_key}-deploy"
+        mkdir -p "$marker_dir"
+        if [ -f "$deploy_marker" ] || { [ "$install_mode" = "base" ] && [ -f "$base_marker" ]; }; then
+          echo "md-blueprints dependencies already installed for this action checkout."
+          exit 0
+        fi
+
+        constraints="$GITHUB_ACTION_PATH/constraints/action.txt"
+        python -m pip install --constraint "$constraints" pip setuptools wheel
+        python -m pip install --no-build-isolation --constraint "$constraints" "$install_target"
+        touch "$marker_dir/${action_key}-${install_mode}"
 
     - name: Run md-blueprints
       id: run

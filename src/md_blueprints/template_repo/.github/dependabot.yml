@@ -4,3 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Blueprints Doctor coordinates this action with Makefile's exact CLI pin.
+      - dependency-name: motherduckdb/motherduck-blueprints
+  - package-ecosystem: npm
+    directory: /.dive-preview
+    schedule:
+      interval: weekly

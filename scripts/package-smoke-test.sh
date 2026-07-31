@@ -34,9 +34,10 @@ trap cleanup EXIT
 cd "$REPO_ROOT"
 
 export PYTHONDONTWRITEBYTECODE=1
+export PIP_CONSTRAINT="$REPO_ROOT/constraints/action.txt"
 
 create_venv "${TMP_DIR}/build"
-"${TMP_DIR}/build/bin/python" -m pip install --upgrade pip build
+"${TMP_DIR}/build/bin/python" -m pip install pip setuptools wheel build
 "${TMP_DIR}/build/bin/python" -m build --outdir "$DIST_DIR"
 
 WHEEL="$(find "$DIST_DIR" -maxdepth 1 -name 'md_blueprints-*.whl' | sort | tail -n 1)"
@@ -84,13 +85,20 @@ grep -q 'url: "md:_share/example/00000000-0000-0000-0000-000000000000"' \
   "$TMP_DIR/generated-template/dives/external-wheel-dashboard/blueprint.yml"
 
 grep -q "CLI_VERSION := ${CLI_VERSION}" "$TMP_DIR/generated-template/Makefile"
+# These assertions intentionally match literal Make variable expressions.
+# shellcheck disable=SC2016
 grep -Fq 'CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)' "$TMP_DIR/generated-template/Makefile"
+# shellcheck disable=SC2016
 grep -Fq 'installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version' "$TMP_DIR/generated-template/Makefile"
+# shellcheck disable=SC2016
 grep -Fq 'md-blueprints @ $(CLI_SOURCE)' "$TMP_DIR/generated-template/Makefile"
+# shellcheck disable=SC2016
 grep -Fq 'install-deploy: $(CLI)' "$TMP_DIR/generated-template/Makefile"
+# shellcheck disable=SC2016
 grep -Fq 'md-blueprints[deploy] @ $(CLI_SOURCE)' "$TMP_DIR/generated-template/Makefile"
-grep -q "motherduckdb/motherduck-blueprints@v${CLI_VERSION%%.*}" "$TMP_DIR/generated-template/.github/workflows/deploy_blueprints.yaml"
+grep -q "motherduckdb/motherduck-blueprints@v${CLI_VERSION}" "$TMP_DIR/generated-template/.github/workflows/deploy_blueprints.yaml"
 test -f "$TMP_DIR/generated-template/.dive-preview/.env.example"
+test -f "$TMP_DIR/generated-template/LICENSE"
 test -f "$TMP_DIR/generated-template/guides/README.md"
 test -f "$TMP_DIR/generated-template/roles/README.md"
 test -f "$TMP_DIR/generated-template/shared/README.md"

@@ -12,11 +12,16 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     name: Validate and Smoke Test
     if: github.repository == 'motherduckdb/motherduck-blueprints'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -42,6 +47,9 @@ jobs:
       - name: Type-check package
         run: python -m mypy --strict src/md_blueprints tests
 
+      - name: Lint package and tests
+        run: python -m ruff check src/md_blueprints tests
+
       - name: Run mock deployment tests
         run: make mock-test
 
@@ -55,6 +63,7 @@ jobs:
     name: Package CLI and Action
     if: github.repository == 'motherduckdb/motherduck-blueprints'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -65,15 +74,101 @@ jobs:
       - name: Check package version metadata
         run: ./scripts/check-release-version.sh
 
+      - name: Require an unpublished package version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/check-version-available.sh
+
       - name: Build and smoke test package
         run: ./scripts/package-smoke-test.sh dist
 
       - name: Smoke test local action
+        id: validate-action
         uses: ./
         with:
           command: validate
+
+      - name: Exercise action stdout
+        id: changed-action
+        uses: ./
+        with:
+          command: changed
+          args: --all --json
+
+      - name: Validate action stdout contract
+        env:
+          ACTION_STDOUT: ${{ steps.changed-action.outputs.stdout }}
+        run: jq -e 'type == "array" and length > 0' <<< "$ACTION_STDOUT"
+
+      - name: Exercise action failure propagation
+        id: failing-action
+        continue-on-error: true
+        uses: ./
+        with:
+          command: validate
+          args: --root does-not-exist
+
+      - name: Validate action failure contract
+        env:
+          ACTION_OUTCOME: ${{ steps.failing-action.outcome }}
+        run: test "$ACTION_OUTCOME" = failure
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: md-blueprints-dist
           path: dist/*
+
+  python-compatibility:
+    name: Python ${{ matrix.python-version }}
+    if: github.repository == 'motherduckdb/motherduck-blueprints'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install -e . pytest
+
+      - name: Run unit tests and validation
+        run: |
+          python -m pytest
+          md-blueprints validate
+
+  supply-chain:
+    name: Workflow and Dependency Audit
+    if: github.repository == 'motherduckdb/motherduck-blueprints'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install -e .[dev]
+          python -m pip_audit --skip-editable
+
+      - name: Audit JavaScript dependencies
+        working-directory: .dive-preview
+        run: npm audit --audit-level=high
+
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh

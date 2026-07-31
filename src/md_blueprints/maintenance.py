@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from importlib import resources, util
@@ -135,6 +136,8 @@ def run_doctor(
         lines.append("schema status: latest supported schema")
 
     lines.append(f"repo schema mirror: {schema_mirror_status(root)}")
+    pin_status, pin_mismatch = tooling_pin_status(root)
+    lines.append(f"tooling pins: {pin_status}")
 
     if check_updates:
         latest_version = fetch_latest_version(offline=offline)
@@ -151,6 +154,8 @@ def run_doctor(
                 lines.append("version status: ahead of latest release")
 
     emit_lines(lines, output_format=output_format)
+    if pin_mismatch and check_updates:
+        raise ValidationError("Generated repository action and CLI pins are not aligned; update both to the same release")
     if stale_schema and check_updates:
         raise ValidationError("Project schema is supported but not latest; run md-blueprints migrate --to latest")
 
@@ -188,3 +193,35 @@ def schema_mirror_status(root: Path) -> str:
                 mismatched.append(f"v{version}/{name} differs")
 
     return "in sync with packaged schemas" if not mismatched else "; ".join(mismatched)
+
+
+def tooling_pin_status(root: Path) -> tuple[str, bool]:
+    makefile = root / "Makefile"
+    if not makefile.is_file():
+        return "not present", False
+
+    match = re.search(r"^CLI_VERSION\s*:?=\s*([^\s#]+)", makefile.read_text(encoding="utf-8"), re.MULTILINE)
+    if match is None:
+        return "managed by the local checkout", False
+
+    cli_version = match.group(1)
+    workflow_root = root / ".github" / "workflows"
+    action_versions: set[str] = set()
+    if workflow_root.is_dir():
+        for workflow in workflow_root.glob("*.y*ml"):
+            action_versions.update(
+                re.findall(
+                    r"motherduckdb/motherduck-blueprints@(v[^\s]+)",
+                    workflow.read_text(encoding="utf-8"),
+                )
+            )
+
+    expected_action = f"v{cli_version}"
+    mismatch = cli_version != __version__ or action_versions != {expected_action}
+    if mismatch:
+        rendered = ", ".join(sorted(action_versions)) or "none"
+        return (
+            f"mismatch (installed {__version__}, Makefile {cli_version}, workflows {rendered})",
+            True,
+        )
+    return f"aligned at {cli_version}", False

@@ -12,13 +12,12 @@ VERSION_PLACEHOLDER = "__MD_BLUEPRINTS_VERSION__"
 ACTION_TAG_PLACEHOLDER = "__MD_BLUEPRINTS_ACTION_TAG__"
 
 
-def action_major_tag(version: str = __version__) -> str:
-    major = version.split(".", maxsplit=1)[0].removeprefix("v")
-    return f"v{major}"
+def action_tag(version: str = __version__) -> str:
+    return f"v{version.removeprefix('v')}"
 
 
 def render_template_text(text: str) -> str:
-    return text.replace(VERSION_PLACEHOLDER, __version__).replace(ACTION_TAG_PLACEHOLDER, action_major_tag())
+    return text.replace(VERSION_PLACEHOLDER, __version__).replace(ACTION_TAG_PLACEHOLDER, action_tag())
 
 
 def is_text_file(path: str) -> bool:
@@ -58,7 +57,7 @@ def run_init(target: Path, *, force: bool = False) -> None:
 
     print(f"Initialized MotherDuck Blueprints template in {target} ({written} files).")
     print(f"CLI version pinned in Makefile: {__version__}")
-    print(f"Action tag pinned in workflows: {action_major_tag()}")
+    print(f"Action tag pinned in workflows: {action_tag()}")
 
 
 def safe_destination(target: Path, relative: str) -> Path:
