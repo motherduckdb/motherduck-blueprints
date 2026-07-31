@@ -235,7 +235,7 @@ def _load_tables(
     """Bulk-load staged JSON and rebuild the latest-recovery analytical view."""
     database_ident, schema_ident = ensure_destination(con, database, schema)
     namespace = f"{database_ident}.{schema_ident}"
-    loaded_at = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    loaded_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
 
     con.execute(
         f"""

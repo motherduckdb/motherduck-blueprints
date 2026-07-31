@@ -2,14 +2,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from importlib import resources
-from importlib.resources.abc import Traversable
 from pathlib import Path
+from typing import Protocol
 
 from . import __version__
 from .schema import ValidationError
 
 VERSION_PLACEHOLDER = "__MD_BLUEPRINTS_VERSION__"
 ACTION_TAG_PLACEHOLDER = "__MD_BLUEPRINTS_ACTION_TAG__"
+
+
+class _Traversable(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    def iterdir(self) -> Iterator[_Traversable]: ...
+
+    def is_dir(self) -> bool: ...
+
+    def read_bytes(self) -> bytes: ...
+
+    def read_text(self, encoding: str | None = None) -> str: ...
 
 
 def action_tag(version: str = __version__) -> str:
@@ -24,7 +37,7 @@ def is_text_file(path: str) -> bool:
     return not path.endswith(".png") and not path.endswith(".jpg") and not path.endswith(".jpeg")
 
 
-def iter_resources(root: Traversable, prefix: str = "") -> Iterator[tuple[Traversable, str]]:
+def iter_resources(root: _Traversable, prefix: str = "") -> Iterator[tuple[_Traversable, str]]:
     for child in root.iterdir():
         relative = f"{prefix}/{child.name}" if prefix else child.name
         yield child, relative

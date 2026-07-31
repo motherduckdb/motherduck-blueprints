@@ -21,6 +21,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Made the compatibility matrix install the complete test dependency set, retained Python 3.10 resource traversal support, and audited dependencies with the repository's constrained packaging toolchain.
 - Prevented template publication from racing the floating action tag and prevented unreleased source changes from rebuilding an already released package version.
 - Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.
 - Rejected duplicate blueprint names across typed roots and command options that do not apply to the selected scaffold kind before writing files.

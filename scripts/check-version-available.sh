@@ -8,7 +8,10 @@ PYPI_PROJECT="${PYPI_PROJECT:-md-blueprints}"
 
 version="$(python3 - <<'PY'
 import pathlib
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 payload = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))
 print(payload["project"]["version"])

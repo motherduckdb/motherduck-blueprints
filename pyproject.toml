@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
   "packaging>=24.0",
   "PyYAML>=6.0",
+  "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

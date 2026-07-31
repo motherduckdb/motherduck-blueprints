@@ -13,7 +13,10 @@ import importlib.util
 import pathlib
 import re
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 expected_tag = sys.argv[1]
 root = pathlib.Path.cwd()

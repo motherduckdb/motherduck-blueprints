@@ -135,7 +135,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: python -m pip install -e . pytest
+        run: python -m pip install -e .[dev]
 
       - name: Run unit tests and validation
         run: |
@@ -160,6 +160,7 @@ jobs:
 
       - name: Audit Python dependencies
         run: |
+          python -m pip install --constraint constraints/action.txt pip setuptools wheel
           python -m pip install -e .[dev]
           python -m pip_audit --skip-editable
 

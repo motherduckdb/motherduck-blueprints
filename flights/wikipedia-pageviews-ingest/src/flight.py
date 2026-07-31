@@ -137,9 +137,9 @@ def fetch_pageviews() -> list[tuple[str, str, str, str, str, dt.date, int, dt.da
     if not articles:
         raise ValueError("At least one article must be configured")
 
-    end = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=1)
+    end = dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)
     start = end - dt.timedelta(days=days_back - 1)
-    loaded_at = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    loaded_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     rows: list[tuple[str, str, str, str, str, dt.date, int, dt.datetime]] = []
 
     for article in articles:
