@@ -125,12 +125,21 @@ def run_new(
         _write(destination / "src/flight.py", _render(_starter_source("flight.py"), name=name, alias=resource_alias))
         _write(destination / "src/requirements.txt", _starter_source("requirements.txt"))
         _write(destination / "src/dive.tsx", _render(_starter_source("dive.tsx"), name=name, alias=resource_alias))
+        _write(destination / "guide.md", _render(_starter_source("guide.md"), name=name, alias=resource_alias))
 
-    readme = (
-        _render(_starter_source("README.md"), name=name, alias=resource_alias)
-        if kind == "project"
-        else f"# {_title(name)}\n\nGenerated `{kind}` blueprint. Run `make validate` before opening a PR.\n"
-    )
+    if kind == "project":
+        readme = _render(_starter_source("README.md"), name=name, alias=resource_alias)
+    elif kind == "guide":
+        readme = f"""# {_title(name)}
+
+Write trusted context in `guide.md`, then run `make validate` before opening a PR.
+
+The Guide starts with `deploy: false`. Its preview title is already branch-scoped, so changing it to
+`deploy: true` is enough to enable preview and production deployment. See
+[Manage Guides as code](../../docs/guides-as-code.md) for access and reference options.
+"""
+    else:
+        readme = f"# {_title(name)}\n\nGenerated `{kind}` blueprint. Run `make validate` before opening a PR.\n"
     _write(destination / "README.md", readme)
     print(f"Created {destination.relative_to(root)}")
     return destination
@@ -277,6 +286,9 @@ resources:
       topic: {_yaml_string(name)}
       source: guide.md
       deploy: false
+      targets:
+        preview:
+          title: {_yaml_string(f"{_title(name)}:${{target.branch}} (Preview)")}
 """
 
 

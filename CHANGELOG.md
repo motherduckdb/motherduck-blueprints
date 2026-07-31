@@ -12,12 +12,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Added a project-pattern walkthrough for the NCS Field Recovery Explorer.
 - Added PyPI and GitHub Release package distribution, release provenance attestations, SBOM publication, and multi-version CI coverage.
 - Added Apache-2.0 licensing to both maintained repositories and complete package and action metadata.
+- Added a standalone Blueprint Authoring Guide plus colocated Guides in the NCS and generated project examples.
 
 ### Changed
 
 - Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
 - Pinned generated workflows to the same immutable release tag as their local CLI instead of a floating action tag.
 - Hardened release ordering, external preflight, post-publish canaries, dependency installation, and repository policy checks.
+- Replaced the flat CLI argument surface with strict per-command help and option validation.
 
 ### Fixed
 
@@ -27,6 +29,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Rejected duplicate blueprint names across typed roots and command options that do not apply to the selected scaffold kind before writing files.
 - Made `new project` use the complete canonical starter manifest and README instead of a reduced duplicate implementation.
 - Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
+- Restored Python 3.10 compatibility in generated Flights by replacing the Python 3.11-only UTC API.
+- Made Guide and project scaffolds include branch-scoped preview Guide titles so changing `deploy` to `true` validates immediately.
+- Made unknown Make targets fail while preserving documented positional commands such as `make new-guide revenue-metrics`.
 
 ## v0.4.0 - 2026-07-30
 

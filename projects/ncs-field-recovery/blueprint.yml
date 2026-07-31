@@ -71,3 +71,19 @@ resources:
         preview:
           title: NCS Field Recovery Explorer:${target.branch} (Preview)
           status: draft
+
+  guides:
+    field-recovery:
+      title: NCS Field Recovery Guide
+      topic: energy/ncs-field-recovery
+      source: guide.md
+      description: Definitions, provenance, and interpretation guidance for the NCS explorer.
+      deploy: false
+      references:
+        - type: flight
+          resource: loader
+        - type: dive
+          resource: explorer
+      targets:
+        preview:
+          title: NCS Field Recovery Guide:${target.branch} (Preview)

@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import __version__
 from .deploy import Deployer, PlanFormatter
 from .init import run_init
 from .maintenance import run_check_updates, run_doctor
@@ -21,74 +22,113 @@ def parse_blueprints(value: str | None) -> list[str] | None:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def add_common_options(parser: argparse.ArgumentParser) -> None:
+def add_root_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default=os.getcwd())
+
+
+def add_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target")
     parser.add_argument("--branch")
     parser.add_argument("--blueprints")
-    parser.add_argument("--base")
-    parser.add_argument("--head")
-    parser.add_argument("--all", action="store_true", dest="all_blueprints")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--from", dest="from_version", type=int)
-    parser.add_argument("--to", dest="to_version", default="latest")
-    parser.add_argument("--write", action="store_true")
-    parser.add_argument("--offline", action="store_true")
-    parser.add_argument("--format", choices=["text", "github-summary"], default="text")
-    parser.add_argument("--check-updates", action="store_true")
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument("--version", action="store_true")
-    parser.add_argument("--input", dest="input_ref")
-    parser.add_argument("--url", dest="share_url")
-    parser.add_argument("--alias")
-    parser.add_argument("--dive")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="md-blueprints",
+        description="Validate, preview, and deploy MotherDuck blueprint packages.",
+    )
+    parser.add_argument("--version", action="version", version=__version__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = commands.add_parser("init", help="Initialize a customer blueprint repository.")
+    init_parser.add_argument("directory", nargs="?", default=".")
+    init_parser.add_argument("--force", action="store_true")
+
+    new_parser = commands.add_parser("new", help="Scaffold a typed blueprint package.")
+    new_parser.add_argument("kind", choices=["flight", "dive", "guide", "role", "project"])
+    new_parser.add_argument("name")
+    add_root_option(new_parser)
+    new_parser.add_argument("--input", dest="input_ref")
+    new_parser.add_argument("--url", dest="share_url")
+    new_parser.add_argument("--alias")
+
+    validate_parser = commands.add_parser("validate", help="Validate manifests without contacting MotherDuck.")
+    add_root_option(validate_parser)
+    validate_parser.add_argument("--target")
+
+    render_parser = commands.add_parser("render", help="Render selected packages for a target.")
+    add_root_option(render_parser)
+    add_target_options(render_parser)
+
+    dive_source_parser = commands.add_parser("dive-source", help="Print the source path for one Dive.")
+    add_root_option(dive_source_parser)
+    dive_source_parser.add_argument("--blueprints", required=True)
+    dive_source_parser.add_argument("--dive")
+
+    changed_parser = commands.add_parser("changed", help="List packages changed between Git revisions.")
+    add_root_option(changed_parser)
+    changed_parser.add_argument("--base")
+    changed_parser.add_argument("--head")
+    changed_parser.add_argument("--all", action="store_true", dest="all_blueprints")
+    changed_parser.add_argument("--json", action="store_true")
+
+    plan_parser = commands.add_parser("plan", help="Inspect live changes without applying them.")
+    add_root_option(plan_parser)
+    add_target_options(plan_parser)
+    plan_parser.add_argument("--json", action="store_true")
+
+    deploy_parser = commands.add_parser("deploy", help="Apply selected packages to MotherDuck.")
+    add_root_option(deploy_parser)
+    add_target_options(deploy_parser)
+
+    cleanup_parser = commands.add_parser("cleanup", help="Remove branch-scoped preview resources.")
+    add_root_option(cleanup_parser)
+    add_target_options(cleanup_parser)
+    cleanup_parser.add_argument("--dry-run", action="store_true")
+    cleanup_parser.add_argument("--json", action="store_true")
+
+    doctor_parser = commands.add_parser("doctor", help="Check CLI, schema, and upgrade status.")
+    add_root_option(doctor_parser)
+    doctor_parser.add_argument("--format", choices=["text", "github-summary"], default="text")
+    doctor_parser.add_argument("--check-updates", action="store_true")
+    doctor_parser.add_argument("--offline", action="store_true")
+
+    updates_parser = commands.add_parser("check-updates", help="Check for a newer CLI release.")
+    updates_parser.add_argument("--format", choices=["text", "github-summary"], default="text")
+    updates_parser.add_argument("--offline", action="store_true")
+
+    migrate_parser = commands.add_parser("migrate", help="Inspect or apply manifest schema migrations.")
+    add_root_option(migrate_parser)
+    migrate_parser.add_argument("--from", dest="from_version", type=int)
+    migrate_parser.add_argument("--to", dest="to_version", default="latest")
+    migrate_parser.add_argument("--write", action="store_true")
+
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="md-blueprints",
-        usage=(
-            "md-blueprints <init|new|validate|render|dive-source|changed|plan|deploy|cleanup|doctor|"
-            "check-updates|migrate> [options]"
-        ),
-    )
-    parser.add_argument("command", nargs="?")
-    parser.add_argument("init_dir", nargs="?")
-    parser.add_argument("new_name", nargs="?")
-    add_common_options(parser)
-    options = parser.parse_args(argv)
-
-    if options.version:
-        from . import __version__
-
-        print(__version__)
-        return 0
-
-    command = options.command
-    if not command:
-        parser.print_usage(sys.stderr)
-        return 2
+    parser = build_parser()
+    try:
+        options = parser.parse_args(argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
 
     try:
-        root = Path(options.root)
-        names = parse_blueprints(options.blueprints)
+        command = str(options.command)
         if command == "init":
-            run_init(Path(options.init_dir or "."), force=options.force)
+            run_init(Path(options.directory), force=options.force)
         elif command == "new":
-            if not options.init_dir or not options.new_name:
-                raise ValidationError("Usage: md-blueprints new <flight|dive|guide|role|project> NAME [options]")
             run_new(
-                root,
-                options.init_dir,
-                options.new_name,
+                Path(options.root),
+                options.kind,
+                options.name,
                 input_ref=options.input_ref,
                 share_url=options.share_url,
                 alias=options.alias,
             )
         elif command == "doctor":
             run_doctor(
-                root,
+                Path(options.root),
                 output_format=options.format,
                 check_updates=options.check_updates,
                 offline=options.offline,
@@ -96,8 +136,15 @@ def main(argv: list[str] | None = None) -> int:
         elif command == "check-updates":
             run_check_updates(offline=options.offline, output_format=options.format)
         elif command == "migrate":
-            run_migrate(root, from_version=options.from_version, to_version=options.to_version, write=options.write)
+            run_migrate(
+                Path(options.root),
+                from_version=options.from_version,
+                to_version=options.to_version,
+                write=options.write,
+            )
         else:
+            root = Path(options.root)
+            names = parse_blueprints(getattr(options, "blueprints", None))
             project = Project(root)
             if command == "validate":
                 targets = [options.target] if options.target else ["preview", "prod"]
@@ -158,10 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                     deployer.ensure_plan_succeeds(records)
                 else:
                     deployer.cleanup(target=options.target or "preview", branch=options.branch, names=names)
-            else:
-                parser.print_usage(sys.stderr)
-                return 2
         return 0
-    except (ValidationError, CommandError, KeyError, ValueError) as exc:
+    except (ValidationError, CommandError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

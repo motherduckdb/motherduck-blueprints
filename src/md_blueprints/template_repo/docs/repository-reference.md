@@ -24,6 +24,7 @@ roles/
 projects/
   <project-name>/
     blueprint.yml
+    guide.md
 shared/
 schemas/v1/
 ```
@@ -132,6 +133,7 @@ make preview wikipedia-pageviews
 make preview-smoke wikipedia-pageviews
 make render-preview wikipedia-pageviews
 
+make install-deploy
 md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
 md-blueprints cleanup --dry-run --target preview --branch feature/local
 md-blueprints doctor
@@ -149,6 +151,8 @@ Preview Dives always use `draft`. Production manifests can declare `draft`, `rea
 
 Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.
 
+Use a standalone `guides/<name>/` package for an independently owned Guide. Project packages may declare the same resource group beside Flights and Dives; `make new-project` includes a validation-only Guide with project-local references. Both scaffold paths include a branch-scoped preview title so enabling deployment does not require restructuring the manifest.
+
 See [Manage Guides as code](guides-as-code.md) for the end-to-end workflow, including branch-scoped previews and repository resource references.
 
 ## RBAC
@@ -162,4 +166,5 @@ Pull requests compute directly changed packages, expand the preview dependency g
 ## Included examples
 
 - [Wikipedia Pageviews](examples/wikipedia-pageviews.md) uses independent Flight and Dive packages connected through a named output and input.
-- [NCS Field Recovery Explorer](examples/ncs-field-recovery.md) keeps its Flight, share, and Dive in one project because they deploy and roll back together.
+- [NCS Field Recovery Explorer](examples/ncs-field-recovery.md) keeps its Flight, share, Dive, and Guide in one project because they share one lifecycle.
+- [Blueprint Authoring Guide](../guides/blueprint-authoring/README.md) is an independently owned validation-only Guide package.

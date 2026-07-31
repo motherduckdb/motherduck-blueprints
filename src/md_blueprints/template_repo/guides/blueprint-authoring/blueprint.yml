@@ -1,0 +1,16 @@
+schemaVersion: 1
+name: blueprint-authoring
+title: Blueprint Authoring Guide
+description: Version-controlled guidance for choosing package boundaries and validating changes.
+
+resources:
+  guides:
+    authoring:
+      title: Blueprint Authoring Guide
+      topic: blueprints/authoring
+      source: guide.md
+      description: Repository layout, lifecycle boundaries, and local validation conventions.
+      deploy: false
+      targets:
+        preview:
+          title: Blueprint Authoring Guide:${target.branch} (Preview)

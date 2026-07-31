@@ -1,6 +1,6 @@
 # NCS Field Recovery Explorer
 
-This project loads official Norwegian Continental Shelf field and reserve data from the Norwegian Offshore Directorate (SODIR), publishes it through a MotherDuck share, and deploys an interactive Dive for comparing public recovery estimates.
+This project loads official Norwegian Continental Shelf field and reserve data from the Norwegian Offshore Directorate (SODIR), publishes it through a MotherDuck share, deploys an interactive Dive for comparing public recovery estimates, and versions trusted interpretation guidance beside those resources.
 
 It is an open-data alternative to the authenticated OREC NCS Insight experience. It does not reproduce OREC's proprietary calculations or reservoir-property filters.
 
@@ -9,8 +9,11 @@ It is an open-data alternative to the authenticated OREC NCS Insight experience.
 - Flight: `loader`
 - Share: `data`
 - Dive: `explorer`
+- Guide: `field-recovery` (validation-only until `deploy: true`)
 
 The Flight runs once on deploy and is intentionally unscheduled. The SODIR source is public and requires no secret. Preview deployments use branch-scoped database, share, Flight, and Dive names and are cleaned up when the branch closes.
+
+The Guide references the package's Flight and Dive and records source, metric, and interpretation rules in `guide.md`. Its preview title is already branch-scoped, so enabling deployment only requires changing `deploy` to `true`.
 
 ## Official Sources
 

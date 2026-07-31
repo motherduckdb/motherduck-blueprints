@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from md_blueprints import cli
+import pytest
+
+from md_blueprints import __version__, cli
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -14,6 +16,23 @@ def test_cli_returns_usage_error_without_command() -> None:
 
 def test_cli_returns_usage_error_for_unknown_command() -> None:
     assert cli.main(["unknown", "--root", str(FIXTURES / "simple")]) == 2
+
+
+def test_cli_prints_version_without_a_command(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--version"]) == 0
+    assert __version__ in capsys.readouterr().out
+
+
+def test_cli_command_help_only_lists_relevant_options(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["validate", "--help"]) == 0
+    output = capsys.readouterr().out
+    assert "--target" in output
+    assert "--write" not in output
+    assert "--url" not in output
+
+
+def test_cli_rejects_options_for_the_wrong_command() -> None:
+    assert cli.main(["validate", "--write"]) == 2
 
 
 def test_cli_returns_zero_for_successful_validate() -> None:
@@ -58,6 +77,7 @@ variables:
 
     assert cli.main(["new", "project", "revenue", "--root", str(tmp_path)]) == 0
     assert (tmp_path / "projects/revenue/blueprint.yml").is_file()
+    assert (tmp_path / "projects/revenue/guide.md").is_file()
 
 
 def test_cli_new_dive_rejects_missing_source(tmp_path: Path) -> None:

@@ -154,11 +154,11 @@ The generated examples use `ready` in production and `draft` in preview. Omittin
 You can then:
 
 - Scaffold a producer with `make new-flight events-ingest` and consume it with `make new-dive events-dashboard INPUT=events-ingest.data`.
-- Scaffold a complete co-owned package with `make new-project revenue-overview`.
+- Scaffold a complete co-owned Flight, share, Dive, and validation-only Guide package with `make new-project revenue-overview`.
 - Connect same-repository packages through `outputs` and `inputs`; use literal share URLs for external repositories.
 - Replace the bundled Wikipedia and NCS public-data examples with your own packages.
 - Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
-- Publish versioned Guide assets below `guides/` with `resources.guides` and `deploy: true`; follow [Manage Guides as code](guides-as-code.md) for preview naming, access, and references.
+- Publish independently owned Guide assets below `guides/`, or keep them in `projects/` when they share that lifecycle; follow [Manage Guides as code](guides-as-code.md) for deployment, access, and references.
 - Manage custom roles below `roles/` with `resources.roles`; use `mode: authoritative` only when the repository owns the complete membership set.
 - Update `.github/CODEOWNERS`.
 

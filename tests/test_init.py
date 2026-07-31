@@ -41,6 +41,8 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert (target / ".github/dependabot.yml").is_file()
     assert (target / ".dive-preview/.env.example").is_file()
     assert (target / "guides/README.md").is_file()
+    assert (target / "guides/blueprint-authoring/guide.md").is_file()
+    assert (target / "projects/ncs-field-recovery/guide.md").is_file()
     assert (target / "roles/README.md").is_file()
     assert (target / "shared/README.md").is_file()
     assert not (target / "src").exists()
@@ -74,6 +76,17 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert "__MD_BLUEPRINTS_" not in readme
     assert "mock-test" not in makefile
     assert "package-smoke" not in makefile
+
+    unknown_target = subprocess.run(
+        ["make", "definitely-not-a-target"],
+        cwd=target,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    assert unknown_target.returncode != 0
+    assert "Unknown make target 'definitely-not-a-target'" in unknown_target.stdout
 
     Project(target).validate()
 
