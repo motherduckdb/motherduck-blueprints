@@ -17,7 +17,7 @@ This repository is the source for the Blueprints tooling. As a user, you interac
 | Artifact | What it is |
 | --- | --- |
 | [`motherduckdb/blueprints-template`](https://github.com/motherduckdb/blueprints-template) | A GitHub template repository — the fastest way to start. It is generated from this repository on each release, so don't open pull requests there. |
-| `motherduckdb/motherduck-blueprints@v0` | The GitHub Action and CLI source for validating, planning, deploying, and migrating blueprints. Generated workflows use the action in CI, and local setup installs the matching repository tag. |
+| `motherduckdb/motherduck-blueprints@v0.4.1` | The GitHub Action and CLI source for validating, planning, deploying, and migrating blueprints. Generated workflows and local setup use the same immutable release. |
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ Or generate the same file set with the CLI:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0"
+.venv/bin/python -m pip install "md-blueprints==0.4.1"
 .venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
@@ -131,15 +131,15 @@ Every pull request gets a comment with the deployment plan and preview links:
 
 ## Versioning and upgrades
 
-Your repository pins the tooling in two places: the floating action major in `.github/workflows/` and the exact source tag installed locally by the generated `Makefile`. Upgrade both when adopting a new major release; minor and patch action updates arrive through the floating major tag.
+Your repository pins the tooling in two places: an exact action tag in `.github/workflows/` and the matching exact CLI version in the generated `Makefile`. Upgrade both together; the scheduled Blueprints Doctor opens an issue when a newer release exists or the pins drift.
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0
+- uses: motherduckdb/motherduck-blueprints@v0.4.1
   with:
     command: validate
 ```
 
-Compatible minor and patch releases move the floating action major and are validated on the next workflow run. Major releases require an explicit action-pin change and can introduce a new manifest `schemaVersion`; run `md-blueprints doctor` and `md-blueprints migrate --to latest` first. See [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md) for the compatibility policy.
+Every release requires an explicit action and CLI pin update so CI and local behavior cannot diverge. Major releases can also introduce a new manifest `schemaVersion`; run `md-blueprints doctor` and `md-blueprints migrate --to latest` first. See [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md) for the compatibility policy.
 
 For live local `plan`, `deploy`, and `cleanup` commands, install the deploy extra from the pinned repository tag:
 

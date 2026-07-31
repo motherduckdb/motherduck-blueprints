@@ -10,10 +10,23 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 - Added an end-to-end Guides-as-code how-to covering scaffolding, branch-scoped previews, access, references, planning, deployment, and troubleshooting.
 - Added a project-pattern walkthrough for the NCS Field Recovery Explorer.
+- Added PyPI and GitHub Release package distribution, release provenance attestations, SBOM publication, and multi-version CI coverage.
+- Added Apache-2.0 licensing to both maintained repositories and complete package and action metadata.
 
 ### Changed
 
 - Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
+- Pinned generated workflows to the same immutable release tag as their local CLI instead of a floating action tag.
+- Hardened release ordering, external preflight, post-publish canaries, dependency installation, and repository policy checks.
+
+### Fixed
+
+- Made the compatibility matrix install the complete test dependency set, retained Python 3.10 resource traversal support, and audited dependencies with the repository's constrained packaging toolchain.
+- Prevented template publication from racing the floating action tag and prevented unreleased source changes from rebuilding an already released package version.
+- Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.
+- Rejected duplicate blueprint names across typed roots and command options that do not apply to the selected scaffold kind before writing files.
+- Made `new project` use the complete canonical starter manifest and README instead of a reduced duplicate implementation.
+- Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
 
 ## v0.4.0 - 2026-07-30
 
@@ -46,9 +59,6 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
-- Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.
-- Rejected duplicate blueprint names across typed roots and command options that do not apply to the selected scaffold kind before writing files.
-- Made `new project` use the complete canonical starter manifest and README instead of a reduced duplicate implementation.
 - Made the NCS field ingestion transactional, collision-safe across concurrent runs, and covered by source pagination, transformation, and rollback tests.
 - Improved the NCS Field Recovery Dive's mobile layout, keyboard focus, toggle state, loading/error announcements, chart description, and table semantics.
 - Made update checks reject only newer releases instead of treating an unreleased local version as outdated, and made the scheduled doctor close resolved upgrade issues.
@@ -70,7 +80,6 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Rejected duplicate aliases within a Dive's required resources.
 - Failed deployment planning immediately when a required share is missing and no selected Flight is configured to produce it on deploy.
 - Serialized cleanup events per branch and made delete operations idempotent when another cleanup run removes a resource after planning.
-- Fixed the full test-suite mypy failure in the cleanup SQL regression test and added tests to the strict CI type-check.
 
 ## v0.3.0 - 2026-07-02
 

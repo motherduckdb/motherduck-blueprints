@@ -68,7 +68,7 @@ def sql_string(value: str) -> str:
 def load_starter_data(con: duckdb.DuckDBPyConnection, database: str, schema: str) -> None:
     database_ident = quote_ident(database)
     schema_ident = quote_ident(schema)
-    loaded_at = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    loaded_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
 
     con.execute(f"CREATE DATABASE IF NOT EXISTS {database_ident}")
     con.execute(f"USE {database_ident}")

@@ -10,7 +10,7 @@ Install the released CLI and generate the customer file set:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0"
+.venv/bin/python -m pip install "md-blueprints==__MD_BLUEPRINTS_VERSION__"
 .venv/bin/md-blueprints init motherduck-blueprints
 cd motherduck-blueprints
 ```
@@ -179,14 +179,14 @@ Use `make install-deploy` before live local plan/deploy/cleanup commands. It ins
 make install-deploy
 ```
 
-To upgrade, bump `CLI_VERSION` in `Makefile`. Change the action tag in `.github/workflows/` when adopting a new major release; the floating major tag receives compatible minor and patch updates automatically.
+To upgrade, bump `CLI_VERSION` in `Makefile` and every action tag in `.github/workflows/` to the same exact release. Blueprints Doctor reports newer releases and rejects drift between those pins.
 
 The action tag is the preferred CI path for customer repositories.
 
-When using the repository action, pin the action major version in customer workflows:
+When using the repository action, pin the exact release in customer workflows:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0
+- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
   with:
     command: validate
 ```

@@ -15,4 +15,4 @@ This policy covers the `md-blueprints` CLI and GitHub Action, the generated cust
 
 ## Supported versions
 
-Only the latest release line receives security fixes. Customer repositories should keep their pinned action and CLI versions current; Dependabot PRs in generated repositories cover the action pin.
+Only the latest release line receives security fixes. Customer repositories should keep their exact action and CLI pins aligned. The scheduled Blueprints Doctor opens an upgrade issue when a newer release exists or those pins drift; Dependabot continues to cover third-party workflow actions.

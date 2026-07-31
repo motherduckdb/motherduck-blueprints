@@ -6,12 +6,13 @@ from pathlib import Path
 import pytest
 
 from md_blueprints import __version__
-from md_blueprints.init import action_major_tag, run_init
+from md_blueprints.init import action_tag, run_init
 from md_blueprints.project import Project
 from md_blueprints.schema import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIRRORED_TEMPLATE_PATHS = [
+    "LICENSE",
     "motherduck.yml",
     "flights",
     "dives",
@@ -32,6 +33,7 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     run_init(target)
 
     assert (target / "motherduck.yml").is_file()
+    assert (target / "LICENSE").is_file()
     assert (target / "flights/wikipedia-pageviews-ingest/blueprint.yml").is_file()
     assert (target / "dives/wikipedia-pageviews/blueprint.yml").is_file()
     assert (target / ".github/workflows/deploy_blueprints.yaml").is_file()
@@ -61,10 +63,10 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert '.venv/bin/python -m pip install "md-blueprints @ $(CLI_SOURCE)"' in makefile
     assert "install-deploy: $(CLI)" in makefile
     assert '.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"' in makefile
-    assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in deploy_workflow
+    assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in deploy_workflow
     assert '"guides/**"' in deploy_workflow
     assert '"roles/**"' in deploy_workflow
-    assert f"motherduckdb/motherduck-blueprints@{action_major_tag()}" in cleanup_workflow
+    assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in cleanup_workflow
     assert "github.event.pull_request.head.sha" in cleanup_workflow
     assert "github.event.pull_request.base.sha" in cleanup_workflow
     assert "github.event.pull_request.head.repo.full_name == github.repository" in cleanup_workflow

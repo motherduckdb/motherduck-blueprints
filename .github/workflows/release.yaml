@@ -9,11 +9,20 @@ on:
     tags:
       - "v*.*.*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    name: Validate Release
+    name: Validate and Build Release
     if: github.repository == 'motherduckdb/motherduck-blueprints'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,66 +43,102 @@ jobs:
           fi
 
       - name: Build and smoke test package
-        run: ./scripts/package-smoke-test.sh
+        run: ./scripts/package-smoke-test.sh dist
+
+      - name: Generate dependency SBOM
+        run: |
+          set -euo pipefail
+          wheel="$(find dist -maxdepth 1 -name 'md_blueprints-*.whl' -print -quit)"
+          test -n "$wheel"
+          python -m pip install "${wheel}[deploy]" cyclonedx-bom==7.3.1
+          cyclonedx-py environment "$(command -v python)" \
+            --pyproject pyproject.toml \
+            --mc-type library \
+            --output-reproducible \
+            --output-file md-blueprints.cdx.json
 
       - name: Smoke test local action
         uses: ./
         with:
           command: validate
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: md-blueprints-dist
+          path: |
+            dist/*
+            md-blueprints.cdx.json
+          if-no-files-found: error
+
+      - name: Attest release artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist/*
+            md-blueprints.cdx.json
+
   release-preflight:
-    name: Verify Template Release Setup
+    name: Verify Release Setup and Tag
     needs: build
     if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check generated-template publishing setup
-        env:
-          TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
-          TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
-        run: ./scripts/check-release-external-setup.sh
-
-  publish-template:
-    name: Publish Generated Template Repository
-    needs:
-      - build
-      - release-preflight
-    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
+      - name: Require release commit on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "Release tag ${GITHUB_REF_NAME} must point to a commit on origin/main." >&2
+            exit 1
+          }
+
+      - name: Check external publishing setup
+        env:
+          TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
+          TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+          PYPI_PROJECT: md-blueprints
+        run: ./scripts/check-release-external-setup.sh
+
+  publish-template:
+    name: Publish and Verify Generated Template
+    needs:
+      - build
+      - release-preflight
+    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: motherduck-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: md-blueprints-dist
+          path: release-artifacts
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
-      - name: Generate template repository
+      - name: Generate template repository from release wheel
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install .
+          python -m pip install release-artifacts/dist/md_blueprints-*.whl
           md-blueprints init generated-template
 
       - name: Publish generated template repository
+        id: template
         env:
           TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
         run: |
           set -euo pipefail
-          if [ -z "$TEMPLATE_PUSH_TOKEN" ]; then
-            echo "BLUEPRINTS_TEMPLATE_PUSH_TOKEN is not configured; cannot publish generated template." >&2
-            exit 1
-          fi
-
-          # Keep the template repository's history so customers who created
-          # repos from it can diff releases, and tag each release so upgrades
-          # have stable reference points.
           git clone "https://x-access-token:${TEMPLATE_PUSH_TOKEN}@github.com/${TEMPLATE_REPOSITORY}.git" template-checkout
           cd template-checkout
           git config user.name "github-actions[bot]"
@@ -101,16 +146,38 @@ jobs:
 
           find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
           cp -R ../generated-template/. .
-
           git add -A
-          if git diff --cached --quiet; then
-            echo "Template contents unchanged for ${GITHUB_REF_NAME}; tagging current commit."
-          else
+          if ! git diff --cached --quiet; then
             git commit -m "Generate template for ${GITHUB_REF_NAME}"
           fi
-          git tag -f "${GITHUB_REF_NAME}"
+
+          if existing="$(git rev-parse -q --verify "refs/tags/${GITHUB_REF_NAME}" 2>/dev/null)" && [ "$existing" != "$(git rev-parse HEAD)" ]; then
+            echo "Template tag ${GITHUB_REF_NAME} already points to a different commit." >&2
+            exit 1
+          fi
+          git tag "${GITHUB_REF_NAME}" 2>/dev/null || true
           git push origin HEAD:main
-          git push -f origin "refs/tags/${GITHUB_REF_NAME}"
+          git push origin "refs/tags/${GITHUB_REF_NAME}"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify generated template workflow
+        env:
+          GH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
+          TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+          TEMPLATE_COMMIT: ${{ steps.template.outputs.commit }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(gh run list -R "$TEMPLATE_REPOSITORY" --commit "$TEMPLATE_COMMIT" --workflow deploy_blueprints.yaml --json databaseId --jq '.[0].databaseId // empty')"
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          if [ -z "$run_id" ]; then
+            echo "No generated-template validation run appeared for ${TEMPLATE_COMMIT}." >&2
+            exit 1
+          fi
+          gh run watch "$run_id" -R "$TEMPLATE_REPOSITORY" --exit-status
 
       - name: Publish template release notes
         env:
@@ -121,16 +188,44 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           notes="Template generated by md-blueprints ${tag#v}. See the [${tag} changelog](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}) for what changed."
           if gh release view "$tag" -R "$TEMPLATE_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$tag" -R "$TEMPLATE_REPOSITORY" --notes "$notes"
-          elif ! gh release create "$tag" -R "$TEMPLATE_REPOSITORY" --verify-tag --title "$tag" --notes "$notes"; then
-            echo "::warning::Could not create a release on ${TEMPLATE_REPOSITORY}; the tag ${tag} was still pushed."
+            echo "Immutable template release ${tag} already exists."
+          else
+            gh release create "$tag" -R "$TEMPLATE_REPOSITORY" --verify-tag --title "$tag" --notes "$notes"
           fi
 
-  finalize-release:
-    name: Publish GitHub Release
-    needs: publish-template
+  publish-pypi:
+    name: Publish PyPI Package
+    needs:
+      - build
+      - release-preflight
+      - publish-template
     if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: md-blueprints-dist
+          path: release-artifacts
+
+      - uses: pypa/gh-action-pypi-publish@a892a5a61159132606e93a2fa6f4358831b04d26 # v1.14.2
+        with:
+          packages-dir: release-artifacts/dist
+          attestations: true
+
+  finalize-release:
+    name: Publish GitHub Release and Action Alias
+    needs:
+      - build
+      - publish-template
+      - publish-pypi
+    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -138,16 +233,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Publish GitHub Release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: md-blueprints-dist
+          path: release-artifacts
+
+      - name: Publish GitHub Release with artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "GitHub Release ${tag} already exists."
+            echo "Immutable GitHub Release ${tag} already exists."
           else
-            gh release create "$tag" \
+            gh release create "$tag" release-artifacts/dist/* release-artifacts/md-blueprints.cdx.json \
               --verify-tag \
               --title "$tag" \
               --generate-notes
