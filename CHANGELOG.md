@@ -15,12 +15,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Updated the release provenance and artifact upload actions to their current major releases.
 - Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
 - Pinned generated workflows to the same immutable release tag as their local CLI instead of a floating action tag.
 - Hardened release ordering, external preflight, post-publish canaries, dependency installation, and repository policy checks.
 
 ### Fixed
 
+- Updated the Dive preview lockfile to resolve the nanoid zero-size custom-generator denial-of-service advisory.
 - Made the compatibility matrix install the complete test dependency set, retained Python 3.10 resource traversal support, and audited dependencies with the repository's constrained packaging toolchain.
 - Prevented template publication from racing the floating action tag and prevented unreleased source changes from rebuilding an already released package version.
 - Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.
