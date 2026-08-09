@@ -16,6 +16,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Refreshed the release artifact actions, DuckDB and pytz runtime pins, and the React-based Dive preview dependency stack.
 - Simplified the root README to distinguish the tooling source repository, generated template repository, and customer-owned repositories.
 - Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
 - Pinned generated workflows to the same immutable release tag as their local CLI instead of a floating action tag.

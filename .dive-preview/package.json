@@ -7,15 +7,15 @@
     "build": "vite build"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "@motherduck/wasm-client": "^0.8.0",
     "apache-arrow": "^17.0.0",
-    "recharts": "~3.7.0",
-    "lucide-react": "^0.468.0"
+    "recharts": "~3.10.1",
+    "lucide-react": "^1.27.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.3",
-    "vite": "^8.1.0"
+    "@vitejs/plugin-react": "^6.0.4",
+    "vite": "^8.1.5"
   }
 }
