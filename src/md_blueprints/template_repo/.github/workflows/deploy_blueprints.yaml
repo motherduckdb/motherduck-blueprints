@@ -255,6 +255,7 @@ jobs:
     name: Deploy Preview Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       needs.compute_changes.outputs.changed_blueprints != '[]' &&
       needs.compute_changes.outputs.target == 'preview' &&
       needs.compute_changes.outputs.deployment_enabled == 'true' &&
@@ -352,6 +353,7 @@ jobs:
     name: Deploy ${{ needs.compute_changes.outputs.target }} Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       needs.compute_changes.outputs.changed_blueprints != '[]' &&
       needs.compute_changes.outputs.target != 'preview' &&
       github.event_name != 'release'
@@ -412,6 +414,7 @@ jobs:
     name: Deploy Released Production Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       github.event_name == 'release' &&
       needs.compute_changes.outputs.staging_enabled == 'true' &&
       needs.compute_changes.outputs.deployment_enabled == 'true'
