@@ -8,6 +8,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Fixed
 
+- Allow environment-migration pull requests to finish validation with deployment disabled when the base branch has no environment metadata; live deployments still require complete configuration.
+
 - Reject empty explicit blueprint selections so they cannot accidentally deploy or clean up the entire repository.
 - Make Doctor validate rendered resources and return failure for invalid or missing projects.
 - Share bounded, deduplicated manifest discovery between validation and migration; validate all migrated documents before writing any changes and reject missing schema versions.

@@ -167,11 +167,11 @@ jobs:
               if isinstance(deployment, dict)
               else ""
           )
-          if not environment or not identity:
+          if deployment_enabled and (not environment or not identity):
               raise SystemExit(
                   f"Target {target!r} must declare environment and deployment.identity before live CI deployment"
               )
-          if token_env_var != "MOTHERDUCK_TOKEN":
+          if deployment_enabled and token_env_var != "MOTHERDUCK_TOKEN":
               raise SystemExit(
                   f"Target {target!r} must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
                   "GitHub Environment workflow"
