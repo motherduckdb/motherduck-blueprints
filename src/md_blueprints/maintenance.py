@@ -87,14 +87,15 @@ def run_doctor(
     if not root_manifest.is_file():
         lines.append("project manifest: missing")
         emit_lines(lines, output_format=output_format)
-        return
+        raise ValidationError(f"motherduck.yml not found in {root}")
 
     try:
         project = Project(root)
+        project.validate()
     except (ValidationError, CommandError) as exc:
         lines.append(f"validation: failed ({exc})")
         emit_lines(lines, output_format=output_format)
-        return
+        raise
 
     root_version = project.manifest.get("schemaVersion")
     root_schema_version = root_version if isinstance(root_version, int) and not isinstance(root_version, bool) else -1
@@ -121,6 +122,26 @@ def run_doctor(
             "warning: resources.context is supported for compatibility; prefer resources.guides in: "
             + ", ".join(legacy_context_blueprints)
         )
+
+    for warning in project.deployment_warnings():
+        lines.append(f"warning: {warning}")
+
+    workflow = root / ".github" / "workflows" / "deploy_blueprints.yaml"
+    if workflow.is_file():
+        workflow_text = workflow.read_text(encoding="utf-8")
+        if "md-blueprints-environment-model: v1" not in workflow_text:
+            lines.append(
+                "warning: deploy workflow does not use target-declared GitHub Environments; the repository-level "
+                "MOTHERDUCK_TOKEN workflow is deprecated"
+            )
+        if project.has_target("staging") and 'target = "staging" if staging_enabled else "prod"' not in workflow_text:
+            lines.append(
+                "warning: staging is configured but the default-branch workflow does not select staging"
+            )
+        if project.has_target("staging") and "github.event_name == 'release'" not in workflow_text:
+            lines.append(
+                "warning: staging is configured but production is not deployed from a published GitHub Release"
+            )
 
     stale_schema = False
     unsupported = {root_schema_version, *blueprint_versions} - SUPPORTED_SCHEMA_VERSIONS

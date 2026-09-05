@@ -1,3 +1,4 @@
+# md-blueprints-environment-model: v1
 name: Cleanup Preview Blueprints
 
 permissions:
@@ -14,10 +15,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve-environment:
+    name: Resolve Preview Environment
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'delete' && github.event.ref_type == 'branch')
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.preview-target.outputs.environment }}
+      identity: ${{ steps.preview-target.outputs.identity }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+
+      - name: Validate base deployment configuration
+        uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+        with:
+          command: validate
+
+      - name: Resolve preview target
+        id: preview-target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import yaml
+
+          manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
+          preview = manifest.get("targets", {}).get("preview", {})
+          environment = str(preview.get("environment", "")).strip()
+          deployment = preview.get("deployment", {})
+          identity = str(deployment.get("identity", "")).strip() if isinstance(deployment, dict) else ""
+          token_env_var = (
+              str(deployment.get("tokenEnvVar", "MOTHERDUCK_TOKEN")).strip()
+              if isinstance(deployment, dict)
+              else ""
+          )
+          if not environment or not identity:
+              raise SystemExit(
+                  "Target 'preview' must declare environment and deployment.identity before preview cleanup"
+              )
+          if token_env_var != "MOTHERDUCK_TOKEN":
+              raise SystemExit(
+                  "Target 'preview' must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
+                  "GitHub Environment workflow"
+              )
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as handle:
+              handle.write(f"environment={environment}\n")
+              handle.write(f"identity={identity}\n")
+          PY
+
   cleanup:
     name: Delete Preview Blueprints for Branch
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'delete' && github.event.ref_type == 'branch')
+    needs: resolve-environment
     runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-environment.outputs.environment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,56 +90,53 @@ jobs:
           set -euo pipefail
           branch_name="${PR_BRANCH:-$DELETED_BRANCH}"
           if [ -z "$branch_name" ]; then
-            echo "No branch name available for cleanup"
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "branch=${branch_name}" >> "$GITHUB_OUTPUT"
+            echo "No branch name available for cleanup" >&2
+            exit 1
           fi
+          echo "branch=${branch_name}" >> "$GITHUB_OUTPUT"
 
-      - name: Check cleanup token
-        id: cleanup-token
-        if: steps.cleanup-branch.outputs.available == 'true'
+      - name: Require preview environment token
         shell: bash
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ needs.resolve-environment.outputs.environment }}
+          TARGET_IDENTITY: ${{ needs.resolve-environment.outputs.identity }}
         run: |
           set -euo pipefail
           if [ -z "$MOTHERDUCK_TOKEN" ]; then
-            echo "Preview cleanup skipped because MOTHERDUCK_TOKEN is not configured for this repository."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Target preview expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
+            exit 1
           fi
 
       - name: Cleanup preview blueprints from the branch manifest
         id: cleanup-branch-manifest
-        if: steps.cleanup-token.outputs.available == 'true'
         continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: cleanup
-          args: --target preview --branch "${{ steps.cleanup-branch.outputs.branch }}"
+          target: preview
+          branch: ${{ steps.cleanup-branch.outputs.branch }}
 
       - name: Check out the pull request base manifest
-        if: github.event_name == 'pull_request' && steps.cleanup-token.outputs.available == 'true'
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Cleanup preview blueprints from the base manifest
-        if: github.event_name == 'pull_request' && steps.cleanup-token.outputs.available == 'true'
+        if: ${{ github.event_name == 'pull_request' }}
         uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: cleanup
-          args: --target preview --branch "${{ steps.cleanup-branch.outputs.branch }}"
+          target: preview
+          branch: ${{ steps.cleanup-branch.outputs.branch }}
 
       - name: Report branch-manifest cleanup failure
-        if: always() && steps.cleanup-branch-manifest.outcome == 'failure'
+        if: ${{ always() && steps.cleanup-branch-manifest.outcome == 'failure' }}
         shell: bash
         run: |
           echo "Cleanup using the pull request branch manifest failed; the base manifest cleanup was still attempted." >&2

@@ -98,14 +98,16 @@ Direct Git change detection remains package-based. Graph expansion happens when 
 
 ## Targets and Safety
 
-The default targets are:
+The required targets are:
 
 - `preview`: branch-scoped names, disabled Flight schedules, and cleanup enabled.
 - `prod`: stable names deployed through the `motherduck-production` GitHub Environment.
 
+`staging` is the one optional conventional target. Its presence changes CI/CD from direct production deployment to release promotion: previews and `main` use the staging service account, while published releases use production.
+
 Cleanup-sensitive preview shares and databases must contain `${target.branch_slug}`. Preview Flight names and Dive titles must contain the branch or branch slug. Cleanup refuses identifiers that are not branch-scoped or that match production.
 
-A target can select a token environment variable and document its deployment identity:
+A target declares the GitHub Environment that holds its service-account token and documents that identity:
 
 ```yaml
 targets:
@@ -117,6 +119,10 @@ targets:
 ```
 
 Tokens are passed to the DuckDB connection and are never printed.
+
+The default `preview + prod` topology points both targets at `motherduck-production` and deploys `main` directly to production. To isolate production, add `staging`, point both `preview` and `staging` at `motherduck-staging`, and keep `prod` on `motherduck-production`. Each GitHub Environment contains its own secret named `MOTHERDUCK_TOKEN`.
+
+Staging and production may render the same database names because the databases belong to different service accounts. Their share names must differ; Blueprints validates this across every rendered share when staging is configured. A `_staging` suffix is the default scaffold convention. Use a customer-specific logical prefix to reduce the chance of a collision outside the repository.
 
 ## Local Commands
 
@@ -137,9 +143,11 @@ md-blueprints cleanup --dry-run --target preview --branch feature/local
 md-blueprints doctor
 ```
 
+Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
+
 `make new-blueprint NAME` remains a compatibility alias for `make new-project NAME`. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 
-`make validate` renders preview and production, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected production producer must already expose its declared share or planning fails before deployment.
+`make validate` renders every declared target, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected stable producer must already expose its declared share or planning fails before deployment.
 
 ## Dives
 
@@ -153,11 +161,11 @@ See [Manage Guides as code](guides-as-code.md) for the end-to-end workflow, incl
 
 ## RBAC
 
-Declare custom roles under `resources.roles` or scaffold a role package with `make new-role`. Roles deploy only in production, before resources that may grant access to them. Share `grants` can target roles and users in additive or authoritative mode. Role and organization-Guide changes run an admin capability preflight before the first mutation.
+Declare custom roles under `resources.roles` or scaffold a role package with `make new-role`. Roles deploy to stable staging and production targets, but never to preview, before resources that may grant access to them. Share `grants` can target roles and users in additive or authoritative mode. Role and organization-Guide changes run an admin capability preflight before the first mutation.
 
 ## CI/CD
 
-Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with plans and preview links. Pushes to `main` expand production changes downstream and deploy through the protected production environment. Closing a PR or deleting a branch triggers dependency-safe preview cleanup.
+Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with plans and preview links. Without staging, pushes to `main` expand changes downstream and deploy production. With staging, pushes to `main` deploy staging and a published non-prerelease GitHub Release verifies and deploys the exact tagged commit to production. Closing a PR or deleting a branch triggers dependency-safe preview cleanup through the preview target's GitHub Environment.
 
 ## Included examples
 

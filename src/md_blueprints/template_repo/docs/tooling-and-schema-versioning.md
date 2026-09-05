@@ -21,7 +21,7 @@ Upgrade local tooling by bumping `CLI_VERSION` in `Makefile` and every Blueprint
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
+- uses: motherduckdb/motherduck-blueprints@v0.4.1
   with:
     command: validate
 ```
@@ -42,6 +42,8 @@ make preview-smoke <blueprint-name>
 ```
 
 The scheduled `Blueprints Doctor` workflow runs `doctor --check-updates` and opens or updates one tracking issue when a release is stale, action and CLI pins drift, or the project schema needs migration.
+
+Doctor also reports deployment-model drift. Repository-level `MOTHERDUCK_TOKEN` workflows are deprecated: generated workflows now select the GitHub Environment declared by each target and read that environment's `MOTHERDUCK_TOKEN`. Existing pre-1.0 workflows remain executable during the compatibility window, but the legacy secret model is scheduled for removal at the next major release.
 
 ## Schema Source of Truth
 
@@ -91,7 +93,7 @@ The internal migration contract is:
 MIGRATIONS: dict[tuple[int, int], Callable[[dict[str, object]], dict[str, object]]] = {}
 ```
 
-Each migration is a pure document transform. The command loads `motherduck.yml` and included `blueprint.yml` files, applies the migration path, emits a unified diff, optionally writes files, and revalidates migrated documents against the target schema.
+Each migration is a pure document transform. The command loads `motherduck.yml` and included `blueprint.yml` files, applies the migration path, validates every migrated document against the target schema, and emits a unified diff. With `--write`, files are written only after every document passes validation. Includes stay within the repository, overlapping matches are deduplicated, and every document must declare an integer `schemaVersion`. File writes are sequential; an operating-system write failure can still leave a partial migration.
 
 For `schemaVersion: 1`, `md-blueprints migrate --to latest` prints that no migration is needed.
 
@@ -117,7 +119,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v__MD_BLUEPRINTS_VERSION__
+make release-check TAG=v0.4.1
 make release-external-check
 make validate
 make mock-test

@@ -1,112 +1,60 @@
-# MotherDuck Blueprints
+# Your MotherDuck project
 
-This repository deploys MotherDuck [Flights](https://motherduck.com/docs/concepts/flights/), [Dives](https://motherduck.com/docs/key-tasks/ai-and-motherduck/dives/), shares, Guides, and RBAC roles from GitHub. Typed roots make ownership visible, while explicit inputs and outputs connect independently deployed packages. Pull requests deploy branch-scoped dependency graphs; merges deploy stable production resources through the protected `motherduck-production` environment.
+This repository uses MotherDuck Blueprints to deploy your data pipelines and dashboards.
 
-Dive previews are always `draft`. Production blueprints can declare `ready`, `endorsed`, or `archived`, and deployment plans show status transitions before applying them. Omitting status preserves the current live value.
+**Open a pull request → try a preview → merge to deploy production.**
 
-If you are reading this in `motherduckdb/blueprints-template`, do not open pull requests there. That repository is generated from `motherduckdb/motherduck-blueprints` on each release, and direct edits are overwritten.
+If you are viewing the original template, [create your own repository first](https://github.com/motherduckdb/blueprints-template/generate).
 
-## Prerequisites
+## Deploy the example
 
-- Python 3.10 or newer.
-- Git, used to install the versioned CLI source locally.
-- Node.js 20 or newer (only needed to preview Dives locally).
-- GitHub Actions secrets and a protected `motherduck-production` environment.
-- A MotherDuck [service account](https://motherduck.com/docs/key-tasks/service-accounts-guide/) token for CI deployments.
+You need a MotherDuck service-account token and permission to configure your GitHub repository. No local installation is required.
 
-## Quickstart
+1. In GitHub, open **Settings → Environments**, create `motherduck-production`, and add your token as an environment secret named `MOTHERDUCK_TOKEN`.
+2. Open [`flights/wikipedia-pageviews-ingest/blueprint.yml`](flights/wikipedia-pageviews-ingest/blueprint.yml), change its `description`, and commit the change to a **new branch**. Open a pull request.
+3. Wait for **Deploy Blueprints** to finish. Its PR comment links to your preview dashboard, backed by public Wikipedia pageview data.
+4. Merge the PR to deploy production. Closing the PR removes its preview resources.
 
-Start without touching MotherDuck:
+If the environment requires approval, approve the deployment in GitHub Actions. Fork pull requests validate but do not deploy.
+
+The default setup uses the same service account for previews and production. For separate credentials and release-based production deployment, [add staging](docs/setup-your-repository.md#add-staging-optional).
+
+## Make it yours
+
+Each `blueprint.yml` describes what to deploy; the source files beside it contain your code. Start by editing the Wikipedia example:
+
+- [Flight](flights/wikipedia-pageviews-ingest/): Python that loads data and publishes a share.
+- [Dive](dives/wikipedia-pageviews/): the dashboard that reads that share.
+
+The repository also includes an [NCS field recovery example](projects/ncs-field-recovery/README.md). All included examples can deploy; remove unwanted example packages before your first deployment.
+
+For local checks, install Python 3.10+ and Git, then run:
+
+```bash
+make validate
+```
+
+To build the example dashboard locally, also install Node.js 22+:
 
 ```bash
 make setup
-make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-Then connect MotherDuck:
+These checks do not need a MotherDuck token. A preview build checks the dashboard; it does not open a live preview.
 
-1. Add a GitHub Actions secret named `MOTHERDUCK_TOKEN`.
-2. Create a GitHub Environment named `motherduck-production`.
-3. Open a small pull request and confirm the preview deployment comment appears.
-4. Merge after review to deploy production through the protected environment.
-
-See [Set Up Your Repository](docs/setup-your-repository.md) for the full setup flow and [GitHub Setup](docs/github-setup.md) for the GitHub checklist.
-
-## Add a Blueprint
-
-A blueprint is an independently deployable package. Use the root matching its ownership boundary:
-
-```text
-flights/   # producers, shares, and named outputs
-dives/     # dashboards with declared inputs
-guides/    # version-controlled agent context
-roles/     # production RBAC roles and memberships
-projects/  # resources that genuinely ship together
-shared/    # human convention; no deployment behavior
-```
-
-Create a producer and consumer:
+Create your own data pipeline and dashboard with:
 
 ```bash
-make new-flight events-ingest
-make new-dive events-dashboard INPUT=events-ingest.data
-make validate
-make preview-smoke events-dashboard
-```
-
-Use `make new-project revenue-overview` when several resources genuinely ship together. `make new-blueprint` remains a compatibility alias, and existing `blueprints/<name>/` packages continue to work.
-
-Guide packages can publish versioned Markdown with catalog and resource references. Role packages and share grants provide declarative RBAC; admin-only operations run a capability preflight before mutation.
-
-Create a Guide package and validate it without publishing:
-
-```bash
-make new-guide revenue-metrics
+make new-project revenue
 make validate
 ```
 
-When the content is ready, follow [Manage Guides as code](docs/guides-as-code.md) to enable deployment, add branch-scoped previews, and attach resource references.
+Edit the generated files in `projects/revenue/`, then open a pull request.
 
-When you have a MotherDuck token configured, inspect live create/update/delete actions before applying them:
+## More help
 
-```bash
-make install-deploy
-.venv/bin/md-blueprints plan --target preview --branch feature/example --blueprints events-dashboard
-.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/example --blueprints events-dashboard
-```
-
-## Versioning
-
-Customer repositories upgrade by bumping the exact action and CLI versions together. This repository was generated by `md-blueprints __MD_BLUEPRINTS_VERSION__`.
-
-Use the generated exact action tag in workflows:
-
-```yaml
-- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
-  with:
-    command: validate
-```
-
-The local CLI version is pinned in `Makefile` and installed from the matching Git tag:
-
-```make
-CLI_VERSION := __MD_BLUEPRINTS_VERSION__
-```
-
-| action / CLI | schemaVersions supported | upgrade path |
-| --- | --- | --- |
-| v0.x | 1 | Current pre-1.0 contract |
-| v1.x | 1 | First stable customer contract |
-| v2.x | 1 deprecated, removed in v3; 2 current | Run `make doctor` and `make migrate` before bumping |
-
-The scheduled Blueprints Doctor opens an issue when a newer release exists or the exact action and CLI pins drift. Major releases can introduce a new `schemaVersion`; run `make doctor` and `make migrate` first.
-
-## More Detail
-
-- [Repository Reference](docs/repository-reference.md): layout, targets, local commands, CI/CD, and context-layer notes.
-- [blueprint.yml Reference](docs/blueprint-yml-reference.md): complete field reference for blueprint manifests.
-- [Manage Guides as code](docs/guides-as-code.md): scaffold, preview, reference, and deploy version-controlled Guides.
-- [Tooling and Schema Versioning](docs/tooling-and-schema-versioning.md): CLI/action pinning, schema compatibility, and migrations.
-- [Wikipedia Pageviews example](docs/examples/wikipedia-pageviews.md): a Flight that loads public data, publishes a share, and deploys a Dive that reads that share.
-- [NCS Field Recovery Explorer](docs/examples/ncs-field-recovery.md): a complete public-data project with a Flight, share, and Dive.
+- [Setup and troubleshooting](docs/setup-your-repository.md)
+- [Blueprint fields and options](docs/blueprint-yml-reference.md)
+- [GitHub Action inputs](docs/github-action.md)
+- [Guides as code](docs/guides-as-code.md) · [Repository reference](docs/repository-reference.md) · [Upgrades](docs/tooling-and-schema-versioning.md)

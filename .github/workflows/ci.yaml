@@ -169,7 +169,10 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Lint GitHub Actions workflows
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        run: >-
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          .github/workflows/*.yaml
+          src/md_blueprints/template_repo/.github/workflows/*.yaml
 
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh

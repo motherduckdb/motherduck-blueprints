@@ -1,203 +1,121 @@
-# Set Up Your Repository
+# Set up your first deployment
 
-Use `md-blueprints init` to generate a typed MotherDuck Blueprints repository, connect it to MotherDuck with a service account token, then customize or add independently deployable packages.
+Start with the [template repository](https://github.com/motherduckdb/blueprints-template/generate). Choose a private repository. It includes the workflows and public-data examples, so you can try deployment without installing anything locally.
 
-Use `flights/`, `dives/`, `guides/`, and `roles/` when those resources have different owners or lifecycles. Use `projects/` when several resource types genuinely ship, preview, and roll back together. Existing `blueprints/` packages remain supported.
+## 1. Connect MotherDuck
 
-## 1. Generate the Repository
+Create a MotherDuck service account with a read/write token and permission to create the example resources. In your new GitHub repository, open **Settings → Environments**, create `motherduck-production`, and add the token as an environment secret named `MOTHERDUCK_TOKEN`.
 
-Install the released CLI and generate the customer file set:
+The default setup uses this account for both previews and production. Never commit the token. If your GitHub plan does not offer Environments for this repository, resolve that before deploying; these workflows require an environment secret.
+
+## 2. Open your first preview
+
+In GitHub, edit the `description` in `flights/wikipedia-pageviews-ingest/blueprint.yml`. Choose **Create a new branch for this commit** and open a pull request. Start with the Flight package so the first production deployment creates the data before the dashboard.
+
+Wait for **Deploy Blueprints** to finish. It loads public Wikipedia data and posts a comment containing the plan and preview links. Open the Dive link to see the dashboard.
+
+Change an example file for this first PR: an empty commit or a top-level README-only change does not trigger deployment. Fork PRs validate without deployment credentials.
+
+## 3. Deploy production
+
+Merge the PR into `main`. The workflow deploys the changed packages to production and shows its plan in the Actions job summary. Preview resources are cleaned up when the PR closes.
+
+The repository also includes the NCS example under `projects/ncs-field-recovery/`. A manual deployment with no package selection deploys all included examples. Remove unwanted packages before deploying them. Removing source files does not delete already-deployed production resources.
+
+## Work locally (optional)
+
+Install Python 3.10+ and Git, clone your repository, and run:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install "md-blueprints==__MD_BLUEPRINTS_VERSION__"
-.venv/bin/md-blueprints init motherduck-blueprints
-cd motherduck-blueprints
+make validate
 ```
 
-Create a GitHub repository and push the generated files:
-
-```bash
-git init
-git add .
-git commit -m "Initial MotherDuck Blueprints repo"
-gh repo create <your-org>/motherduck-blueprints --private --source . --remote origin --push
-```
-
-## 2. Create a MotherDuck Service Account Token
-
-In your MotherDuck organization:
-
-1. Create a service account for CI deployments.
-2. Grant it the minimum database privileges needed by the blueprints. Use the `admin` preset role when the repository manages custom roles or organization-wide Guides.
-3. Generate a read/write token.
-4. Store the token somewhere secure long enough to add it to GitHub.
-
-Use a service account token rather than a personal token so deployed Dives, Flights, tables, and shares are owned by a shared automation identity.
-
-## 3. Add GitHub Secrets
-
-In your repository:
-
-1. Open Settings.
-2. Open Secrets and variables, then Actions.
-3. Add a repository secret named `MOTHERDUCK_TOKEN`.
-4. Paste the MotherDuck service account token.
-
-Do not commit tokens to the repository.
-
-## 4. Configure Deployment Approvals
-
-Create a GitHub Environment named `motherduck-production`.
-
-Recommended settings:
-
-- Add required reviewers.
-- Restrict who can approve production deployments if needed.
-- Keep the environment name exactly `motherduck-production`, because production jobs reference it.
-
-## 5. Protect `main`
-
-Add branch protection for `main`.
-
-Recommended settings:
-
-- Require a pull request before merging.
-- Require approvals.
-- Require review from Code Owners after `.github/CODEOWNERS` is updated.
-- Require the relevant workflow checks after the first PR has run them.
-
-## 6. Run Local Validation
-
-Before touching MotherDuck, run:
+For dashboard development, install Node.js 22+ and run:
 
 ```bash
 make setup
-make validate
 make preview-smoke wikipedia-pageviews
 ```
 
-`make validate` checks manifests and rendered targets. `make preview-smoke` builds a selected Dive locally without contacting MotherDuck.
+Validation and preview builds do not connect to MotherDuck. To open a live local preview after deploying the data, set `VITE_MOTHERDUCK_TOKEN` in the ignored `.dive-preview/.env`, then run `make preview wikipedia-pageviews`. Keep this local development token private.
 
-If you keep a Dive in the repo, also run a finite local preview build:
+Create a new pipeline and dashboard with `make new-project revenue`. Edit its files under `projects/revenue/`, run `make validate`, and open a PR. For separate pipeline and dashboard packages, see the [repository reference](repository-reference.md).
 
-```bash
-make preview-smoke <blueprint-name>
-```
+## If something does not work
 
-PR validation still runs if `MOTHERDUCK_TOKEN` has not been added yet, but live preview deployment is skipped until the secret exists.
+| What you see | What to check |
+| --- | --- |
+| No deployment run | Change a file inside an example package and open the PR against `main`. |
+| Waiting for approval | Approve the deployment in Actions if you configured required environment reviewers. |
+| Missing token | Put `MOTHERDUCK_TOKEN` in **Settings → Environments → motherduck-production**, not repository secrets. |
+| Permission error from MotherDuck | Check the service account's privileges. Custom roles and organization-wide Guides require an admin identity. |
+| Local Python setup fails | Select a working interpreter, for example `make validate PYTHON=python3.13`. |
+| No preview comment on a fork PR | Expected: fork PRs validate only. Use a branch in your own repository to deploy. |
 
-## 7. Run a Preview PR
+Before team use, [configure branch protection and deployment approvals](github-setup.md). In the default setup, environment approval rules apply to previews and cleanup as well as production.
 
-Create a branch and make a small change, for example edit the Wikipedia Dive docs or metadata.
+## Add staging (optional)
 
-```bash
-git checkout -b test/wikipedia-blueprint
-git commit --allow-empty -m "Test Wikipedia blueprint preview"
-git push -u origin test/wikipedia-blueprint
-gh pr create --fill
-```
+Add staging when production credentials must not be available to pull requests or ordinary `main` deployments.
 
-Expected preview flow:
-
-1. `Deploy Blueprints` validates manifests.
-2. Directly changed packages are discovered from `motherduck.yml`, then the preview selection expands upstream and downstream.
-3. The workflow runs a read-only preview plan.
-4. Preview Flights deploy with schedules disabled.
-5. Preview Flights run when `runOnDeploy` is true.
-6. Preview databases and shares are created with the branch slug.
-7. Dives deploy after required shares are resolvable.
-8. Preview Dives are enforced as `draft`.
-9. Opt-in preview Guides deploy after their references resolve.
-10. A PR comment lists the plan plus preview Flight, share, Dive, and Guide details.
-
-## 8. Verify Cleanup
-
-Close the PR or delete the branch.
-
-Expected cleanup flow:
-
-1. Preview Guides are deleted.
-2. Preview Dives are deleted.
-3. Preview Flights are deleted.
-4. Preview shares are dropped.
-5. Preview databases are dropped when `dropDatabase: true`.
-
-Cleanup refuses to drop share/database names that do not include the branch slug.
-
-You can preview cleanup locally before closing a PR:
-
-```bash
-md-blueprints cleanup --dry-run --target preview --branch test/wikipedia-blueprint
-```
-
-## 9. Deploy to Production
-
-Merge the PR to `main`.
-
-Expected production flow:
-
-1. `Deploy Blueprints` runs on `main`.
-2. GitHub waits for approval in `motherduck-production`.
-3. The workflow writes a read-only production plan to the GitHub job summary.
-4. Production roles and memberships reconcile.
-5. Production Flights deploy.
-6. Flights run when `runOnDeploy` is true.
-7. Required shares, filters, and grants reconcile.
-8. Production Dives deploy and reconcile explicitly declared governance statuses.
-9. Production Guides deploy after their references resolve.
-
-The generated examples use `ready` in production and `draft` in preview. Omitting production `status` preserves the live value. Endorsing a Dive requires an organization-admin deployment identity.
-
-## 10. Customize the Blueprints
-
-You can then:
-
-- Scaffold a producer with `make new-flight events-ingest` and consume it with `make new-dive events-dashboard INPUT=events-ingest.data`.
-- Scaffold a complete co-owned package with `make new-project revenue-overview`.
-- Connect same-repository packages through `outputs` and `inputs`; use literal share URLs for external repositories.
-- Replace the bundled Wikipedia and NCS public-data examples with your own packages.
-- Add target `deployment.tokenEnvVar` and `deployment.identity` metadata in `motherduck.yml` if preview and production use different service account secrets.
-- Publish versioned Guide assets below `guides/` with `resources.guides` and `deploy: true`; follow [Manage Guides as code](guides-as-code.md) for preview naming, access, and references.
-- Manage custom roles below `roles/` with `resources.roles`; use `mode: authoritative` only when the repository owns the complete membership set.
-- Update `.github/CODEOWNERS`.
-
-## 11. Keep Tooling in Sync
-
-After repository creation, treat the versioned `md-blueprints` repository tags as the long-term upgrade surface. The generated files are the starting point, while the CLI source and action carry schema validation, deployment behavior, and migrations.
-
-The generated `Makefile` pins the CLI version in `CLI_VERSION` and installs it from the matching Git tag, so local installs stay aligned with the release that generated the repository. Install and validate with:
-
-```bash
-make setup
-make validate
-```
-
-Use `make install-deploy` before live local plan/deploy/cleanup commands. It installs the deploy extra, which includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
-
-```bash
-make install-deploy
-```
-
-To upgrade, bump `CLI_VERSION` in `Makefile` and every action tag in `.github/workflows/` to the same exact release. Blueprints Doctor reports newer releases and rejects drift between those pins.
-
-The action tag is the preferred CI path for customer repositories.
-
-When using the repository action, pin the exact release in customer workflows:
+1. Create a second MotherDuck service account for staging.
+2. Create a GitHub Environment named `motherduck-staging` and add its token as an environment secret named `MOTHERDUCK_TOKEN`.
+3. Change `targets.preview.environment` and `targets.preview.deployment.identity` to the staging environment and service account.
+4. Add the conventional staging target:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@__MD_BLUEPRINTS_ACTION_TAG__
-  with:
-    command: validate
+targets:
+  preview:
+    mode: preview
+    environment: motherduck-staging
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions staging service account
+    policies:
+      disableSchedules: true
+      cleanup: true
+      requireBranchSlugInDataResources: true
+
+  staging:
+    mode: production
+    environment: motherduck-staging
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions staging service account
+
+  prod:
+    mode: production
+    environment: motherduck-production
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions production service account
 ```
 
-Before adopting a new schema version, run:
+5. Give every produced staging share a distinct physical name:
 
-```bash
-md-blueprints doctor
-md-blueprints migrate --to latest
+```yaml
+resources:
+  shares:
+    events:
+      name: acme_events
+      database: events
+      targets:
+        staging:
+          name: acme_events_staging
 ```
 
-Review migration output before applying it with `--write`.
+The database can remain `events` because each service account owns its own database. The share name must differ across staging and production. Use a customer-specific logical prefix because Blueprints can detect collisions between declared targets but cannot inspect unrelated accounts.
 
-When you change repository commands, resource behavior, target policies, or package layout, update the matching docs in the same pull request.
+After staging is present, the workflow changes automatically:
+
+1. Pull requests deploy branch-scoped previews through `motherduck-staging`.
+2. Merges to `main` deploy stable staging resources.
+3. A published, non-prerelease GitHub Release checks out its exact tag and deploys every blueprint to production.
+
+Promotion reconciles the tagged code under the production service account. It does not copy staging databases or data.
+
+## Keep the tooling current
+
+Update `CLI_VERSION` in the generated `Makefile` and the action tags in `.github/workflows/` to the same release. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
+
+For live local commands, run `make install-deploy` first. For a custom workflow, see [GitHub Action inputs](github-action.md).

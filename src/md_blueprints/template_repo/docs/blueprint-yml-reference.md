@@ -116,6 +116,8 @@ resources:
       cleanup: true
       dropDatabase: false
       targets:
+        staging:
+          name: events_staging
         preview:
           name: events${var.preview_suffix}
           database: events${var.preview_suffix}
@@ -126,7 +128,7 @@ resources:
 
 Required fields are `name` and `database`. Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
 
-A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`.
+A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
 
 `includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
 
@@ -224,16 +226,16 @@ resources:
       deploy: true
 ```
 
-Roles deploy only to production and require an admin deployment identity. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
 
 ## Target and Deployment Semantics
 
-Every resource accepts a `targets.<target>` override. Preview and production rendering validate uniqueness for Flight names, Dive titles, deployed Guide identities, role names, and share names.
+Every resource accepts a `targets.<target>` override. All declared targets validate uniqueness for Flight names, Dive titles, deployed Guide identities, role names, and share names. Staging additionally validates that its share names do not collide with production.
 
 Inputs and repository-local Guide references form a DAG:
 
 - Preview selection expands recursively upstream and downstream.
-- Production selection expands recursively downstream only.
+- Stable staging and production selection expand recursively downstream only.
 - Producers deploy before consumers.
 - A consumer-only production plan requires the producer's output to exist in MotherDuck and fails before mutation otherwise.
 - Cleanup runs in reverse dependency order.

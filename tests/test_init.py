@@ -57,6 +57,8 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     requirements = (target / "flights/wikipedia-pageviews-ingest/src/requirements.txt").read_text(encoding="utf-8")
 
     assert f"CLI_VERSION := {__version__}" in makefile
+    assert "PYTHON ?= python3" in makefile
+    assert "$(PYTHON) -m venv .venv" in makefile
     assert "CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)" in makefile
     assert 'installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version' in makefile
     assert 'if [ "$$installed_version" != "$(CLI_VERSION)" ]; then' in makefile
@@ -64,9 +66,18 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert "install-deploy: $(CLI)" in makefile
     assert '.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"' in makefile
     assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in deploy_workflow
+    assert "md-blueprints-environment-model: v1" in deploy_workflow
+    assert "targets.staging" in deploy_workflow
+    assert "github.event_name == 'release'" in deploy_workflow
+    assert "environment: ${{ needs.compute_changes.outputs.target_environment }}" in deploy_workflow
+    assert "Release tag $RELEASE_TAG does not point to a commit" in deploy_workflow
+    assert 'git", "show", f"origin/{base_ref}:motherduck.yml"' in deploy_workflow
+    assert "branch_identity != base_identity" in deploy_workflow
+    assert "must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN" in deploy_workflow
     assert '"guides/**"' in deploy_workflow
     assert '"roles/**"' in deploy_workflow
     assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in cleanup_workflow
+    assert "environment: ${{ needs.resolve-environment.outputs.environment }}" in cleanup_workflow
     assert "github.event.pull_request.head.sha" in cleanup_workflow
     assert "github.event.pull_request.base.sha" in cleanup_workflow
     assert "github.event.pull_request.head.repo.full_name == github.repository" in cleanup_workflow
@@ -74,6 +85,10 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert "__MD_BLUEPRINTS_" not in readme
     assert "mock-test" not in makefile
     assert "package-smoke" not in makefile
+
+    manifest = (target / "motherduck.yml").read_text(encoding="utf-8")
+    assert "staging:" not in manifest
+    assert manifest.count("environment: motherduck-production") == 2
 
     Project(target).validate()
 
@@ -83,6 +98,15 @@ def test_deploy_workflow_watches_all_deployable_roots() -> None:
 
     for root in ["flights", "dives", "guides", "roles", "projects"]:
         assert f'"{root}/**"' in workflow
+
+
+def test_deploy_workflow_derives_staging_and_release_behavior_from_manifest() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/deploy_blueprints.yaml").read_text(encoding="utf-8")
+
+    assert 'staging_enabled = "staging" in targets' in workflow
+    assert 'target = "staging" if staging_enabled else "prod"' in workflow
+    assert "deployment_enabled = staging_enabled" in workflow
+    assert "target: prod" in workflow
 
 
 def test_ci_runs_for_all_main_and_pull_request_changes() -> None:

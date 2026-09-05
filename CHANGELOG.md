@@ -6,8 +6,22 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+### Fixed
+
+- Reject empty explicit blueprint selections so they cannot accidentally deploy or clean up the entire repository.
+- Make Doctor validate rendered resources and return failure for invalid or missing projects.
+- Share bounded, deduplicated manifest discovery between validation and migration; validate all migrated documents before writing any changes and reject missing schema versions.
+- Prevent scaffolding through symlinks outside the project, and preserve the selected Dive source when preview selection fails.
+- Reuse existing virtual environments during CLI installation instead of recreating them with a potentially different Python interpreter.
+- Avoid redundant deployment rendering and use efficient duplicate detection and deterministic graph ordering.
+
 ### Added
 
+- Added named GitHub Action inputs for target, branch, blueprint selection, and repository root; validation works without a `with` block and existing `args` workflows remain supported.
+
+- Added optional conventional `staging` targets, environment-scoped service-account deployments, and release-driven production promotion when staging is configured.
+- Added validation that staging and production shares render to distinct names while allowing identical database names across service-account environments.
+- Added Blueprints Doctor diagnostics for legacy repository-secret workflows and missing target environment or identity metadata.
 - Added an end-to-end Guides-as-code how-to covering scaffolding, branch-scoped previews, access, references, planning, deployment, and troubleshooting.
 - Added a project-pattern walkthrough for the NCS Field Recovery Explorer.
 - Added PyPI and GitHub Release package distribution, release provenance attestations, SBOM publication, and multi-version CI coverage.
@@ -15,12 +29,21 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ### Changed
 
+- Simplified the tooling and customer READMEs around a browser-first example deployment, with optional local setup and advanced configuration in linked guides.
+- Replaced the empty-commit onboarding example with an actual package edit, clarified environment approval and example deployment behavior, and shortened the customer PR checklist.
+- Updated generated and maintained workflows to use literal named action inputs instead of quoted CLI strings.
+
+- Changed generated CI/CD to derive its behavior from the presence of `targets.staging`: `main` deploys production without staging, while staged repositories deploy `main` to staging and published releases to production.
+- Moved generated deployment credentials from repository-level secrets to target-selected GitHub Environment secrets named `MOTHERDUCK_TOKEN`.
+- Made validation render every declared target and made preview cleanup compare against staging when staging is configured.
+- Made the local and generated Makefiles accept `PYTHON=<interpreter>` so validation can pin a supported Python instead of relying on the machine's default.
 - Expanded the root, repository, setup, Guide package, and generated-template documentation to surface Guide deployment and the NCS public-data example.
 - Pinned generated workflows to the same immutable release tag as their local CLI instead of a floating action tag.
 - Hardened release ordering, external preflight, post-publish canaries, dependency installation, and repository policy checks.
 
 ### Fixed
 
+- Updated the Dive preview lockfiles to resolve the high-severity `nanoid` zero-size generator advisory detected by the required dependency audit.
 - Made the compatibility matrix install the complete test dependency set, retained Python 3.10 resource traversal support, and audited dependencies with the repository's constrained packaging toolchain.
 - Prevented template publication from racing the floating action tag and prevented unreleased source changes from rebuilding an already released package version.
 - Made all typed scaffolds emit YAML-safe strings for reserved slugs and aliases, derive valid SQL aliases for numeric-leading blueprint names, normalize external-share URLs, and reject explicitly empty aliases.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from .project import included_manifest_paths
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, SchemaValidator, ValidationError, load_yaml
 
 Migration = Callable[[dict[str, object]], dict[str, object]]
@@ -14,16 +15,14 @@ MIGRATIONS: dict[tuple[int, int], Migration] = {}
 
 
 def project_manifest_files(root: Path) -> list[Path]:
+    root = root.expanduser().resolve()
     manifest_path = root / "motherduck.yml"
     manifest = load_yaml(manifest_path)
     if not isinstance(manifest, dict):
         raise ValidationError("motherduck.yml must be an object")
 
-    project_files = [manifest_path]
-    include = manifest.get("include", [])
-    for pattern in include if isinstance(include, list) else []:
-        project_files.extend(sorted(root.glob(str(pattern))))
-    return project_files
+    included = included_manifest_paths(root, manifest.get("include", []))
+    return [manifest_path, *(path for path in included if path != manifest_path)]
 
 
 def migration_path(source_version: int, target_version: int) -> list[Migration]:
@@ -68,8 +67,9 @@ def run_migrate(root: Path, *, from_version: int | None, to_version: str, write:
         if not isinstance(data, dict):
             raise ValidationError(f"{path} must be an object")
         version = data.get("schemaVersion")
-        if isinstance(version, int) and not isinstance(version, bool):
-            versions.add(version)
+        if not isinstance(version, int) or isinstance(version, bool):
+            raise ValidationError(f"{path}.schemaVersion must be an integer")
+        versions.add(version)
         documents.append((path, data))
 
     if from_version is not None and versions and versions != {from_version}:
@@ -97,6 +97,7 @@ def run_migrate(root: Path, *, from_version: int | None, to_version: str, write:
 
     validator = SchemaValidator()
     diffs: list[str] = []
+    updates: list[tuple[Path, str]] = []
     for path, data in documents:
         migrated = migrate_document(data, migrations)
         schema_name = "motherduck-root.schema.json" if path.name == "motherduck.yml" else "blueprint.schema.json"
@@ -107,13 +108,15 @@ def run_migrate(root: Path, *, from_version: int | None, to_version: str, write:
         updated = updated_text.splitlines(keepends=True)
         if original != updated:
             diffs.extend(difflib.unified_diff(original, updated, fromfile=str(path), tofile=str(path)))
-            if write:
-                path.write_text(updated_text, encoding="utf-8")
+            updates.append((path, updated_text))
 
     if not diffs:
         print("No migration changes were generated.")
         return
 
+    if write:
+        for path, updated_text in updates:
+            path.write_text(updated_text, encoding="utf-8")
     print("".join(diffs), end="")
     if write:
         print("Migration written.")
