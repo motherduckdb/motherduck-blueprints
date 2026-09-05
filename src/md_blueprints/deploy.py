@@ -211,15 +211,17 @@ class Deployer:
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "cleanup")
         rendered_names = [blueprint.name for blueprint in rendered]
-        production = {
+        stable_target = self.project.preview_stable_target()
+        stable = {
             blueprint.name: blueprint
-            for blueprint in self.project.render_all("prod", names=rendered_names)
+            for blueprint in self.project.render_all(stable_target, names=rendered_names)
         }
         return self._build_cleanup_plan(
             rendered,
             branch_slug(branch or ""),
             branch=branch,
-            production=production,
+            production=stable,
+            stable_target=stable_target,
         )
 
     def cleanup(self, *, target: str, branch: str | None, names: list[str] | None) -> None:
@@ -241,12 +243,12 @@ class Deployer:
         names: list[str] | None,
     ) -> list[RenderedBlueprint]:
         self.project.validate(targets=[target], branch=branch)
-        expanded_names = self.project.deployment_blueprint_names(target, names)
+        expanded_names = set(self.project.deployment_blueprint_names(target, names))
         self.rendered_by_name = {
             blueprint.name: blueprint
             for blueprint in self.project.render_all(target, branch=branch)
         }
-        return self.project.render_all(target, branch=branch, names=expanded_names)
+        return [blueprint for name, blueprint in self.rendered_by_name.items() if name in expanded_names]
 
     def _prepare_live_command(self, target: str, operation: str) -> None:
         deployment = self.project.target_config(target).get("deployment", {})
@@ -456,6 +458,7 @@ class Deployer:
         *,
         branch: str | None = None,
         production: dict[str, RenderedBlueprint] | None = None,
+        stable_target: str = "prod",
     ) -> list[PlanRecord]:
         records: list[PlanRecord] = []
         dependency_safe = list(reversed(rendered))
@@ -472,7 +475,7 @@ class Deployer:
                     if raw_production_title is not None:
                         production_title = str(raw_production_title)
                 safety_error = self._preview_scope_error(
-                    "Guide", title, branch, rendered_branch_slug, production_title
+                    "Guide", title, branch, rendered_branch_slug, production_title, stable_target
                 )
                 if safety_error:
                     records.append(
@@ -497,7 +500,7 @@ class Deployer:
                 if production_blueprint and key in production_blueprint.dives:
                     production_title = str(production_blueprint.dives[key]["title"])
                 safety_error = self._preview_scope_error(
-                    "Dive", title, branch, rendered_branch_slug, production_title
+                    "Dive", title, branch, rendered_branch_slug, production_title, stable_target
                 )
                 if safety_error:
                     records.append(
@@ -519,7 +522,7 @@ class Deployer:
                 if production_blueprint and key in production_blueprint.flights:
                     production_name = str(production_blueprint.flights[key]["name"])
                 safety_error = self._preview_scope_error(
-                    "Flight", name, branch, rendered_branch_slug, production_name
+                    "Flight", name, branch, rendered_branch_slug, production_name, stable_target
                 )
                 if safety_error:
                     records.append(
@@ -544,7 +547,7 @@ class Deployer:
                 production_share = production_blueprint.shares.get(key) if production_blueprint else None
                 production_share_name = str(production_share["name"]) if production_share else None
                 share_safety_error = self._preview_scope_error(
-                    "share", share_name, branch, rendered_branch_slug, production_share_name
+                    "share", share_name, branch, rendered_branch_slug, production_share_name, stable_target
                 )
                 if share_safety_error:
                     records.append(
@@ -572,7 +575,7 @@ class Deployer:
 
                 production_database_name = str(production_share["database"]) if production_share else None
                 database_safety_error = self._preview_scope_error(
-                    "database", database_name, branch, rendered_branch_slug, production_database_name
+                    "database", database_name, branch, rendered_branch_slug, production_database_name, stable_target
                 )
                 if database_safety_error:
                     records.append(
@@ -610,9 +613,11 @@ class Deployer:
         branch: str | None,
         rendered_branch_slug: str,
         production_name: str | None,
+        stable_target: str = "prod",
     ) -> str | None:
         if production_name is not None and name == production_name:
-            return f"refusing to delete preview {resource_type} because it matches production: {name}"
+            stable_label = "production" if stable_target == "prod" else stable_target
+            return f"refusing to delete preview {resource_type} because it matches {stable_label}: {name}"
         branch_markers = {rendered_branch_slug}
         if branch:
             branch_markers.add(branch)

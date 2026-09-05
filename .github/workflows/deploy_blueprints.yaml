@@ -1,12 +1,9 @@
+# md-blueprints-environment-model: v1
 name: Deploy Blueprints
 
 permissions:
   contents: read
   pull-requests: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   workflow_dispatch:
@@ -18,6 +15,7 @@ on:
         type: choice
         options:
           - preview
+          - staging
           - prod
       branch:
         description: Preview branch name for manual preview deploys.
@@ -65,22 +63,132 @@ on:
       - "action.yml"
       - "pyproject.toml"
       - ".github/workflows/deploy_blueprints.yaml"
+  release:
+    types:
+      - published
 
 jobs:
   compute_changes:
-    name: Identify Changed Blueprints
+    name: Validate and Identify Deployment
     runs-on: ubuntu-latest
     outputs:
       changed_blueprints: ${{ steps.changed.outputs.changed_blueprints }}
       changed_csv: ${{ steps.changed.outputs.changed_csv }}
+      target: ${{ steps.topology.outputs.target }}
+      target_environment: ${{ steps.topology.outputs.environment }}
+      target_identity: ${{ steps.topology.outputs.identity }}
+      staging_enabled: ${{ steps.topology.outputs.staging_enabled }}
+      deployment_enabled: ${{ steps.topology.outputs.deployment_enabled }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+
+      - name: Validate configured targets
+        uses: ./
+        with:
+          command: validate
+
+      - name: Resolve deployment topology
+        id: topology
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TARGET: ${{ inputs.target }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          import yaml
+
+          manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
+          targets = manifest.get("targets", {})
+          staging_enabled = "staging" in targets
+          event_name = os.environ["EVENT_NAME"]
+          deployment_enabled = True
+
+          if event_name == "pull_request":
+              target = "preview"
+          elif event_name == "push":
+              target = "staging" if staging_enabled else "prod"
+          elif event_name == "release":
+              target = "prod"
+              deployment_enabled = staging_enabled and os.environ.get("RELEASE_PRERELEASE", "false") != "true"
+          elif event_name == "workflow_dispatch":
+              target = os.environ.get("INPUT_TARGET", "prod") or "prod"
+          else:
+              raise SystemExit(f"Unsupported deployment event: {event_name}")
+
+          if target not in targets:
+              raise SystemExit(
+                  f"Target {target!r} is not declared in motherduck.yml. "
+                  "Add targets.staging before dispatching a staging deployment."
+              )
+
+          config = targets[target]
+          if event_name == "pull_request":
+              base_ref = os.environ.get("BASE_REF", "")
+              base_text = subprocess.check_output(
+                  ["git", "show", f"origin/{base_ref}:motherduck.yml"],
+                  text=True,
+              )
+              base_manifest = yaml.safe_load(base_text)
+              base_config = base_manifest.get("targets", {}).get("preview", {})
+              branch_deployment = config.get("deployment", {})
+              base_deployment = base_config.get("deployment", {})
+              branch_identity = (
+                  str(branch_deployment.get("identity", "")).strip()
+                  if isinstance(branch_deployment, dict)
+                  else ""
+              )
+              base_identity = (
+                  str(base_deployment.get("identity", "")).strip()
+                  if isinstance(base_deployment, dict)
+                  else ""
+              )
+              if (
+                  str(config.get("environment", "")).strip()
+                  != str(base_config.get("environment", "")).strip()
+                  or branch_identity != base_identity
+              ):
+                  deployment_enabled = False
+              config = base_config
+          environment = str(config.get("environment", "")).strip()
+          deployment = config.get("deployment", {})
+          identity = str(deployment.get("identity", "")).strip() if isinstance(deployment, dict) else ""
+          token_env_var = (
+              str(deployment.get("tokenEnvVar", "MOTHERDUCK_TOKEN")).strip()
+              if isinstance(deployment, dict)
+              else ""
+          )
+          if deployment_enabled and (not environment or not identity):
+              raise SystemExit(
+                  f"Target {target!r} must declare environment and deployment.identity before live CI deployment"
+              )
+          if deployment_enabled and token_env_var != "MOTHERDUCK_TOKEN":
+              raise SystemExit(
+                  f"Target {target!r} must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
+                  "GitHub Environment workflow"
+              )
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as handle:
+              handle.write(f"target={target}\n")
+              handle.write(f"environment={environment}\n")
+              handle.write(f"identity={identity}\n")
+              handle.write(f"staging_enabled={str(staging_enabled).lower()}\n")
+              handle.write(f"deployment_enabled={str(deployment_enabled).lower()}\n")
+          PY
 
       - name: Use manually selected blueprints
         id: manual-changed
-        if: ${{ inputs.blueprints != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.blueprints != '' }}
         shell: bash
         env:
           INPUT_BLUEPRINTS: ${{ inputs.blueprints }}
@@ -91,7 +199,7 @@ jobs:
 
       - name: Compute changed blueprints for pull request
         id: changed-pr
-        if: ${{ inputs.blueprints == '' && github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' }}
         uses: ./
         with:
           command: changed
@@ -99,7 +207,7 @@ jobs:
 
       - name: Resolve push comparison range
         id: push-range
-        if: ${{ inputs.blueprints == '' && github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' }}
         shell: bash
         env:
           PUSH_BEFORE: ${{ github.event.before }}
@@ -113,15 +221,15 @@ jobs:
 
       - name: Compute changed blueprints for push
         id: changed-push
-        if: ${{ inputs.blueprints == '' && github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' }}
         uses: ./
         with:
           command: changed
           args: ${{ steps.push-range.outputs.args }}
 
-      - name: Select all blueprints for manual dispatch
+      - name: Select all blueprints
         id: changed-all
-        if: ${{ inputs.blueprints == '' && github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
         uses: ./
         with:
           command: changed
@@ -143,25 +251,19 @@ jobs:
           echo "changed_blueprints=${changed}" >> "$GITHUB_OUTPUT"
           echo "changed_csv=${csv}" >> "$GITHUB_OUTPUT"
 
-  validate:
-    name: Validate Blueprints
-    needs: compute_changes
-    if: needs.compute_changes.outputs.changed_blueprints != '[]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: ./
-        with:
-          command: validate
-
   deploy-preview:
     name: Deploy Preview Blueprints
-    needs:
-      - compute_changes
-      - validate
-    if: needs.compute_changes.outputs.changed_blueprints != '[]' && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.target == 'preview'))
+    needs: compute_changes
+    if: >-
+      needs.compute_changes.outputs.changed_blueprints != '[]' &&
+      needs.compute_changes.outputs.target == 'preview' &&
+      needs.compute_changes.outputs.deployment_enabled == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: preview-${{ github.event.pull_request.number || inputs.branch }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -178,82 +280,58 @@ jobs:
           fi
           echo "branch=${PREVIEW_BRANCH}" >> "$GITHUB_OUTPUT"
 
-      - name: Check preview token
-        id: preview-token
+      - name: Require preview environment token
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
+          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
         run: |
           set -euo pipefail
-          if [ -n "$MOTHERDUCK_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "MOTHERDUCK_TOKEN is required for preview deploys" >&2
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Target preview expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
             exit 1
           fi
 
       - name: Plan preview blueprints
         id: plan-preview
-        if: steps.preview-token.outputs.available == 'true'
         uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: plan
-          args: --target preview --branch "${{ steps.preview-branch.outputs.branch }}" --blueprints "${{ needs.compute_changes.outputs.changed_csv }}"
+          target: preview
+          branch: ${{ steps.preview-branch.outputs.branch }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Deploy preview blueprints
         id: deploy-preview
-        if: steps.preview-token.outputs.available == 'true'
         uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: deploy
-          args: --target preview --branch "${{ steps.preview-branch.outputs.branch }}" --blueprints "${{ needs.compute_changes.outputs.changed_csv }}"
+          target: preview
+          branch: ${{ steps.preview-branch.outputs.branch }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
-      - name: Build preview comment body
-        id: preview-comment
-        shell: bash
-        env:
-          TOKEN_AVAILABLE: ${{ steps.preview-token.outputs.available }}
-          PLAN_OUTPUT: ${{ steps.plan-preview.outputs.stdout }}
-          DEPLOY_OUTPUT: ${{ steps.deploy-preview.outputs.stdout }}
-        run: |
-          set -euo pipefail
-          if [ "$TOKEN_AVAILABLE" = "true" ]; then
-            output="$(printf "%s\n\n%s" "$PLAN_OUTPUT" "$DEPLOY_OUTPUT")"
-          else
-            output="Preview deploy skipped because MOTHERDUCK_TOKEN is not configured for this repository."
-          fi
-          {
-            echo "comment_body<<EOF"
-            printf "%s\n" "$output"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request' && steps.preview-comment.outputs.comment_body != ''
+      - name: Comment on pull request
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          COMMENT_BODY: ${{ steps.preview-comment.outputs.comment_body }}
+          PLAN_OUTPUT: ${{ steps.plan-preview.outputs.stdout }}
+          DEPLOY_OUTPUT: ${{ steps.deploy-preview.outputs.stdout }}
         with:
           script: |
             const marker = '<!-- preview-blueprints-comment -->';
-            const body = `${marker}
-            ### Preview Blueprints
-
-            ${process.env.COMMENT_BODY ?? ''}`.replace(/^ +/gm, '');
-
+            const output = `${process.env.PLAN_OUTPUT ?? ''}\n\n${process.env.DEPLOY_OUTPUT ?? ''}`;
+            const body = `${marker}\n### Preview Blueprints\n\n${output}`;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            const existing = comments.find(c => c.body.includes(marker));
+            const existing = comments.find(comment => comment.body.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -270,58 +348,138 @@ jobs:
               });
             }
 
-  deploy-prod:
-    name: Deploy Production Blueprints
-    needs:
-      - compute_changes
-      - validate
-    if: needs.compute_changes.outputs.changed_blueprints != '[]' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.target == 'prod'))
+  deploy-stable:
+    name: Deploy ${{ needs.compute_changes.outputs.target }} Blueprints
+    needs: compute_changes
+    if: >-
+      needs.compute_changes.outputs.changed_blueprints != '[]' &&
+      needs.compute_changes.outputs.target != 'preview' &&
+      github.event_name != 'release'
     runs-on: ubuntu-latest
-    environment: motherduck-production
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: stable-${{ needs.compute_changes.outputs.target }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check production token
-        id: prod-token
+      - name: Require target environment token
         shell: bash
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          TARGET: ${{ needs.compute_changes.outputs.target }}
+          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
+          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
         run: |
           set -euo pipefail
-          if [ -n "$MOTHERDUCK_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "Production deploy skipped because MOTHERDUCK_TOKEN is not configured for this repository."
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Target $TARGET expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
+            exit 1
           fi
 
-      - name: Plan production blueprints
-        id: plan-prod
-        if: steps.prod-token.outputs.available == 'true'
+      - name: Plan target blueprints
+        id: plan-stable
         uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: plan
-          args: --target prod --blueprints "${{ needs.compute_changes.outputs.changed_csv }}"
+          target: ${{ needs.compute_changes.outputs.target }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
-      - name: Summarize production plan
-        if: steps.prod-token.outputs.available == 'true'
+      - name: Summarize deployment plan
         shell: bash
         env:
-          PLAN_OUTPUT: ${{ steps.plan-prod.outputs.stdout }}
+          PLAN_OUTPUT: ${{ steps.plan-stable.outputs.stdout }}
+          TARGET: ${{ needs.compute_changes.outputs.target }}
         run: |
           {
-            echo "### Production Blueprint Plan"
+            echo "### ${TARGET} Blueprint Plan"
             echo
             printf "%s\n" "$PLAN_OUTPUT"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Deploy production blueprints
-        if: steps.prod-token.outputs.available == 'true'
+      - name: Deploy target blueprints
         uses: ./
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: deploy
-          args: --target prod --blueprints "${{ needs.compute_changes.outputs.changed_csv }}"
+          target: ${{ needs.compute_changes.outputs.target }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+  deploy-release-production:
+    name: Deploy Released Production Blueprints
+    needs: compute_changes
+    if: >-
+      github.event_name == 'release' &&
+      needs.compute_changes.outputs.staging_enabled == 'true' &&
+      needs.compute_changes.outputs.deployment_enabled == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: stable-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Verify released commit belongs to the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          release_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          git merge-base --is-ancestor "$release_commit" "origin/$DEFAULT_BRANCH" || {
+            echo "Release tag $RELEASE_TAG does not point to a commit on $DEFAULT_BRANCH." >&2
+            exit 1
+          }
+
+      - name: Require production environment token
+        shell: bash
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
+          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "Target prod expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
+            exit 1
+          fi
+
+      - name: Plan released production blueprints
+        id: plan-production
+        uses: ./
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: plan
+          target: prod
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Summarize production plan
+        shell: bash
+        env:
+          PLAN_OUTPUT: ${{ steps.plan-production.outputs.stdout }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          {
+            echo "### Production Blueprint Plan for ${RELEASE_TAG}"
+            echo
+            printf "%s\n" "$PLAN_OUTPUT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy released production blueprints
+        uses: ./
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: deploy
+          target: prod
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}

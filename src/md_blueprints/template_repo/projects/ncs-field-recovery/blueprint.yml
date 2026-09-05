@@ -31,6 +31,8 @@ resources:
       cleanup: true
       dropDatabase: false
       targets:
+        staging:
+          name: ${var.share}_staging
         preview:
           name: ${var.share}${var.preview_suffix}
           database: ${var.database}${var.preview_suffix}

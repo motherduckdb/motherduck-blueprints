@@ -20,9 +20,10 @@ targets:
   preview:
     mode: preview
     default: true
+    environment: motherduck-production
     deployment:
       tokenEnvVar: MOTHERDUCK_TOKEN
-      identity: GitHub Actions preview service account
+      identity: GitHub Actions production service account
     policies:
       disableSchedules: true
       cleanup: true

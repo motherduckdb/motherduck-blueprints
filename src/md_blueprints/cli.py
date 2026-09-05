@@ -16,9 +16,12 @@ from .schema import ValidationError
 
 
 def parse_blueprints(value: str | None) -> list[str] | None:
-    if not value:
+    if value is None:
         return None
-    return [item.strip() for item in value.split(",") if item.strip()]
+    names = [item.strip() for item in value.split(",") if item.strip()]
+    if not names:
+        raise ValidationError("--blueprints must contain at least one blueprint name; omit it to select all")
+    return names
 
 
 def add_common_options(parser: argparse.ArgumentParser) -> None:
@@ -100,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             project = Project(root)
             if command == "validate":
-                targets = [options.target] if options.target else ["preview", "prod"]
+                targets = [options.target] if options.target else project.target_names()
                 project.validate(targets=targets)
                 print(f"Validation passed for {len(project.all_blueprint_names())} blueprint(s).")
             elif command == "render":

@@ -61,7 +61,7 @@ make install-deploy
   --blueprints ncs-field-recovery
 ```
 
-Opening a pull request runs the same selection through GitHub Actions. Preview database, share, Flight, and Dive names include the branch scope, and cleanup removes them after the branch closes. The production target uses stable names and runs through the protected `motherduck-production` environment.
+Opening a pull request runs the same selection through GitHub Actions. Preview database, share, Flight, and Dive names include the branch scope, and cleanup removes them after the branch closes. Without staging, merging deploys the stable production target. With staging, merging deploys the `_staging` share through `motherduck-staging`, and a published release deploys the unsuffixed production share through `motherduck-production`. Both accounts may use the `ncs_field_recovery` database name.
 
 ## Reuse the pattern
 
@@ -73,7 +73,7 @@ make new-project field-analytics
 
 Then carry over the patterns that fit your project:
 
-- Use target variables for stable production names and branch-scoped preview names.
+- Use target overrides for distinct staging/production share names and branch-scoped preview names.
 - Set `runOnDeploy: true` when a deployment needs fresh data.
 - Set `waitForRun: success` when downstream resources must wait for the Flight.
 - Keep source-specific metric definitions and limitations in the package README.
