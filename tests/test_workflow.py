@@ -7,6 +7,15 @@ import pytest
 import yaml
 
 
+def test_canonical_template_validates_without_live_deployment() -> None:
+    root = Path(__file__).resolve().parents[1]
+    path = root / "src/md_blueprints/template_repo/.github/workflows/deploy_blueprints.yaml"
+    jobs = yaml.safe_load(path.read_text())["jobs"]
+    assert "if" not in jobs["compute_changes"]
+    for name in ("deploy-preview", "deploy-stable", "deploy-release-production"):
+        assert "github.repository != 'motherduckdb/blueprints-template' &&" in jobs[name]["if"]
+
+
 @pytest.mark.parametrize("prefix", ["", "src/md_blueprints/template_repo/"])
 @pytest.mark.parametrize("event", ["pull_request", "push"])
 def test_environment_migration_validates_without_deploying_untrusted_configuration(

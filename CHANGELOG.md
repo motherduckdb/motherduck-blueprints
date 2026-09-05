@@ -6,7 +6,11 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.4.1 - 2026-09-05
+
 ### Fixed
+
+- Keep the canonical template repository validation-only during publication; customer repositories retain automatic deployments.
 
 - Allow environment-migration pull requests to finish validation with deployment disabled when the base branch has no environment metadata; live deployments still require complete configuration.
 
