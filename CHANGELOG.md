@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.4.3 - 2026-09-06
+
+- Consolidate the packaging, Ruff, pip, pytz, provenance, and PyPI publishing updates proposed in #48 and #56–60.
+
 - Verify live identities, declared dependencies, and Dive statuses automatically after deployment; fail CD on mismatches without claiming rollback.
 - Add read-only `verify` for pre-deployment checks, including disabled imported bindings, and the action's `verify-after-deploy` option. Mandatory preflight cannot be bypassed.
 - Exercise missing/changed owners and IDs before writes, post-deploy drift, and action verification controls with behavioral tests.
@@ -24,7 +28,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Add an executable customer journey that follows the generated README and checks preview and production selection.
 - Add `make upgrade` and `md-blueprints upgrade` to prepare matching CLI and action pins with a reviewable diff.
 
-## v0.4.1 - 2026-09-05
+## v0.4.1 - unreleased; included in v0.4.3
 
 ### Fixed
 
