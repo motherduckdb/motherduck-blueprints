@@ -44,10 +44,18 @@ jobs:
           from pathlib import Path
 
           import yaml
-          from md_blueprints.diagnostics import report_error
+          import html
 
           def fail(message):
-              report_error(ValueError(message))
+              message += (
+                  "\nNext: check targets.preview in motherduck.yml on the base branch. "
+                  "Set environment to the GitHub Environment name, deployment.identity to the service account, "
+                  "and deployment.tokenEnvVar to MOTHERDUCK_TOKEN."
+              )
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with Path(summary).open("a", encoding="utf-8") as handle:
+                      handle.write(f"### Blueprints needs attention\n\n<pre>{html.escape(message)}</pre>\n")
               raise SystemExit(message)
 
           manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
