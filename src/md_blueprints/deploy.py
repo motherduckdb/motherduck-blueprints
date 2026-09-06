@@ -257,7 +257,13 @@ class Deployer:
             token_env_var = str(deployment.get("tokenEnvVar", token_env_var))
         token = os.environ.get(token_env_var, "")
         if not token:
-            raise ValidationError(f"{token_env_var} is required to {operation} target {target}")
+            environment = self.project.target_config(target).get("environment", target)
+            raise ValidationError(
+                f"{token_env_var} is required to {operation} target {target}.\n"
+                f"Next: in GitHub Settings > Environments > {environment}, add the {token_env_var} "
+                "secret using a service-account read/write token. Ensure the job selects that environment. "
+                f"For local commands, provide {token_env_var} through your secret manager."
+            )
         self.sql_env = {"motherduck_token": token}
 
     def _build_deploy_plan(self, rendered: list[RenderedBlueprint]) -> list[PlanRecord]:
@@ -364,7 +370,10 @@ class Deployer:
                     notes = "will be produced by a Flight configured with runOnDeploy"
                 else:
                     action = "error"
-                    notes = "share is missing and no Flight in this blueprint is configured with runOnDeploy"
+                    notes = (
+                        "share is missing and no Flight in this blueprint is configured with runOnDeploy. "
+                        "Next: run the data-producing Flight first, or set runOnDeploy: true in its manifest"
+                    )
                 records.append(
                     PlanRecord(
                         blueprint=blueprint.name,
@@ -394,11 +403,15 @@ class Deployer:
                     action = "error"
                     notes = (
                         f"selected blueprint {producer}.{output} is missing and has no Flight configured "
-                        "with runOnDeploy"
+                        "with runOnDeploy. Next: run the producer first, or set runOnDeploy: true on its Flight"
                     )
                 else:
                     action = "error"
-                    notes = f"required production output {producer}.{output} is not available"
+                    notes = (
+                        f"required production output {producer}.{output} is not available. "
+                        f"Next: deploy producer {producer!r} to the same target first, "
+                        "or include it in --blueprints so its data is created before this dashboard"
+                    )
                 records.append(
                     PlanRecord(
                         blueprint=blueprint.name,
@@ -1163,7 +1176,9 @@ class Deployer:
             reasons = "; ".join(admin_reasons)
             raise ValidationError(
                 f"RBAC preflight failed: target requires the admin role ({reasons}); "
-                f"the deployment identity has: {', '.join(sorted(roles)) or 'no roles'}"
+                f"the deployment identity has: {', '.join(sorted(roles)) or 'no roles'}. "
+                "Next: use a service account with the admin role, or disable the resources "
+                "that require organization administration."
             )
 
     def _live_role_names(self) -> set[str]:

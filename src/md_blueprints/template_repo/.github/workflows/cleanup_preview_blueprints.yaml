@@ -44,6 +44,19 @@ jobs:
           from pathlib import Path
 
           import yaml
+          import html
+
+          def fail(message):
+              message += (
+                  "\nNext: check targets.preview in motherduck.yml on the base branch. "
+                  "Set environment to the GitHub Environment name, deployment.identity to the service account, "
+                  "and deployment.tokenEnvVar to MOTHERDUCK_TOKEN."
+              )
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with Path(summary).open("a", encoding="utf-8") as handle:
+                      handle.write(f"### Blueprints needs attention\n\n<pre>{html.escape(message)}</pre>\n")
+              raise SystemExit(message)
 
           manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
           preview = manifest.get("targets", {}).get("preview", {})
@@ -56,11 +69,11 @@ jobs:
               else ""
           )
           if not environment or not identity:
-              raise SystemExit(
+              fail(
                   "Target 'preview' must declare environment and deployment.identity before preview cleanup"
               )
           if token_env_var != "MOTHERDUCK_TOKEN":
-              raise SystemExit(
+              fail(
                   "Target 'preview' must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
                   "GitHub Environment workflow"
               )
@@ -94,19 +107,6 @@ jobs:
             exit 1
           fi
           echo "branch=${branch_name}" >> "$GITHUB_OUTPUT"
-
-      - name: Require preview environment token
-        shell: bash
-        env:
-          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          TARGET_ENVIRONMENT: ${{ needs.resolve-environment.outputs.environment }}
-          TARGET_IDENTITY: ${{ needs.resolve-environment.outputs.identity }}
-        run: |
-          set -euo pipefail
-          if [ -z "$MOTHERDUCK_TOKEN" ]; then
-            echo "Target preview expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
-            exit 1
-          fi
 
       - name: Cleanup preview blueprints from the branch manifest
         id: cleanup-branch-manifest

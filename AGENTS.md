@@ -8,6 +8,8 @@ Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.div
 
 ## Project Layout
 
+Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Keep root and packaged examples in sync.
+
 `motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the required `preview` and `prod` targets plus optional `staging`.
 
 Each deployable package has a `blueprint.yml`, source files, and a package README. Use typed roots when ownership follows the resource type:
@@ -55,6 +57,7 @@ Use these commands before opening PRs:
 make validate
 make mock-test
 make example-smoke
+make journey-smoke
 ```
 
 When a blueprint includes a Dive, also run:

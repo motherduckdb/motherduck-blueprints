@@ -26,7 +26,7 @@ Each `blueprint.yml` describes what to deploy; the source files beside it contai
 - [Flight](flights/wikipedia-pageviews-ingest/): Python that loads data and publishes a share.
 - [Dive](dives/wikipedia-pageviews/): the dashboard that reads that share.
 
-The repository also includes an [NCS field recovery example](projects/ncs-field-recovery/README.md). All included examples can deploy; remove unwanted example packages before your first deployment.
+Wikipedia is the only active starter. The [optional NCS example](docs/examples/ncs-field-recovery.md) stays outside deployment discovery until you enable it.
 
 For local checks, install Python 3.10+ and Git, then run:
 

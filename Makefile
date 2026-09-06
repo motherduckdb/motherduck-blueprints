@@ -84,6 +84,10 @@ mock-test: $(CLI) ## Run local mock deployment tests without contacting MotherDu
 	PYTHONDONTWRITEBYTECODE=1 PATH="$(CURDIR)/.venv/bin:$$PATH" ./scripts/mock-test.sh
 
 .PHONY: package-smoke
+.PHONY: journey-smoke
+journey-smoke: $(CLI) ## Follow the generated README in a fresh customer repository
+	.venv/bin/python -m pytest -q tests/customer_journey.py
+
 package-smoke: ## Build and smoke test the installable md-blueprints package
 	PYTHONDONTWRITEBYTECODE=1 ./scripts/package-smoke-test.sh
 

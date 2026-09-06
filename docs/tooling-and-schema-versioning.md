@@ -21,7 +21,7 @@ Upgrade local tooling by bumping `CLI_VERSION` in `Makefile` and every Blueprint
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.4.1
+- uses: motherduckdb/motherduck-blueprints@v0.4.2
   with:
     command: validate
 ```
@@ -119,7 +119,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.4.1
+make release-check TAG=v0.4.2
 make release-external-check
 make validate
 make mock-test
@@ -165,3 +165,9 @@ The release workflow generates `motherduckdb/blueprints-template` from the built
 | Customer setup docs | `README.md`, `docs/setup-your-repository.md`, `docs/github-setup.md` |
 | Field reference | `docs/blueprint-yml-reference.md` |
 | Change record | `CHANGELOG.md` |
+
+## Update tooling together
+
+Run `make upgrade` in a generated repository to update `CLI_VERSION` and every MotherDuck Blueprints action pin to the latest stable release. The command prints a diff for review and leaves source code, workflow settings, and other actions intact. Run `make validate` afterward and submit the diff through a pull request.
+
+Use `make upgrade VERSION=X.Y.Z` for a specific release. For a read-only preview, run `.venv/bin/md-blueprints upgrade --to X.Y.Z`; add `--write` to apply it. This updates version pins only, not manifests or workflow structure; check the linked release notes for any migration steps.

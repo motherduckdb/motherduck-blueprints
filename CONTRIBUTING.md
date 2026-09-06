@@ -13,9 +13,11 @@ Run the local checks:
 
 ```bash
 make setup
+.venv/bin/python -m pip install -e ".[dev]"
 make validate
 make mock-test
 make example-smoke
+make journey-smoke
 ```
 
 If your change touches a blueprint with a Dive, also run:

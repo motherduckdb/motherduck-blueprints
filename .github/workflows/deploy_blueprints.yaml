@@ -106,6 +106,11 @@ jobs:
           from pathlib import Path
 
           import yaml
+          from md_blueprints.diagnostics import report_error
+
+          def fail(message):
+              report_error(ValueError(message))
+              raise SystemExit(message)
 
           manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
           targets = manifest.get("targets", {})
@@ -123,10 +128,10 @@ jobs:
           elif event_name == "workflow_dispatch":
               target = os.environ.get("INPUT_TARGET", "prod") or "prod"
           else:
-              raise SystemExit(f"Unsupported deployment event: {event_name}")
+              fail(f"Unsupported deployment event: {event_name}")
 
           if target not in targets:
-              raise SystemExit(
+              fail(
                   f"Target {target!r} is not declared in motherduck.yml. "
                   "Add targets.staging before dispatching a staging deployment."
               )
@@ -168,11 +173,11 @@ jobs:
               else ""
           )
           if deployment_enabled and (not environment or not identity):
-              raise SystemExit(
+              fail(
                   f"Target {target!r} must declare environment and deployment.identity before live CI deployment"
               )
           if deployment_enabled and token_env_var != "MOTHERDUCK_TOKEN":
-              raise SystemExit(
+              fail(
                   f"Target {target!r} must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
                   "GitHub Environment workflow"
               )
@@ -280,19 +285,6 @@ jobs:
           fi
           echo "branch=${PREVIEW_BRANCH}" >> "$GITHUB_OUTPUT"
 
-      - name: Require preview environment token
-        shell: bash
-        env:
-          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
-          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
-        run: |
-          set -euo pipefail
-          if [ -z "$MOTHERDUCK_TOKEN" ]; then
-            echo "Target preview expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
-            exit 1
-          fi
-
       - name: Plan preview blueprints
         id: plan-preview
         uses: ./
@@ -363,20 +355,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Require target environment token
-        shell: bash
-        env:
-          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          TARGET: ${{ needs.compute_changes.outputs.target }}
-          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
-          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
-        run: |
-          set -euo pipefail
-          if [ -z "$MOTHERDUCK_TOKEN" ]; then
-            echo "Target $TARGET expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
-            exit 1
-          fi
-
       - name: Plan target blueprints
         id: plan-stable
         uses: ./
@@ -439,19 +417,6 @@ jobs:
             echo "Release tag $RELEASE_TAG does not point to a commit on $DEFAULT_BRANCH." >&2
             exit 1
           }
-
-      - name: Require production environment token
-        shell: bash
-        env:
-          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          TARGET_ENVIRONMENT: ${{ needs.compute_changes.outputs.target_environment }}
-          TARGET_IDENTITY: ${{ needs.compute_changes.outputs.target_identity }}
-        run: |
-          set -euo pipefail
-          if [ -z "$MOTHERDUCK_TOKEN" ]; then
-            echo "Target prod expects GitHub Environment '$TARGET_ENVIRONMENT' to contain a MOTHERDUCK_TOKEN secret for $TARGET_IDENTITY." >&2
-            exit 1
-          fi
 
       - name: Plan released production blueprints
         id: plan-production

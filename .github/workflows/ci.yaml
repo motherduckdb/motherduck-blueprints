@@ -59,6 +59,9 @@ jobs:
       - name: Create and destroy generated example
         run: make example-smoke
 
+      - name: Follow the customer README
+        run: python -m pytest -q tests/customer_journey.py
+
   package:
     name: Package CLI and Action
     if: github.repository == 'motherduckdb/motherduck-blueprints'
