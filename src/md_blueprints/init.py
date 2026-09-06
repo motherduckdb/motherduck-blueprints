@@ -11,6 +11,10 @@ from .schema import ValidationError
 VERSION_PLACEHOLDER = "__MD_BLUEPRINTS_VERSION__"
 ACTION_TAG_PLACEHOLDER = "__MD_BLUEPRINTS_ACTION_TAG__"
 
+# These are package-internal scaffolds or empty-root guidance, not customer assets.
+# Scaffolding creates optional roots when needed and reads templates from the installed CLI.
+EMPTY_ROOT_READMES = {f"{name}/README.md" for name in ("shared", "guides", "roles", "projects")}
+
 
 class _Traversable(Protocol):
     @property
@@ -56,9 +60,10 @@ def run_init(target: Path, *, force: bool = False) -> None:
     for resource, relative in iter_resources(template_root):
         if not relative or "/__pycache__/" in f"/{relative}/":
             continue
+        if relative.split("/", 1)[0] == "templates" or relative in EMPTY_ROOT_READMES:
+            continue
         destination = safe_destination(target, relative)
         if resource.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
             continue
 
         destination.parent.mkdir(parents=True, exist_ok=True)

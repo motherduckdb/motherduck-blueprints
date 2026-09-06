@@ -9,6 +9,7 @@ from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 from .schema import SchemaValidator, ValidationError, load_yaml, validate_required_cli_version
 from .template import Template
@@ -722,12 +723,18 @@ class Project:
 
     def _validate_uniqueness(self, target: str, rendered_blueprints: list[RenderedBlueprint]) -> None:
         checks: dict[str, list[object]] = {
-            "Flight name": [flight["name"] for bp in rendered_blueprints for flight in bp.flights.values()],
-            "Dive title": [dive["title"] for bp in rendered_blueprints for dive in bp.dives.values()],
+            "Flight name": [
+                flight.get("id", flight["name"]) for bp in rendered_blueprints for flight in bp.flights.values()
+                if flight.get("deploy") is not False
+            ],
+            "Dive title": [
+                dive.get("id", dive["title"]) for bp in rendered_blueprints for dive in bp.dives.values()
+                if dive.get("deploy") is not False
+            ],
             "Share name": [share["name"] for bp in rendered_blueprints for share in bp.shares.values()],
             "Role name": [role["name"] for bp in rendered_blueprints for role in bp.roles.values()],
             "Guide topic/title": [
-                f"{guide.get('topic', '')}\0{guide['title']}"
+                guide.get("id", f"{guide.get('topic', '')}\0{guide['title']}")
                 for bp in rendered_blueprints
                 for guide in bp.guides.values()
                 if guide.get("deploy")
@@ -775,6 +782,22 @@ class Project:
         branch: str | None,
         blueprint: RenderedBlueprint,
     ) -> None:
+        for group in (blueprint.flights, blueprint.dives, blueprint.guides):
+            for key, resource in group.items():
+                resource_id = resource.get("id")
+                if resource_id is not None:
+                    try:
+                        UUID(str(resource_id))
+                    except ValueError as exc:
+                        raise ValidationError(f"{blueprint.name}.{key}.id must be a UUID") from exc
+                    if target == "preview":
+                        raise ValidationError(f"preview resource {blueprint.name}.{key} must not use an adopted id")
+                if "deploy" in resource and not isinstance(resource["deploy"], bool):
+                    raise ValidationError(f"{blueprint.name}.{key}.deploy must be boolean")
+                if "owner" in resource and (not isinstance(resource["owner"], str) or not resource["owner"]):
+                    raise ValidationError(f"{blueprint.name}.{key}.owner must be a nonempty string")
+                if resource.get("owner") and not resource.get("id"):
+                    raise ValidationError(f"{blueprint.name}.{key}.owner requires an explicit id")
         rendered_branch_slug = branch_slug(branch or "")
         target_settings = self.manifest.get("targets", {})
         target_policies = nested_dict(target_settings, target, "policies") or {}
@@ -803,6 +826,8 @@ class Project:
                     )
 
         for key, flight in blueprint.flights.items():
+            if "manageSchedule" in flight and not isinstance(flight["manageSchedule"], bool):
+                raise ValidationError(f"flights.{key}.manageSchedule must be boolean")
             for required_field in ["name", "sourcePath", "requirementsPath"]:
                 require_nonempty(flight.get(required_field), f"flights.{key}.{required_field}")
             require_file(Path(str(flight["sourcePath"])))
@@ -848,8 +873,8 @@ class Project:
                 raise ValidationError(
                     f"preview Dive {blueprint.name}.{key} must include branch name or slug {rendered_branch_slug}"
                 )
-            if not isinstance(required_resources, list) or not required_resources:
-                raise ValidationError(f"dives.{key}.requiredResources must not be empty")
+            if not isinstance(required_resources, list):
+                raise ValidationError(f"dives.{key}.requiredResources must be an array")
 
             aliases: set[str] = set()
             for index, resource in enumerate(required_resources):

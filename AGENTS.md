@@ -8,6 +8,8 @@ Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.div
 
 ## Project Layout
 
+Generated customer repositories receive their own operating guide from `src/md_blueprints/template_repo/AGENTS.md`. Keep it aligned with the deploy engine. Internal scaffold templates and empty-root READMEs are packaged for tooling but not emitted by `init`. Existing account resources follow `docs/adopt-existing-resources.md`; exporting is not automatic adoption, and CLI metadata IDs do not bind Flight/Dive manifests.
+
 Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Keep root and packaged examples in sync.
 
 `motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the required `preview` and `prod` targets plus optional `staging`.
@@ -29,6 +31,8 @@ Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `m
 When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, package READMEs, `.github/pull_request_template.md`, and this guide for drift.
 
 ## Resources
+
+`md-blueprints import` performs read-only discovery of Flights, Dives, and Guides and writes only with `--write`. Imported resources remain disabled, use stable-target IDs and owner guards, preserve existing schedules with `manageSchedule: false`, and raise the project's minimum CLI version. Bound IDs must never fall back to name-based creation. Maintain the import and adoption contracts in `docs/adopt-existing-resources.md`.
 
 Declare resources in `blueprint.yml`:
 
@@ -78,6 +82,8 @@ make render-preview <blueprint-name>
 CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/staging/prod deployment, and preview cleanup. `tools/md_blueprints` remains as a compatibility wrapper for existing local commands.
 
 The GitHub Action defaults to validation. Prefer named `target`, `branch`, `blueprints`, and `root` inputs in workflows; reserve `args` for advanced flags. Keep customer READMEs focused on the first deployment and put detailed options in `docs/`.
+
+Deployment always runs preflight before writes and verifies live identity/dependency/status results afterward by default. `verify` is read-only and checks disabled imported bindings too. Keep tests proving that invalid IDs/owners block all writes and that postcheck failures fail CD. Postcheck opt-out must never bypass preflight.
 
 ## Changelog
 

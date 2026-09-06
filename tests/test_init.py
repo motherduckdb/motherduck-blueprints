@@ -9,6 +9,7 @@ import pytest
 from md_blueprints import __version__
 from md_blueprints.init import action_tag, run_init
 from md_blueprints.project import Project
+from md_blueprints.scaffold import run_new
 from md_blueprints.schema import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,14 +18,9 @@ MIRRORED_TEMPLATE_PATHS = [
     "motherduck.yml",
     "flights",
     "dives",
-    "guides",
-    "roles",
-    "projects",
     "examples",
-    "shared",
     "schemas/v1",
     ".dive-preview",
-    "templates/blueprint",
     "docs",
 ]
 
@@ -36,6 +32,32 @@ def test_optional_example_requires_explicit_activation(tmp_path: Path) -> None:
     project = Project(tmp_path)
     assert "ncs-field-recovery" in project.all_blueprint_names()
     project.validate()
+
+
+def test_slim_template_creates_optional_roots_on_demand(tmp_path: Path) -> None:
+    run_init(tmp_path)
+    for kind in ("guide", "role", "project"):
+        run_new(tmp_path, kind, f"new-{kind}")
+    assert (tmp_path / "guides/new-guide/guide.md").is_file()
+    assert (tmp_path / "roles/new-role/blueprint.yml").is_file()
+    assert (tmp_path / "projects/new-project/src/flight.py").is_file()
+    assert not (tmp_path / "templates").exists()
+    Project(tmp_path).validate()
+
+
+def test_internal_scaffolds_remain_in_sync() -> None:
+    for path in (REPO_ROOT / "templates/blueprint").iterdir():
+        if path.is_file():
+            packaged = REPO_ROOT / "src/md_blueprints/template_repo/templates/blueprint" / path.name
+            assert packaged.read_bytes() == path.read_bytes()
+
+
+def test_force_init_does_not_delete_existing_optional_roots(tmp_path: Path) -> None:
+    (tmp_path / "guides/custom").mkdir(parents=True)
+    customer_file = tmp_path / "guides/custom/notes.md"
+    customer_file.write_text("Keep existing customer work.\n")
+    run_init(tmp_path, force=True)
+    assert customer_file.read_text() == "Keep existing customer work.\n"
 
 
 def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> None:
@@ -51,9 +73,9 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert (target / ".github/workflows/cleanup_preview_blueprints.yaml").is_file()
     assert (target / ".github/dependabot.yml").is_file()
     assert (target / ".dive-preview/.env.example").is_file()
-    assert (target / "guides/README.md").is_file()
-    assert (target / "roles/README.md").is_file()
-    assert (target / "shared/README.md").is_file()
+    assert (target / "AGENTS.md").is_file()
+    for unused in ["guides", "roles", "projects", "shared", "templates"]:
+        assert not (target / unused).exists()
     assert not (target / "src").exists()
     assert not (target / "pyproject.toml").exists()
     assert not (target / "CHANGELOG.md").exists()

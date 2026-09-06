@@ -2,6 +2,8 @@
 
 Start with the [template repository](https://github.com/motherduckdb/blueprints-template/generate). Choose a private repository. It includes the workflows and public-data examples, so you can try deployment without installing anything locally.
 
+If you already have resources in MotherDuck, follow [adopt existing resources](adopt-existing-resources.md) first. The walkthrough below deploys a new example; it is not an import procedure.
+
 ## 1. Connect MotherDuck
 
 Create a MotherDuck service account with a read/write token and permission to create the example resources. In your new GitHub repository, open **Settings → Environments**, create `motherduck-production`, and add the token as an environment secret named `MOTHERDUCK_TOKEN`.
@@ -116,6 +118,6 @@ Promotion reconciles the tagged code under the production service account. It do
 
 ## Keep the tooling current
 
-Run `make upgrade` to update the CLI and all action pins together and show the diff. It does not commit, push, or overwrite workflow settings. Use `make upgrade VERSION=0.4.2` to select a release, or `.venv/bin/md-blueprints upgrade` for a dry run. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
+Run `make upgrade` to update the CLI and all action pins together and show the diff. It does not commit, push, or overwrite workflow settings. Use `make upgrade VERSION=0.4.3` to select a release, or `.venv/bin/md-blueprints upgrade` for a dry run. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
 
 For live local commands, run `make install-deploy` first. For a custom workflow, see [GitHub Action inputs](github-action.md).

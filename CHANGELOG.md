@@ -6,6 +6,17 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Verify live identities, declared dependencies, and Dive statuses automatically after deployment; fail CD on mismatches without claiming rollback.
+- Add read-only `verify` for pre-deployment checks, including disabled imported bindings, and the action's `verify-after-deploy` option. Mandatory preflight cannot be bypassed.
+- Exercise missing/changed owners and IDs before writes, post-deploy drift, and action verification controls with behavioral tests.
+
+- Add a review-first importer for all visible or explicitly selected Flights, Dives, and Guides, with pagination, version-consistent snapshots, UUID/owner-bound manifests, disabled deployment, and rollback on local write failures.
+- Support explicit Flight/Dive IDs with no name-based creation fallback, owner checks, inert imported resources, and schedule-preserving Flight updates.
+- Guard imported repositories with a minimum CLI version so older tooling cannot ignore identity bindings.
+
+- Slim generated repositories by keeping internal scaffolds and empty-root README placeholders out of customer checkouts; optional resource roots are created on demand.
+- Include a customer AGENTS.md and an evidence-backed adoption guide for existing Flights, Dives, and Guides, with CLI/MCP export paths, identity mapping, and explicit deployment limits.
+
 ### Usability
 
 - Keep Wikipedia as the only active starter; move NCS to optional examples that customers can enable explicitly.

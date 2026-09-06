@@ -9,6 +9,8 @@
 
 ## Deployment notes
 
+- [ ] For adopted resources, planned IDs and settings match the exported baseline; no unintentional creates or ownership changes.
+
 - [ ] New or renamed assets are declared in a typed-root or `projects/<name>/blueprint.yml` package.
 - [ ] Dives list required resources in `blueprint.yml`.
 - [ ] Dive statuses are intentional: previews are `draft`, and `endorsed` production changes have an organization-admin reviewer.
