@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 from pathlib import Path
 
 import pytest
@@ -19,12 +20,22 @@ MIRRORED_TEMPLATE_PATHS = [
     "guides",
     "roles",
     "projects",
+    "examples",
     "shared",
     "schemas/v1",
     ".dive-preview",
     "templates/blueprint",
     "docs",
 ]
+
+
+def test_optional_example_requires_explicit_activation(tmp_path: Path) -> None:
+    run_init(tmp_path)
+    assert Project(tmp_path).all_blueprint_names() == ["wikipedia-pageviews-ingest", "wikipedia-pageviews"]
+    shutil.copytree(tmp_path / "examples/ncs-field-recovery", tmp_path / "projects/ncs-field-recovery")
+    project = Project(tmp_path)
+    assert "ncs-field-recovery" in project.all_blueprint_names()
+    project.validate()
 
 
 def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> None:

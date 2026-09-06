@@ -6,6 +6,13 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+### Usability
+
+- Keep Wikipedia as the only active starter; move NCS to optional examples that customers can enable explicitly.
+- Report setup failures with next steps in the Actions summary, including token, environment, permission, and upstream-data problems.
+- Add an executable customer journey that follows the generated README and checks preview and production selection.
+- Add `make upgrade` and `md-blueprints upgrade` to prepare matching CLI and action pins with a reviewable diff.
+
 ## v0.4.1 - 2026-09-05
 
 ### Fixed

@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.4.1
+      - uses: motherduckdb/motherduck-blueprints@v0.4.2
 ```
 
 The action installs its own Python dependencies. Validation is the default command and needs no token.
@@ -41,7 +41,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.4.1
+      - uses: motherduckdb/motherduck-blueprints@v0.4.2
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

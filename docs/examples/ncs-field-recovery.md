@@ -2,7 +2,18 @@
 
 The NCS Field Recovery Explorer is a complete project package that loads public Norwegian Continental Shelf data, publishes a share, and deploys an interactive Dive. It demonstrates when related resources belong together below `projects/` instead of in independently deployed typed packages.
 
-The implementation lives in [`projects/ncs-field-recovery/`](../../projects/ncs-field-recovery/).
+The optional implementation lives in [`examples/ncs-field-recovery/`](../../examples/ncs-field-recovery/). It is not discovered or deployed by default.
+
+## Enable the example
+
+From your repository root, copy it into the active projects directory, then validate:
+
+```bash
+cp -R examples/ncs-field-recovery projects/ncs-field-recovery
+make validate
+```
+
+If `projects/ncs-field-recovery` already exists, use that copy instead of overwriting it.
 
 ## What the project deploys
 
@@ -79,4 +90,4 @@ Then carry over the patterns that fit your project:
 - Keep source-specific metric definitions and limitations in the package README.
 - Use an output and input instead of a project package when the producer and consumer need independent owners or release schedules.
 
-See the [project README](../../projects/ncs-field-recovery/README.md) for source provenance, metric definitions, tables, and the transformation-only smoke path.
+See the [project README](../../examples/ncs-field-recovery/README.md) for source provenance, metric definitions, tables, and the transformation-only smoke path.

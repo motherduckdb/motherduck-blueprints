@@ -28,7 +28,7 @@ Each `blueprint.yml` describes what to deploy; the source files beside it contai
 - [Flight](flights/wikipedia-pageviews-ingest/): Python that loads data and publishes a share.
 - [Dive](dives/wikipedia-pageviews/): the dashboard that reads that share.
 
-The repository also includes an [NCS field recovery example](projects/ncs-field-recovery/README.md). All included examples can deploy; remove unwanted example packages before your first deployment.
+Wikipedia is the only active starter. The [optional NCS example](docs/examples/ncs-field-recovery.md) stays outside deployment discovery until you enable it.
 
 For local checks, install Python 3.10+ and Git, then run:
 
@@ -67,7 +67,7 @@ Once your repository has a `motherduck.yml` manifest and blueprints, this step v
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: motherduckdb/motherduck-blueprints@v0.4.1
+- uses: motherduckdb/motherduck-blueprints@v0.4.2
 ```
 
 Validation is the default. Deployment uses `command: deploy` and named inputs such as `target: prod`. See the [action guide](docs/github-action.md) for a complete workflow.

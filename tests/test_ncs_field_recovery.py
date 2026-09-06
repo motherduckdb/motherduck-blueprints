@@ -13,7 +13,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FLIGHT_PATH = REPO_ROOT / "projects/ncs-field-recovery/src/flight.py"
+FLIGHT_PATH = REPO_ROOT / "examples/ncs-field-recovery/src/flight.py"
 
 
 def load_flight_module() -> ModuleType:

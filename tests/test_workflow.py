@@ -35,12 +35,15 @@ def test_environment_migration_validates_without_deploying_untrusted_configurati
     monkeypatch.setenv("EVENT_NAME", event)
     monkeypatch.setenv("BASE_REF", "main")
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    summary = tmp_path / "summary"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: yaml.safe_dump(legacy))
 
     if event == "push":
         with pytest.raises(SystemExit, match="must declare environment"):
             exec(compile(source, "deploy_blueprints.yaml", "exec"), {})
         assert not output.exists()
+        assert "Next: check targets in motherduck.yml" in summary.read_text()
     else:
         exec(compile(source, "deploy_blueprints.yaml", "exec"), {})
         values = dict(line.split("=", 1) for line in output.read_text().splitlines())

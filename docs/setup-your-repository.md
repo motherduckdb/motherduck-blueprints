@@ -20,7 +20,7 @@ Change an example file for this first PR: an empty commit or a top-level README-
 
 Merge the PR into `main`. The workflow deploys the changed packages to production and shows its plan in the Actions job summary. Preview resources are cleaned up when the PR closes.
 
-The repository also includes the NCS example under `projects/ncs-field-recovery/`. A manual deployment with no package selection deploys all included examples. Remove unwanted packages before deploying them. Removing source files does not delete already-deployed production resources.
+A manual deployment with no package selection deploys the Wikipedia pipeline and dashboard, plus any projects you add. The optional NCS example under `examples/` is not deployed. See [enable NCS](examples/ncs-field-recovery.md). Removing source files does not delete already-deployed production resources.
 
 ## Work locally (optional)
 
@@ -116,6 +116,6 @@ Promotion reconciles the tagged code under the production service account. It do
 
 ## Keep the tooling current
 
-Update `CLI_VERSION` in the generated `Makefile` and the action tags in `.github/workflows/` to the same release. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
+Run `make upgrade` to update the CLI and all action pins together and show the diff. It does not commit, push, or overwrite workflow settings. Use `make upgrade VERSION=0.4.2` to select a release, or `.venv/bin/md-blueprints upgrade` for a dry run. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
 
 For live local commands, run `make install-deploy` first. For a custom workflow, see [GitHub Action inputs](github-action.md).

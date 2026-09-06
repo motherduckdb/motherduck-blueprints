@@ -7,12 +7,14 @@ import sys
 from pathlib import Path
 
 from .deploy import Deployer, PlanFormatter
+from .diagnostics import report_error
 from .init import run_init
 from .maintenance import run_check_updates, run_doctor
 from .migrations import run_migrate
 from .project import CommandError, Project
 from .scaffold import run_new
 from .schema import ValidationError
+from .upgrade import run_upgrade
 
 
 def parse_blueprints(value: str | None) -> list[str] | None:
@@ -53,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="md-blueprints",
         usage=(
             "md-blueprints <init|new|validate|render|dive-source|changed|plan|deploy|cleanup|doctor|"
-            "check-updates|migrate> [options]"
+            "check-updates|upgrade|migrate> [options]"
         ),
     )
     parser.add_argument("command", nargs="?")
@@ -100,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
             run_check_updates(offline=options.offline, output_format=options.format)
         elif command == "migrate":
             run_migrate(root, from_version=options.from_version, to_version=options.to_version, write=options.write)
+        elif command == "upgrade":
+            run_upgrade(root, to_version=options.to_version, write=options.write and not options.dry_run)
         else:
             project = Project(root)
             if command == "validate":
@@ -166,5 +170,5 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
         return 0
     except (ValidationError, CommandError, KeyError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        report_error(exc)
         return 1
