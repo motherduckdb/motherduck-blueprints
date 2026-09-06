@@ -5,6 +5,7 @@ import re
 from importlib import resources
 from pathlib import Path
 
+from .project import Project, require_within
 from .schema import ValidationError
 
 
@@ -65,6 +66,7 @@ def run_new(
         raise ValidationError(f"motherduck.yml not found in {root}")
 
     destination = root / KINDS[kind] / name
+    require_within(destination, root, "New blueprint destination")
     if destination.exists():
         raise ValidationError(f"Blueprint already exists: {destination.relative_to(root)}")
 
@@ -76,8 +78,6 @@ def run_new(
         raise ValidationError("--alias must not be empty")
     if share_url is not None:
         share_url = share_url.strip()
-
-    from .project import Project
 
     if name in Project(root).all_blueprint_names():
         raise ValidationError(f"Blueprint name already exists: {name}")
@@ -155,6 +155,8 @@ resources:
       cleanup: true
       dropDatabase: false
       targets:
+        staging:
+          name: ${{var.share}}_staging
         preview:
           name: ${{var.share}}${{var.preview_suffix}}
           database: ${{var.database}}${{var.preview_suffix}}
@@ -251,8 +253,6 @@ def _required_database(
 
     assert input_ref is not None
     producer, output = _parse_input_ref(input_ref)
-
-    from .project import Project
 
     project = Project(root)
     if producer not in project.all_blueprint_names():

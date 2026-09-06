@@ -21,7 +21,7 @@ Upgrade local tooling by bumping `CLI_VERSION` in `Makefile` and every Blueprint
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.4.1
+- uses: motherduckdb/motherduck-blueprints@v0.4.3
   with:
     command: validate
 ```
@@ -42,6 +42,8 @@ make preview-smoke <blueprint-name>
 ```
 
 The scheduled `Blueprints Doctor` workflow runs `doctor --check-updates` and opens or updates one tracking issue when a release is stale, action and CLI pins drift, or the project schema needs migration.
+
+Doctor also reports deployment-model drift. Repository-level `MOTHERDUCK_TOKEN` workflows are deprecated: generated workflows now select the GitHub Environment declared by each target and read that environment's `MOTHERDUCK_TOKEN`. Existing pre-1.0 workflows remain executable during the compatibility window, but the legacy secret model is scheduled for removal at the next major release.
 
 ## Schema Source of Truth
 
@@ -91,7 +93,7 @@ The internal migration contract is:
 MIGRATIONS: dict[tuple[int, int], Callable[[dict[str, object]], dict[str, object]]] = {}
 ```
 
-Each migration is a pure document transform. The command loads `motherduck.yml` and included `blueprint.yml` files, applies the migration path, emits a unified diff, optionally writes files, and revalidates migrated documents against the target schema.
+Each migration is a pure document transform. The command loads `motherduck.yml` and included `blueprint.yml` files, applies the migration path, validates every migrated document against the target schema, and emits a unified diff. With `--write`, files are written only after every document passes validation. Includes stay within the repository, overlapping matches are deduplicated, and every document must declare an integer `schemaVersion`. File writes are sequential; an operating-system write failure can still leave a partial migration.
 
 For `schemaVersion: 1`, `md-blueprints migrate --to latest` prints that no migration is needed.
 
@@ -117,7 +119,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.4.1
+make release-check TAG=v0.4.3
 make release-external-check
 make validate
 make mock-test
@@ -139,7 +141,7 @@ That command writes the customer file set and stamps the same exact release into
 Before the first stable customer handoff, split the generated customer template from tooling:
 
 - Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
-- Template repo: `motherduck.yml`, typed `flights/`, `dives/`, `guides/`, and `roles/` roots, `projects/`, `shared/`, customer docs, thin Makefile, customer workflows, Dependabot, CODEOWNERS, and `.gitignore`.
+- Template repo: `motherduck.yml`, the active Flight/Dive starter, optional examples, `AGENTS.md`, customer docs, thin Makefile, customer workflows, schemas, preview support, Dependabot, CODEOWNERS, and `.gitignore`. Optional roots are created by scaffolding; internal templates and empty-root READMEs stay in the tooling package.
 
 The release workflow generates `motherduckdb/blueprints-template` from the built wheel's `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout; generated customer workflows use the stamped immutable release tag.
 
@@ -163,3 +165,9 @@ The release workflow generates `motherduckdb/blueprints-template` from the built
 | Customer setup docs | `README.md`, `docs/setup-your-repository.md`, `docs/github-setup.md` |
 | Field reference | `docs/blueprint-yml-reference.md` |
 | Change record | `CHANGELOG.md` |
+
+## Update tooling together
+
+Run `make upgrade` in a generated repository to update `CLI_VERSION` and every MotherDuck Blueprints action pin to the latest stable release. The command prints a diff for review and leaves source code, workflow settings, and other actions intact. Run `make validate` afterward and submit the diff through a pull request.
+
+Use `make upgrade VERSION=X.Y.Z` for a specific release. For a read-only preview, run `.venv/bin/md-blueprints upgrade --to X.Y.Z`; add `--write` to apply it. This updates version pins only, not manifests or workflow structure; check the linked release notes for any migration steps.

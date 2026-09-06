@@ -2,9 +2,11 @@
 
 ARG := $(word 2,$(MAKECMDGOALS))
 CLI := .venv/bin/md-blueprints
+PYTHON ?= python3
 
-$(CLI): pyproject.toml $(shell find src/md_blueprints -type f 2>/dev/null)
-	python3 -m venv .venv
+# Editable installs read source changes directly; only package metadata needs reinstalling.
+$(CLI): pyproject.toml
+	@test -x .venv/bin/python || $(PYTHON) -m venv .venv
 	.venv/bin/python -m pip install -e .
 
 # -- Local development --------------------------------------------------------
@@ -18,20 +20,20 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 
 .PHONY: install-deploy
 install-deploy: ## Install CLI with live MotherDuck deploy dependencies
-	python3 -m venv .venv
+	@test -x .venv/bin/python || $(PYTHON) -m venv .venv
 	.venv/bin/python -m pip install -e ".[deploy]"
 
 .PHONY: preview
-preview: ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)
+preview: $(CLI) ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)
 	@test -n "$(ARG)" || { echo "Usage: make preview <blueprint-name>"; exit 1; }
-	@SOURCE="$$( $(CLI) dive-source --blueprints "$(ARG)" $(if $(DIVE),--dive "$(DIVE)") )"; \
+	@SOURCE="$$( $(CLI) dive-source --blueprints "$(ARG)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
 	cd .dive-preview && npm run dev
 
 .PHONY: preview-smoke
-preview-smoke: ## Build a blueprint Dive preview without starting a dev server
+preview-smoke: $(CLI) ## Build a blueprint Dive preview without starting a dev server
 	@test -n "$(ARG)" || { echo "Usage: make preview-smoke <blueprint-name>"; exit 1; }
-	@SOURCE="$$( $(CLI) dive-source --blueprints "$(ARG)" $(if $(DIVE),--dive "$(DIVE)") )"; \
+	@SOURCE="$$( $(CLI) dive-source --blueprints "$(ARG)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
 	cd .dive-preview && { test -x node_modules/.bin/vite || npm install; }
 	cd .dive-preview && npm run build
@@ -82,6 +84,10 @@ mock-test: $(CLI) ## Run local mock deployment tests without contacting MotherDu
 	PYTHONDONTWRITEBYTECODE=1 PATH="$(CURDIR)/.venv/bin:$$PATH" ./scripts/mock-test.sh
 
 .PHONY: package-smoke
+.PHONY: journey-smoke
+journey-smoke: $(CLI) ## Follow the generated README in a fresh customer repository
+	.venv/bin/python -m pytest -q tests/customer_journey.py
+
 package-smoke: ## Build and smoke test the installable md-blueprints package
 	PYTHONDONTWRITEBYTECODE=1 ./scripts/package-smoke-test.sh
 

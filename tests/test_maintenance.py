@@ -66,3 +66,81 @@ def test_doctor_rejects_action_and_cli_pin_drift(
 
     with pytest.raises(ValidationError, match="action and CLI pins are not aligned"):
         run_doctor(tmp_path, check_updates=True)
+
+
+def test_doctor_warns_about_legacy_repository_secret_workflow(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    workflow = tmp_path / ".github/workflows/deploy_blueprints.yaml"
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8").replace("# md-blueprints-environment-model: v1\n", ""),
+        encoding="utf-8",
+    )
+
+    run_doctor(tmp_path)
+
+    assert "repository-level MOTHERDUCK_TOKEN workflow is deprecated" in capsys.readouterr().out
+
+
+def test_doctor_warns_when_target_environment_metadata_is_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_doctor(FIXTURES / "medium")
+
+    output = capsys.readouterr().out
+    assert "target 'preview' does not declare a GitHub Environment" in output
+    assert "target 'prod' does not document deployment.identity" in output
+
+
+def test_doctor_warns_about_noncanonical_environment_secret_name(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_doctor(FIXTURES / "simple")
+
+    assert "generated GitHub Environment workflows require the canonical secret name" in capsys.readouterr().out
+
+
+def test_doctor_warns_about_staging_workflow_routing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    manifest = tmp_path / "motherduck.yml"
+    manifest_text = manifest.read_text(encoding="utf-8")
+    manifest_text = manifest_text.replace(
+        "environment: motherduck-production",
+        "environment: motherduck-staging",
+        1,
+    ).replace(
+        "identity: GitHub Actions production service account",
+        "identity: GitHub Actions staging service account",
+        1,
+    )
+    manifest_text = manifest_text.replace(
+        "  prod:\n",
+        """  staging:
+    mode: production
+    environment: motherduck-staging
+    deployment:
+      tokenEnvVar: MOTHERDUCK_TOKEN
+      identity: GitHub Actions staging service account
+
+  prod:
+""",
+    )
+    manifest.write_text(manifest_text, encoding="utf-8")
+    workflow = tmp_path / ".github/workflows/deploy_blueprints.yaml"
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8")
+        .replace('target = "staging" if staging_enabled else "prod"', 'target = "prod"')
+        .replace("github.event_name == 'release'", "github.event_name == 'disabled-release'"),
+        encoding="utf-8",
+    )
+
+    run_doctor(tmp_path)
+
+    output = capsys.readouterr().out
+    assert "default-branch workflow does not select staging" in output
+    assert "production is not deployed from a published GitHub Release" in output

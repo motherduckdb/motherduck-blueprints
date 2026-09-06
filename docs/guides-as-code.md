@@ -139,7 +139,7 @@ Push the branch and open a pull request. The generated workflow:
 4. Adds the Guide ID and deployment plan to the pull request comment.
 5. Deletes the preview Guide when the pull request closes or the branch is deleted.
 
-After review, merge the pull request. The production workflow publishes stable Guide content, references, metadata, and access through the protected `motherduck-production` environment.
+After review, merge the pull request. Without staging, the merge publishes stable Guide content through `motherduck-production`. With `targets.staging`, the merge publishes to staging; create a non-prerelease GitHub Release when the exact tagged content is ready to deploy through `motherduck-production`.
 
 ## Troubleshooting
 

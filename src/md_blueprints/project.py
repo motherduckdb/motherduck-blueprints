@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import ast
+import heapq
 import os
 import re
 import subprocess
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 from .schema import SchemaValidator, ValidationError, load_yaml, validate_required_cli_version
 from .template import Template
@@ -20,6 +22,20 @@ ROLE_MODES = {"additive", "authoritative"}
 
 class CommandError(Exception):
     pass
+
+
+def included_manifest_paths(root: Path, include: object) -> list[Path]:
+    if not isinstance(include, list):
+        raise ValidationError("$.include must be array")
+    paths: set[Path] = set()
+    for pattern in include:
+        if not isinstance(pattern, str):
+            raise ValidationError("Include patterns must be strings")
+        if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+            raise ValidationError(f"Include pattern must stay within the project root: {pattern}")
+        for path in root.glob(pattern):
+            paths.add(require_within(path, root, f"Included blueprint {path}"))
+    return sorted(paths)
 
 
 def branch_slug(branch: str) -> str:
@@ -121,11 +137,12 @@ class Project:
         self.schema.validate(self.manifest, "motherduck-root.schema.json")
         self.blueprints = self._load_blueprints()
         self._blueprints_by_name = {blueprint.name: blueprint for blueprint in self.blueprints}
+        self._validate_deployment_topology()
         self.dependencies, self.consumers = self._validate_contracts()
         self._topological_names = self._topological_sort()
 
     def validate(self, targets: list[str] | None = None, *, branch: str | None = None) -> bool:
-        target_names = targets or ["preview", "prod"]
+        target_names = targets or self.target_names()
         if not self.blueprints:
             raise ValidationError("No blueprints found from include globs")
 
@@ -138,7 +155,15 @@ class Project:
                 self._validate_rendered_blueprint(target, rendered_branch, blueprint)
             self._validate_guide_reference_targets(rendered)
             if target == "preview":
-                self._validate_preview_separation(rendered, self.render_all("prod"))
+                stable_target = self.preview_stable_target()
+                self._validate_preview_separation(
+                    rendered,
+                    self.render_all(stable_target),
+                    stable_target=stable_target,
+                )
+
+        if self.has_target("staging") and ({"staging", "prod"} & set(target_names)):
+            self._validate_staging_share_separation()
         return True
 
     def render_all(
@@ -162,6 +187,41 @@ class Project:
 
     def all_blueprint_names(self) -> list[str]:
         return list(self._topological_names)
+
+    def target_names(self) -> list[str]:
+        targets = self.manifest.get("targets")
+        if not isinstance(targets, dict):
+            return []
+        return [str(name) for name in targets]
+
+    def has_target(self, target: str) -> bool:
+        return target in self.target_names()
+
+    def preview_stable_target(self) -> str:
+        return "staging" if self.has_target("staging") else "prod"
+
+    def deployment_warnings(self) -> list[str]:
+        warnings: list[str] = []
+        for target in self.target_names():
+            config = self.target_config(target)
+            if not str(config.get("environment", "")).strip():
+                warnings.append(
+                    f"target {target!r} does not declare a GitHub Environment; repository-level deployment "
+                    "secrets are deprecated"
+                )
+            deployment = config.get("deployment")
+            identity = deployment.get("identity") if isinstance(deployment, dict) else None
+            if not str(identity or "").strip():
+                warnings.append(f"target {target!r} does not document deployment.identity")
+            if (
+                isinstance(deployment, dict)
+                and str(deployment.get("tokenEnvVar", "MOTHERDUCK_TOKEN")) != "MOTHERDUCK_TOKEN"
+            ):
+                warnings.append(
+                    f"target {target!r} uses deployment.tokenEnvVar other than MOTHERDUCK_TOKEN; generated "
+                    "GitHub Environment workflows require the canonical secret name"
+                )
+        return warnings
 
     def deployment_blueprint_names(self, target: str, names: list[str] | None) -> list[str]:
         """Expand an explicit deployment selection according to target graph semantics."""
@@ -229,19 +289,30 @@ class Project:
             return cast(dict[str, object], target_config)
         raise ValidationError(f"Unknown target {target}")
 
-    def _load_blueprints(self) -> list[Blueprint]:
-        include = self.manifest.get("include")
-        if not isinstance(include, list):
-            raise ValidationError("$.include must be array")
+    def _validate_deployment_topology(self) -> None:
+        if not self.has_target("preview") or not self.has_target("prod"):
+            return
+        preview_environment = str(self.target_config("preview").get("environment", "")).strip()
+        production_environment = str(self.target_config("prod").get("environment", "")).strip()
+        if self.has_target("staging"):
+            staging_environment = str(self.target_config("staging").get("environment", "")).strip()
+            if preview_environment and staging_environment and preview_environment != staging_environment:
+                raise ValidationError(
+                    "targets.preview.environment must match targets.staging.environment so previews use the "
+                    "staging service account"
+                )
+            if staging_environment and production_environment and staging_environment == production_environment:
+                raise ValidationError(
+                    "targets.staging.environment must differ from targets.prod.environment so production "
+                    "credentials are not exposed to staging jobs"
+                )
+        elif preview_environment and production_environment and preview_environment != production_environment:
+            raise ValidationError(
+                "without targets.staging, targets.preview.environment must match targets.prod.environment"
+            )
 
-        paths: set[Path] = set()
-        for pattern in include:
-            rendered_pattern = str(pattern)
-            pattern_path = Path(rendered_pattern)
-            if pattern_path.is_absolute() or ".." in pattern_path.parts:
-                raise ValidationError(f"Include pattern must stay within the project root: {rendered_pattern}")
-            for path in self.root.glob(rendered_pattern):
-                paths.add(require_within(path, self.root, f"Included blueprint {path}"))
+    def _load_blueprints(self) -> list[Blueprint]:
+        paths = included_manifest_paths(self.root, self.manifest.get("include"))
 
         blueprints: list[Blueprint] = []
         blueprint_paths: dict[str, Path] = {}
@@ -391,13 +462,12 @@ class Project:
         ready = sorted(name for name, count in indegree.items() if count == 0)
         ordered: list[str] = []
         while ready:
-            name = ready.pop(0)
+            name = heapq.heappop(ready)
             ordered.append(name)
             for consumer in sorted(self.consumers[name]):
                 indegree[consumer] -= 1
                 if indegree[consumer] == 0:
-                    ready.append(consumer)
-                    ready.sort()
+                    heapq.heappush(ready, consumer)
         if len(ordered) != len(self.blueprints):
             cycle = self._find_dependency_cycle()
             raise ValidationError(f"Blueprint dependency cycle: {' -> '.join(cycle)}")
@@ -497,7 +567,7 @@ class Project:
             role.setdefault("includedRoles", [])
             role.setdefault("members", [])
             role.setdefault("mode", "additive")
-            role["deploy"] = role.get("deploy", target == "prod")
+            role["deploy"] = role.get("deploy", target != "preview")
             if target == "preview":
                 role["deploy"] = False
         context_resources = context["resources"]
@@ -653,19 +723,25 @@ class Project:
 
     def _validate_uniqueness(self, target: str, rendered_blueprints: list[RenderedBlueprint]) -> None:
         checks: dict[str, list[object]] = {
-            "Flight name": [flight["name"] for bp in rendered_blueprints for flight in bp.flights.values()],
-            "Dive title": [dive["title"] for bp in rendered_blueprints for dive in bp.dives.values()],
+            "Flight name": [
+                flight.get("id", flight["name"]) for bp in rendered_blueprints for flight in bp.flights.values()
+                if flight.get("deploy") is not False
+            ],
+            "Dive title": [
+                dive.get("id", dive["title"]) for bp in rendered_blueprints for dive in bp.dives.values()
+                if dive.get("deploy") is not False
+            ],
             "Share name": [share["name"] for bp in rendered_blueprints for share in bp.shares.values()],
             "Role name": [role["name"] for bp in rendered_blueprints for role in bp.roles.values()],
             "Guide topic/title": [
-                f"{guide.get('topic', '')}\0{guide['title']}"
+                guide.get("id", f"{guide.get('topic', '')}\0{guide['title']}")
                 for bp in rendered_blueprints
                 for guide in bp.guides.values()
                 if guide.get("deploy")
             ],
         }
         for label, values in checks.items():
-            duplicates = sorted({str(value) for value in values if values.count(value) > 1})
+            duplicates = sorted(value for value, count in Counter(map(str, values)).items() if count > 1)
             if duplicates:
                 raise ValidationError(f"{label} duplicates in {target}: {', '.join(duplicates)}")
 
@@ -706,6 +782,22 @@ class Project:
         branch: str | None,
         blueprint: RenderedBlueprint,
     ) -> None:
+        for group in (blueprint.flights, blueprint.dives, blueprint.guides):
+            for key, resource in group.items():
+                resource_id = resource.get("id")
+                if resource_id is not None:
+                    try:
+                        UUID(str(resource_id))
+                    except ValueError as exc:
+                        raise ValidationError(f"{blueprint.name}.{key}.id must be a UUID") from exc
+                    if target == "preview":
+                        raise ValidationError(f"preview resource {blueprint.name}.{key} must not use an adopted id")
+                if "deploy" in resource and not isinstance(resource["deploy"], bool):
+                    raise ValidationError(f"{blueprint.name}.{key}.deploy must be boolean")
+                if "owner" in resource and (not isinstance(resource["owner"], str) or not resource["owner"]):
+                    raise ValidationError(f"{blueprint.name}.{key}.owner must be a nonempty string")
+                if resource.get("owner") and not resource.get("id"):
+                    raise ValidationError(f"{blueprint.name}.{key}.owner requires an explicit id")
         rendered_branch_slug = branch_slug(branch or "")
         target_settings = self.manifest.get("targets", {})
         target_policies = nested_dict(target_settings, target, "policies") or {}
@@ -734,6 +826,8 @@ class Project:
                     )
 
         for key, flight in blueprint.flights.items():
+            if "manageSchedule" in flight and not isinstance(flight["manageSchedule"], bool):
+                raise ValidationError(f"flights.{key}.manageSchedule must be boolean")
             for required_field in ["name", "sourcePath", "requirementsPath"]:
                 require_nonempty(flight.get(required_field), f"flights.{key}.{required_field}")
             require_file(Path(str(flight["sourcePath"])))
@@ -779,8 +873,8 @@ class Project:
                 raise ValidationError(
                     f"preview Dive {blueprint.name}.{key} must include branch name or slug {rendered_branch_slug}"
                 )
-            if not isinstance(required_resources, list) or not required_resources:
-                raise ValidationError(f"dives.{key}.requiredResources must not be empty")
+            if not isinstance(required_resources, list):
+                raise ValidationError(f"dives.{key}.requiredResources must be an array")
 
             aliases: set[str] = set()
             for index, resource in enumerate(required_resources):
@@ -853,9 +947,12 @@ class Project:
     def _validate_preview_separation(
         self,
         preview_blueprints: list[RenderedBlueprint],
-        production_blueprints: list[RenderedBlueprint],
+        stable_blueprints: list[RenderedBlueprint],
+        *,
+        stable_target: str,
     ) -> None:
-        production = {blueprint.name: blueprint for blueprint in production_blueprints}
+        stable_label = "production" if stable_target == "prod" else stable_target
+        stable = {blueprint.name: blueprint for blueprint in stable_blueprints}
         resource_fields = [
             ("Flight", "flights", "name"),
             ("Dive", "dives", "title"),
@@ -863,33 +960,57 @@ class Project:
             ("database", "shares", "database"),
         ]
         for preview in preview_blueprints:
-            prod = production.get(preview.name)
-            if prod is None:
+            stable_blueprint = stable.get(preview.name)
+            if stable_blueprint is None:
                 continue
             for label, group_name, resource_field in resource_fields:
                 preview_group = cast(dict[str, dict[str, object]], getattr(preview, group_name))
-                production_group = cast(dict[str, dict[str, object]], getattr(prod, group_name))
+                stable_group = cast(dict[str, dict[str, object]], getattr(stable_blueprint, group_name))
                 for key, resource in preview_group.items():
-                    production_resource = production_group.get(key)
+                    stable_resource = stable_group.get(key)
                     if (
-                        production_resource is not None
-                        and resource.get(resource_field) == production_resource.get(resource_field)
+                        stable_resource is not None
+                        and resource.get(resource_field) == stable_resource.get(resource_field)
                     ):
                         raise ValidationError(
-                            f"preview {label} {preview.name}.{key} must not match its production {resource_field}: "
+                            f"preview {label} {preview.name}.{key} must not match its {stable_label} {resource_field}: "
                             f"{resource.get(resource_field)}"
                         )
             for key, guide in preview.guides.items():
-                production_guide = prod.guides.get(key)
+                stable_guide = stable_blueprint.guides.get(key)
                 if (
                     guide.get("deploy")
-                    and production_guide is not None
-                    and guide.get("title") == production_guide.get("title")
+                    and stable_guide is not None
+                    and guide.get("title") == stable_guide.get("title")
                 ):
                     raise ValidationError(
-                        f"preview Guide {preview.name}.{key} must not match its production title: "
+                        f"preview Guide {preview.name}.{key} must not match its {stable_label} title: "
                         f"{guide.get('title')}"
                     )
+
+    def _validate_staging_share_separation(self) -> None:
+        staging = self.render_all("staging")
+        production = self.render_all("prod")
+        staging_names = {
+            str(share["name"]): f"{blueprint.name}.{key}"
+            for blueprint in staging
+            for key, share in blueprint.shares.items()
+        }
+        production_names = {
+            str(share["name"]): f"{blueprint.name}.{key}"
+            for blueprint in production
+            for key, share in blueprint.shares.items()
+        }
+        duplicates = sorted(set(staging_names) & set(production_names))
+        if duplicates:
+            details = ", ".join(
+                f"{name!r} (staging {staging_names[name]}, prod {production_names[name]})"
+                for name in duplicates
+            )
+            raise ValidationError(
+                "staging and prod share names must differ because shares cannot be reused across deployment "
+                f"accounts: {details}"
+            )
 
     def _validate_grants(self, grants: object, label: str) -> None:
         if grants is None:

@@ -116,6 +116,8 @@ resources:
       cleanup: true
       dropDatabase: false
       targets:
+        staging:
+          name: events_staging
         preview:
           name: events${var.preview_suffix}
           database: events${var.preview_suffix}
@@ -126,7 +128,7 @@ resources:
 
 Required fields are `name` and `database`. Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
 
-A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`.
+A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
 
 `includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
 
@@ -152,7 +154,7 @@ resources:
           scheduleCron: ""
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 
@@ -176,7 +178,7 @@ Each item requires `alias` and exactly one of:
 - `input`: a declared top-level input.
 - `url`: a literal MotherDuck share URL, normally owned outside this repository.
 
-A Dive requires `title`, `source`, and at least one required resource. `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
+A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
 The deployer strips the one-line `export const REQUIRED_DATABASES = ...` declaration from local-preview source and passes the rendered mounts to MotherDuck.
 
@@ -224,16 +226,26 @@ resources:
       deploy: true
 ```
 
-Roles deploy only to production and require an admin deployment identity. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+
+## Adopting existing resources (0.4.3+)
+
+Flights, Dives, and Guides accept `id` and an optional `owner` guard. Put these under the stable target override that owns the resource. A bound ID is looked up directly; missing/inaccessible IDs fail the plan and never fall back to name-based creation. Flight updates additionally require the creator's identity. Renaming a bound resource retains its UUID. Without an ID, existing name/title discovery remains supported.
+
+`deploy: false` validates source but skips resource deployment and preview cleanup. Flights and Dives retain their existing default of deployment enabled; Guides default to disabled. The importer sets all three explicitly to false, so activation is a separate reviewed edit.
+
+Flight `manageSchedule` defaults to true for compatibility. Set it to false on an adopted Flight to leave the live schedule untouched during updates, including its paused state. The configured cron is retained for review; creates still use the normal schedule policy.
+
+Do not reuse a stable ID in preview. No two active resources may update the same UUID. `owner` checks the recorded owner against the live object; it is not an ownership-transfer instruction or a guarantee of permission. See [import existing resources](adopt-existing-resources.md).
 
 ## Target and Deployment Semantics
 
-Every resource accepts a `targets.<target>` override. Preview and production rendering validate uniqueness for Flight names, Dive titles, deployed Guide identities, role names, and share names.
+Every resource accepts a `targets.<target>` override. All declared targets validate uniqueness for Flight names, Dive titles, deployed Guide identities, role names, and share names. Staging additionally validates that its share names do not collide with production.
 
 Inputs and repository-local Guide references form a DAG:
 
 - Preview selection expands recursively upstream and downstream.
-- Production selection expands recursively downstream only.
+- Stable staging and production selection expand recursively downstream only.
 - Producers deploy before consumers.
 - A consumer-only production plan requires the producer's output to exist in MotherDuck and fails before mutation otherwise.
 - Cleanup runs in reverse dependency order.

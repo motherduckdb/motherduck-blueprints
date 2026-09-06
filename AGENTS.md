@@ -4,11 +4,15 @@ This repository contains MotherDuck Blueprints for Dives, Flights, shares, and G
 
 ## Token Handling
 
-Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.dive-preview/.env`, which is ignored by Git. CI uses the `MOTHERDUCK_TOKEN` repository secret. Shared repositories should use a MotherDuck service account token so deployments are not tied to a personal account.
+Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.dive-preview/.env`, which is ignored by Git. CI reads `MOTHERDUCK_TOKEN` from the GitHub Environment declared by the selected target; repository-level deployment secrets are deprecated. Shared repositories should use a MotherDuck service account token so deployments are not tied to a personal account.
 
 ## Project Layout
 
-`motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the `preview` and `prod` targets.
+Generated customer repositories receive their own operating guide from `src/md_blueprints/template_repo/AGENTS.md`. Keep it aligned with the deploy engine. Internal scaffold templates and empty-root READMEs are packaged for tooling but not emitted by `init`. Existing account resources follow `docs/adopt-existing-resources.md`; exporting is not automatic adoption, and CLI metadata IDs do not bind Flight/Dive manifests.
+
+Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Keep root and packaged examples in sync.
+
+`motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the required `preview` and `prod` targets plus optional `staging`.
 
 Each deployable package has a `blueprint.yml`, source files, and a package README. Use typed roots when ownership follows the resource type:
 
@@ -28,6 +32,8 @@ When changing layout, commands, target behavior, or resource semantics, update t
 
 ## Resources
 
+`md-blueprints import` performs read-only discovery of Flights, Dives, and Guides and writes only with `--write`. Imported resources remain disabled, use stable-target IDs and owner guards, preserve existing schedules with `manageSchedule: false`, and raise the project's minimum CLI version. Bound IDs must never fall back to name-based creation. Maintain the import and adoption contracts in `docs/adopt-existing-resources.md`.
+
 Declare resources in `blueprint.yml`:
 
 - `resources.shares` names produced data products and their preview cleanup behavior.
@@ -41,7 +47,7 @@ For Dives, keep `export const REQUIRED_DATABASES = ...` on one line in source wh
 
 ## Targets
 
-Preview deployments are branch-scoped. Preview share/database names that may be cleaned up must include `${target.branch_slug}`. Production names are stable and deploy through the `motherduck-production` GitHub Environment.
+Preview deployments are branch-scoped. Preview share/database names that may be cleaned up must include `${target.branch_slug}`. Without staging, `main` deploys production. With `targets.staging`, previews and `main` use the staging service account and a published release deploys production. Staging shares must differ from production shares; their database names may match.
 
 Preview Flight schedules are disabled by target policy. Use `runOnDeploy: true` when a preview or production deploy should start an immediate run. Use `waitForRun: success` when dependent Dives should wait for the Flight run to succeed before resolving shares.
 
@@ -55,6 +61,7 @@ Use these commands before opening PRs:
 make validate
 make mock-test
 make example-smoke
+make journey-smoke
 ```
 
 When a blueprint includes a Dive, also run:
@@ -72,7 +79,11 @@ make preview-smoke <blueprint-name>
 make render-preview <blueprint-name>
 ```
 
-CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/prod deployment, and preview cleanup. `tools/md_blueprints` remains as a compatibility wrapper for existing local commands.
+CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/staging/prod deployment, and preview cleanup. `tools/md_blueprints` remains as a compatibility wrapper for existing local commands.
+
+The GitHub Action defaults to validation. Prefer named `target`, `branch`, `blueprints`, and `root` inputs in workflows; reserve `args` for advanced flags. Keep customer READMEs focused on the first deployment and put detailed options in `docs/`.
+
+Deployment always runs preflight before writes and verifies live identity/dependency/status results afterward by default. `verify` is read-only and checks disabled imported bindings too. Keep tests proving that invalid IDs/owners block all writes and that postcheck failures fail CD. Postcheck opt-out must never bypass preflight.
 
 ## Changelog
 

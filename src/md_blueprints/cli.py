@@ -7,18 +7,24 @@ import sys
 from pathlib import Path
 
 from .deploy import Deployer, PlanFormatter
+from .diagnostics import report_error
 from .init import run_init
+from .importer import run_import
 from .maintenance import run_check_updates, run_doctor
 from .migrations import run_migrate
 from .project import CommandError, Project
 from .scaffold import run_new
 from .schema import ValidationError
+from .upgrade import run_upgrade
 
 
 def parse_blueprints(value: str | None) -> list[str] | None:
-    if not value:
+    if value is None:
         return None
-    return [item.strip() for item in value.split(",") if item.strip()]
+    names = [item.strip() for item in value.split(",") if item.strip()]
+    if not names:
+        raise ValidationError("--blueprints must contain at least one blueprint name; omit it to select all")
+    return names
 
 
 def add_common_options(parser: argparse.ArgumentParser) -> None:
@@ -43,14 +49,18 @@ def add_common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--url", dest="share_url")
     parser.add_argument("--alias")
     parser.add_argument("--dive")
+    parser.add_argument("--resource", action="append", default=[])
+    parser.add_argument("--snapshot")
+    parser.add_argument("--verify", dest="verify", action="store_true", default=True)
+    parser.add_argument("--skip-verification", dest="verify", action="store_false")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="md-blueprints",
         usage=(
-            "md-blueprints <init|new|validate|render|dive-source|changed|plan|deploy|cleanup|doctor|"
-            "check-updates|migrate> [options]"
+            "md-blueprints <init|new|import|validate|verify|render|dive-source|changed|plan|deploy|cleanup|doctor|"
+            "check-updates|upgrade|migrate> [options]"
         ),
     )
     parser.add_argument("command", nargs="?")
@@ -97,10 +107,21 @@ def main(argv: list[str] | None = None) -> int:
             run_check_updates(offline=options.offline, output_format=options.format)
         elif command == "migrate":
             run_migrate(root, from_version=options.from_version, to_version=options.to_version, write=options.write)
+        elif command == "upgrade":
+            run_upgrade(root, to_version=options.to_version, write=options.write and not options.dry_run)
+        elif command == "import":
+            if options.blueprints is not None:
+                raise ValidationError("Import selects remote UUIDs: use --resource KIND:UUID, not --blueprints")
+            report = run_import(
+                Project(root), target=options.target or "prod", selectors=options.resource,
+                all_resources=options.all_blueprints, write=options.write and not options.dry_run,
+                snapshot_path=Path(options.snapshot) if options.snapshot else None,
+            )
+            print(json.dumps(report, indent=2))
         else:
             project = Project(root)
             if command == "validate":
-                targets = [options.target] if options.target else ["preview", "prod"]
+                targets = [options.target] if options.target else project.target_names()
                 project.validate(targets=targets)
                 print(f"Validation passed for {len(project.all_blueprint_names())} blueprint(s).")
             elif command == "render":
@@ -145,7 +166,15 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 deployer.ensure_plan_succeeds(records)
             elif command == "deploy":
-                Deployer(project).deploy(target=options.target or "prod", branch=options.branch, names=names)
+                Deployer(project).deploy(
+                    target=options.target or "prod", branch=options.branch, names=names, verify=options.verify,
+                )
+            elif command == "verify":
+                records = Deployer(project).verify(target=options.target or "prod", branch=options.branch, names=names)
+                print(
+                    json.dumps([record.to_dict() for record in records], indent=2)
+                    if options.json else PlanFormatter.format(records, title="Live Verification")
+                )
             elif command == "cleanup":
                 deployer = Deployer(project)
                 if options.dry_run:
@@ -162,6 +191,6 @@ def main(argv: list[str] | None = None) -> int:
                 parser.print_usage(sys.stderr)
                 return 2
         return 0
-    except (ValidationError, CommandError, KeyError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+    except (ValidationError, CommandError, KeyError, ValueError, OSError) as exc:
+        report_error(exc)
         return 1

@@ -1,20 +1,10 @@
 ## What changed?
 
-- [ ] Dives
-- [ ] Flights
-- [ ] Shares
-- [ ] Context layer
-- [ ] CI or scripts
-- [ ] Docs only
+Describe the change and why it is needed.
 
-## Deployment notes
+## Before merging
 
-- [ ] New or renamed assets are declared in a typed-root or `projects/<name>/blueprint.yml` package.
-- [ ] Dives list required resources in `blueprint.yml`.
-- [ ] Dive statuses are intentional: previews are `draft`, and `endorsed` production changes have an organization-admin reviewer.
-- [ ] Preview shares/databases that can be cleaned up include `${target.branch_slug}`.
-- [ ] Blueprints validate with `make validate`.
-- [ ] Dives build with `make preview-smoke <blueprint-name>` when changed.
-- [ ] Package/action/schema docs are updated when tooling behavior changed.
-- [ ] Docs are updated when layout, commands, target behavior, or resource semantics changed.
-- [ ] Production deploy has an owner/reviewer.
+- [ ] Validation passed.
+- [ ] I checked the preview and deployment plan, if this PR changes deployed resources.
+- [ ] I noted any production data or permission changes below.
+- [ ] If adopting existing assets, I compared planned IDs and settings with the exported baseline.

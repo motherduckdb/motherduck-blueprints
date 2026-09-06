@@ -8,17 +8,33 @@ branding:
 
 inputs:
   command:
-    description: CLI command to run, such as init, validate, render, changed, plan, deploy, cleanup, doctor, or migrate.
-    required: true
+    description: CLI command to run, such as validate, verify, import, plan, deploy, cleanup, doctor, or upgrade.
+    required: false
     default: validate
+  target:
+    description: Deployment target (preview, prod, or a configured staging target).
+    required: false
+  branch:
+    description: Branch name for preview resources. Required when target is preview.
+    required: false
+  blueprints:
+    description: Comma-separated package names. Leave empty to select all packages.
+    required: false
+  root:
+    description: Directory containing motherduck.yml, relative to the checkout.
+    required: false
   args:
-    description: Additional command arguments.
+    description: Advanced CLI arguments. Named inputs take precedence over matching flags.
     required: false
     default: ""
   python-version:
     description: Python version used to install md-blueprints.
     required: false
     default: "3.11"
+  verify-after-deploy:
+    description: Verify live identities, dependencies, and Dive status after deployment. Pre-deploy validation always runs.
+    required: false
+    default: "true"
 
 outputs:
   stdout:
@@ -41,7 +57,7 @@ runs:
         install_target="$GITHUB_ACTION_PATH"
         install_mode="base"
         case "$MD_BLUEPRINTS_COMMAND" in
-          plan|deploy|cleanup)
+          plan|deploy|cleanup|import|verify)
             install_target="${GITHUB_ACTION_PATH}[deploy]"
             install_mode="deploy"
             ;;
@@ -68,6 +84,11 @@ runs:
       env:
         MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
         MD_BLUEPRINTS_ARGS: ${{ inputs.args }}
+        MD_BLUEPRINTS_TARGET: ${{ inputs.target }}
+        MD_BLUEPRINTS_BRANCH: ${{ inputs.branch }}
+        MD_BLUEPRINTS_BLUEPRINTS: ${{ inputs.blueprints }}
+        MD_BLUEPRINTS_ROOT: ${{ inputs.root }}
+        MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY: ${{ inputs.verify-after-deploy }}
       run: |
         set -euo pipefail
         stdout_file="$(mktemp)"
@@ -83,6 +104,15 @@ runs:
             os.environ["MD_BLUEPRINTS_COMMAND"],
             *shlex.split(os.environ.get("MD_BLUEPRINTS_ARGS", "")),
         ]
+        for name in ("root", "target", "branch", "blueprints"):
+            value = os.environ.get(f"MD_BLUEPRINTS_{name.upper()}", "")
+            if value:
+                argv.append(f"--{name}={value}")
+        if os.environ["MD_BLUEPRINTS_COMMAND"] == "deploy":
+            verify = os.environ.get("MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY", "true").lower()
+            if verify not in {"true", "false"}:
+                raise SystemExit("verify-after-deploy must be true or false")
+            argv.append("--verify" if verify == "true" else "--skip-verification")
         completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, check=False)
         sys.stdout.write(completed.stdout)
         raise SystemExit(completed.returncode)
@@ -90,8 +120,10 @@ runs:
         status="${PIPESTATUS[0]}"
         set -e
         {
-          echo "stdout<<MD_BLUEPRINTS_EOF"
+          delimiter="MD_BLUEPRINTS_$(python -c 'import uuid; print(uuid.uuid4().hex)')"
+          echo "stdout<<$delimiter"
           cat "$stdout_file"
-          echo "MD_BLUEPRINTS_EOF"
+          echo
+          echo "$delimiter"
         } >> "$GITHUB_OUTPUT"
         exit "$status"

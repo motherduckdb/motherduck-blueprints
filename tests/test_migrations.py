@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import md_blueprints.migrations as migrations
-from md_blueprints.migrations import run_migrate
+from md_blueprints.migrations import project_manifest_files, run_migrate
 from md_blueprints.schema import ValidationError
 
 
@@ -21,6 +21,52 @@ def test_migrate_latest_is_idempotent_for_current_schema(capsys: pytest.CaptureF
 def test_migrate_from_mismatch_rejects_project() -> None:
     with pytest.raises(ValidationError, match="--from 2 does not match project schemaVersion set: 1"):
         run_migrate(FIXTURES / "simple", from_version=2, to_version="latest", write=False)
+
+
+def test_migration_rejects_external_symlinks(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    write_v1_project(root)
+    outside = tmp_path / "outside.yml"
+    outside.write_text("schemaVersion: 1\n", encoding="utf-8")
+    blueprint = root / "blueprints/demo/blueprint.yml"
+    blueprint.unlink()
+    blueprint.symlink_to(outside)
+    with pytest.raises(ValidationError, match="must stay within"):
+        run_migrate(root, from_version=None, to_version="latest", write=True)
+    assert outside.read_text(encoding="utf-8") == "schemaVersion: 1\n"
+
+
+def test_migration_deduplicates_overlapping_includes(tmp_path: Path) -> None:
+    write_v1_project(tmp_path)
+    manifest = tmp_path / "motherduck.yml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(text.replace("include:\n", "include:\n  - '**/blueprint.yml'\n"), encoding="utf-8")
+    assert len(project_manifest_files(tmp_path)) == 2
+
+
+def test_migration_rejects_missing_document_version(tmp_path: Path) -> None:
+    write_v1_project(tmp_path)
+    blueprint = tmp_path / "blueprints/demo/blueprint.yml"
+    blueprint.write_text("name: demo\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="schemaVersion must be an integer"):
+        run_migrate(tmp_path, from_version=None, to_version="latest", write=True)
+
+
+def test_migration_validates_all_documents_before_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_v1_project(tmp_path)
+    install_fake_v2_migration(monkeypatch)
+    originals = {path: path.read_bytes() for path in project_manifest_files(tmp_path)}
+
+    class RejectBlueprint:
+        def validate(self, data: object, schema_name: str) -> None:
+            if schema_name == "blueprint.schema.json":
+                raise ValidationError("invalid migrated blueprint")
+
+    monkeypatch.setattr(migrations, "SchemaValidator", RejectBlueprint)
+    with pytest.raises(ValidationError, match="invalid migrated blueprint"):
+        run_migrate(tmp_path, from_version=1, to_version="latest", write=True)
+    assert {path: path.read_bytes() for path in originals} == originals
 
 
 def write_v1_project(root: Path) -> None:

@@ -46,6 +46,20 @@ def write_producer(root: Path, output: str = "data") -> None:
     )
 
 
+def test_scaffold_rejects_root_symlink_outside_repository(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    write_root(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "guides").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="must stay within"):
+        run_new(root, "guide", "metrics")
+
+    assert list(outside.iterdir()) == []
+
+
 def test_all_typed_scaffolds_generate_a_valid_repository(tmp_path: Path) -> None:
     write_root(tmp_path)
 

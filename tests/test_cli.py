@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from md_blueprints import cli
 
 
@@ -22,6 +24,23 @@ def test_cli_returns_zero_for_successful_validate() -> None:
 
 def test_cli_returns_one_for_validation_error(tmp_path: Path) -> None:
     assert cli.main(["validate", "--root", str(tmp_path / "missing")]) == 1
+
+
+@pytest.mark.parametrize("selection", ["", " ", ", ,"])
+def test_cli_rejects_empty_explicit_selection(selection: str, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["deploy", "--blueprints", selection]) == 1
+    assert "must contain at least one blueprint name" in capsys.readouterr().err
+
+
+def test_doctor_returns_failure_for_invalid_resources(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["doctor", "--root", str(FIXTURES / "invalid-preview"), "--offline"]) == 1
+    output = capsys.readouterr().out
+    assert "validation: failed" in output
+    assert "validation: passed" not in output
+
+
+def test_doctor_returns_failure_for_missing_manifest(tmp_path: Path) -> None:
+    assert cli.main(["doctor", "--root", str(tmp_path), "--offline"]) == 1
 
 
 def test_cli_render_validates_the_selected_target() -> None:

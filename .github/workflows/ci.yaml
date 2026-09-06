@@ -59,6 +59,9 @@ jobs:
       - name: Create and destroy generated example
         run: make example-smoke
 
+      - name: Follow the customer README
+        run: python -m pytest -q tests/customer_journey.py
+
   package:
     name: Package CLI and Action
     if: github.repository == 'motherduckdb/motherduck-blueprints'
@@ -169,7 +172,10 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Lint GitHub Actions workflows
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        run: >-
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          .github/workflows/*.yaml
+          src/md_blueprints/template_repo/.github/workflows/*.yaml
 
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh

@@ -307,6 +307,100 @@ resources:
         Project(tmp_path).validate(targets=["preview"], branch="feature/status")
 
 
+def write_staging_share_project(tmp_path: Path, *, staging_share_name: str) -> Project:
+    blueprint_dir = tmp_path / "blueprints" / "data"
+    blueprint_dir.mkdir(parents=True)
+    (tmp_path / "motherduck.yml").write_text(
+        """
+schemaVersion: 1
+repository:
+  name: staging-share
+include:
+  - blueprints/*/blueprint.yml
+targets:
+  preview:
+    mode: preview
+    environment: motherduck-staging
+    deployment:
+      identity: staging service account
+  staging:
+    mode: production
+    environment: motherduck-staging
+    deployment:
+      identity: staging service account
+  prod:
+    mode: production
+    environment: motherduck-production
+    deployment:
+      identity: production service account
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (blueprint_dir / "blueprint.yml").write_text(
+        f"""
+schemaVersion: 1
+name: data
+title: Data
+resources:
+  shares:
+    data:
+      name: shared_data
+      database: analytics
+      targets:
+        preview:
+          name: shared_data_preview_${{target.branch_slug}}
+          database: analytics_preview_${{target.branch_slug}}
+        staging:
+          name: {staging_share_name}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return Project(tmp_path)
+
+
+def test_staging_and_production_share_names_must_differ(tmp_path: Path) -> None:
+    project = write_staging_share_project(tmp_path, staging_share_name="shared_data")
+
+    with pytest.raises(ValidationError, match="staging and prod share names must differ"):
+        project.validate()
+
+
+def test_staging_and_production_databases_may_share_a_name(tmp_path: Path) -> None:
+    project = write_staging_share_project(tmp_path, staging_share_name="shared_data_staging")
+
+    assert project.validate()
+    assert project.preview_stable_target() == "staging"
+    assert project.render_all("staging")[0].shares["data"]["database"] == "analytics"
+    assert project.render_all("prod")[0].shares["data"]["database"] == "analytics"
+
+
+def test_staging_uses_a_distinct_production_environment(tmp_path: Path) -> None:
+    project = write_staging_share_project(tmp_path, staging_share_name="shared_data_staging")
+    targets = project.manifest["targets"]
+    assert isinstance(targets, dict)
+    staging = targets["staging"]
+    assert isinstance(staging, dict)
+    staging["environment"] = "motherduck-production"
+    preview = targets["preview"]
+    assert isinstance(preview, dict)
+    preview["environment"] = "motherduck-production"
+
+    with pytest.raises(ValidationError, match="must differ from targets.prod.environment"):
+        project._validate_deployment_topology()
+
+
+def test_roles_deploy_to_staging_like_production(tmp_path: Path) -> None:
+    project = write_staging_share_project(tmp_path, staging_share_name="shared_data_staging")
+    blueprint = project.blueprints[0]
+    resources = blueprint.raw["resources"]
+    assert isinstance(resources, dict)
+    resources["roles"] = {"analyst": {"name": "analyst"}}
+
+    rendered = project.render_all("staging")
+
+    assert rendered[0].roles["analyst"]["deploy"] is True
+
+
 def test_dive_status_rejects_unknown_value(tmp_path: Path) -> None:
     blueprint_dir = tmp_path / "blueprints" / "unknown-status"
     source_dir = blueprint_dir / "src"

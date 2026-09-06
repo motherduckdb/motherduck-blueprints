@@ -135,6 +135,7 @@ def test_consumer_only_production_plan_requires_existing_output(
     input_record = next(record for record in records if record.type == "input")
     assert input_record.action == "error"
     assert "producer.data" in input_record.notes
+    assert "deploy producer 'producer' to the same target first" in input_record.notes
 
 
 def test_preview_plan_allows_selected_producer_output_to_be_pending(

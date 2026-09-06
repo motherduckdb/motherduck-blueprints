@@ -29,6 +29,7 @@
       "additionalProperties": { "$ref": "#/$defs/target" },
       "properties": {
         "preview": { "$ref": "#/$defs/target" },
+        "staging": { "$ref": "#/$defs/target" },
         "prod": { "$ref": "#/$defs/target" }
       }
     }
@@ -57,7 +58,7 @@
       "properties": {
         "mode": { "type": "string", "minLength": 1 },
         "default": { "type": "boolean" },
-        "environment": { "type": "string" },
+        "environment": { "type": "string", "minLength": 1 },
         "deployment": {
           "type": "object",
           "additionalProperties": false,

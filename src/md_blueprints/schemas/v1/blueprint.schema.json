@@ -126,6 +126,10 @@
       "required": ["name", "source", "requirements"],
       "additionalProperties": false,
       "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "deploy": { "type": "boolean" },
+        "owner": { "type": "string", "minLength": 1 },
+        "manageSchedule": { "type": "boolean" },
         "name": { "type": "string", "minLength": 1 },
         "source": { "type": "string", "minLength": 1 },
         "requirements": { "type": "string", "minLength": 1 },
@@ -155,13 +159,16 @@
       "required": ["title", "source", "requiredResources"],
       "additionalProperties": false,
       "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "deploy": { "type": "boolean" },
+        "owner": { "type": "string", "minLength": 1 },
         "title": { "type": "string", "minLength": 1 },
         "source": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "status": { "type": "string", "enum": ["draft", "ready", "endorsed", "archived"] },
         "requiredResources": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": { "$ref": "#/$defs/requiredResource" }
         },
         "targets": {
@@ -204,6 +211,7 @@
       "required": ["source"],
       "additionalProperties": false,
       "properties": {
+        "owner": { "type": "string", "minLength": 1 },
         "id": { "type": "string", "format": "uuid" },
         "title": { "type": "string", "minLength": 1, "maxLength": 255 },
         "topic": {

@@ -63,7 +63,7 @@ For branch `feature/mock-test`, the share and database render as:
 wikipedia_pageviews_preview_feature_mock_test
 ```
 
-In production, a producer change also redeploys the Dive and reconciles its declared `ready` status. A Dive-only change uses the existing production output and does not rerun the Flight.
+In a stable target, a producer change also redeploys the Dive and reconciles its declared `ready` status. A Dive-only change uses the existing output and does not rerun the Flight. If staging is configured, the staging share renders as `wikipedia_pageviews_staging` while its database remains `wikipedia_pageviews`; a published release deploys the unsuffixed production share.
 
 Cleanup reverses dependencies: it removes the Dive before the Flight, share, and preview database.
 

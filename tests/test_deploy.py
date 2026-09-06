@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,33 @@ def test_cleanup_respects_disabled_target_policy() -> None:
 
     with pytest.raises(ValidationError, match="cleanup is disabled"):
         Deployer(project).cleanup_plan(target="preview", branch="feature/test", names=None)
+
+
+def test_cleanup_compares_preview_against_staging_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = Project(FIXTURES / "simple")
+    targets = project.manifest["targets"]
+    assert isinstance(targets, dict)
+    targets["staging"] = copy.deepcopy(targets["prod"])
+    deployer = Deployer(project)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+
+    def capture_cleanup(
+        rendered: list[RenderedBlueprint],
+        rendered_branch_slug: str,
+        **kwargs: object,
+    ) -> list[PlanRecord]:
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(deployer, "_build_cleanup_plan", capture_cleanup)
+
+    deployer.cleanup_plan(target="preview", branch="feature/test", names=None)
+
+    assert captured["stable_target"] == "staging"
 
 
 def test_cleanup_plan_refuses_share_without_branch_slug(monkeypatch: pytest.MonkeyPatch) -> None:
