@@ -60,7 +60,7 @@ jobs:
         run: make example-smoke
 
       - name: Follow the customer README
-        run: make journey-smoke
+        run: python -m pytest -q tests/customer_journey.py
 
   package:
     name: Package CLI and Action
