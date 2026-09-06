@@ -154,7 +154,7 @@ resources:
           scheduleCron: ""
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 
@@ -178,7 +178,7 @@ Each item requires `alias` and exactly one of:
 - `input`: a declared top-level input.
 - `url`: a literal MotherDuck share URL, normally owned outside this repository.
 
-A Dive requires `title`, `source`, and at least one required resource. `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
+A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
 The deployer strips the one-line `export const REQUIRED_DATABASES = ...` declaration from local-preview source and passes the rendered mounts to MotherDuck.
 
@@ -227,6 +227,16 @@ resources:
 ```
 
 Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+
+## Adopting existing resources (0.4.3+)
+
+Flights, Dives, and Guides accept `id` and an optional `owner` guard. Put these under the stable target override that owns the resource. A bound ID is looked up directly; missing/inaccessible IDs fail the plan and never fall back to name-based creation. Flight updates additionally require the creator's identity. Renaming a bound resource retains its UUID. Without an ID, existing name/title discovery remains supported.
+
+`deploy: false` validates source but skips resource deployment and preview cleanup. Flights and Dives retain their existing default of deployment enabled; Guides default to disabled. The importer sets all three explicitly to false, so activation is a separate reviewed edit.
+
+Flight `manageSchedule` defaults to true for compatibility. Set it to false on an adopted Flight to leave the live schedule untouched during updates, including its paused state. The configured cron is retained for review; creates still use the normal schedule policy.
+
+Do not reuse a stable ID in preview. No two active resources may update the same UUID. `owner` checks the recorded owner against the live object; it is not an ownership-transfer instruction or a guarantee of permission. See [import existing resources](adopt-existing-resources.md).
 
 ## Target and Deployment Semantics
 

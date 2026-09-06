@@ -21,7 +21,7 @@ Upgrade local tooling by bumping `CLI_VERSION` in `Makefile` and every Blueprint
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.4.2
+- uses: motherduckdb/motherduck-blueprints@v0.4.3
   with:
     command: validate
 ```
@@ -119,7 +119,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.4.2
+make release-check TAG=v0.4.3
 make release-external-check
 make validate
 make mock-test
@@ -141,7 +141,7 @@ That command writes the customer file set and stamps the same exact release into
 Before the first stable customer handoff, split the generated customer template from tooling:
 
 - Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
-- Template repo: `motherduck.yml`, typed `flights/`, `dives/`, `guides/`, and `roles/` roots, `projects/`, `shared/`, customer docs, thin Makefile, customer workflows, Dependabot, CODEOWNERS, and `.gitignore`.
+- Template repo: `motherduck.yml`, the active Flight/Dive starter, optional examples, `AGENTS.md`, customer docs, thin Makefile, customer workflows, schemas, preview support, Dependabot, CODEOWNERS, and `.gitignore`. Optional roots are created by scaffolding; internal templates and empty-root READMEs stay in the tooling package.
 
 The release workflow generates `motherduckdb/blueprints-template` from the built wheel's `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout; generated customer workflows use the stamped immutable release tag.
 

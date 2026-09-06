@@ -2,7 +2,15 @@
 
 Use this page for the repository layout, dependency behavior, targets, and local commands.
 
-## Repository Layout
+## What a customer needs
+
+A fresh repository contains the Wikipedia Flight and Dive, optional examples, documentation, and the workflow/preview support files. You edit `motherduck.yml`, each package's `blueprint.yml`, and its source. Other resource roots are created on demand. There is no need to create empty folders.
+
+The tooling repository also contains Python source, tests, release tooling, and internal scaffolds. Those are not copied into customer repositories. Local source filenames are flexible: `main.py` or `index.tsx` pulled by the MotherDuck CLI can be referenced directly without adding a `src/` layer.
+
+For existing account resources, begin with [adoption](adopt-existing-resources.md). CLI exports alone are not deployable Blueprints packages.
+
+## Supported Layouts
 
 ```text
 motherduck.yml

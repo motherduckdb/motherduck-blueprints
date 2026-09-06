@@ -6,6 +6,12 @@ This repository uses MotherDuck Blueprints to deploy your data pipelines and das
 
 If you are viewing the original template, [create your own repository first](https://github.com/motherduckdb/blueprints-template/generate).
 
+## Already using MotherDuck?
+
+Start with [adopt existing resources](docs/adopt-existing-resources.md), not the example deployment. Run `md-blueprints import --all` to preview a UUID-bound import of Flights, Dives, and Guides; add `--write` to create validated, disabled packages. Import never changes remote resources or transfers ownership.
+
+Agents: read [the operating guide](AGENTS.md) for the workflow, constraints, and adoption limits.
+
 ## Deploy the example
 
 You need a MotherDuck service-account token and permission to configure your GitHub repository. No local installation is required.
@@ -20,6 +26,8 @@ If the environment requires approval, approve the deployment in GitHub Actions. 
 The default setup uses the same service account for previews and production. For separate credentials and release-based production deployment, [add staging](docs/setup-your-repository.md#add-staging-optional).
 
 ## Make it yours
+
+You normally edit only `motherduck.yml`, package manifests, and their source files. Optional roots such as `guides/`, `roles/`, and `projects/` appear when you create those packages; you do not need every resource type.
 
 Each `blueprint.yml` describes what to deploy; the source files beside it contain your code. Start by editing the Wikipedia example:
 

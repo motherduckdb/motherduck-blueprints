@@ -304,6 +304,7 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: deploy
+          verify-after-deploy: "true"
           target: preview
           branch: ${{ steps.preview-branch.outputs.branch }}
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
@@ -385,6 +386,7 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: deploy
+          verify-after-deploy: "true"
           target: ${{ needs.compute_changes.outputs.target }}
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
@@ -449,5 +451,6 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
           command: deploy
+          verify-after-deploy: "true"
           target: prod
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}

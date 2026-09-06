@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .project import CommandError, Project, RenderedBlueprint, branch_slug
@@ -187,7 +188,61 @@ class Deployer:
         self._preflight_rbac(rendered)
         return self._build_deploy_plan(rendered)
 
-    def deploy(self, *, target: str, branch: str | None, names: list[str] | None) -> None:
+    def verify(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
+        rendered = copy.deepcopy(self._validate_and_render(target, branch, names))
+        # Imported bindings can be checked before enabling writes in their manifests.
+        for blueprint in rendered:
+            for resource in [*blueprint.flights.values(), *blueprint.dives.values(), *blueprint.guides.values()]:
+                if resource.get("id"):
+                    resource["deploy"] = True
+        self._prepare_live_command(target, "verify")
+        self._preflight_rbac(rendered)
+        records = self._verify_rendered(rendered)
+        self._verification_summary(records)
+        return records
+
+    @staticmethod
+    def _verification_summary(records: list[PlanRecord]) -> str:
+        summary = PlanFormatter.format(records, title="Deployment Verification")
+        if summary_path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with Path(summary_path).open("a", encoding="utf-8") as handle:
+                handle.write(summary + "\n")
+        return summary
+
+    def _verify_rendered(
+        self, rendered: list[RenderedBlueprint], expected: list[PlanRecord] | None = None,
+    ) -> list[PlanRecord]:
+        actual = self._build_deploy_plan(rendered)
+        self.ensure_plan_succeeds(actual)
+        baseline = self._index_by_resource(expected or [])
+        observed = self._index_by_resource(actual)
+        for key, previous in baseline.items():
+            if previous.action not in {"validated_only", "skipped"} and key not in observed:
+                raise ValidationError(f"Verification omitted resource {'.'.join(key)}")
+        for record in actual:
+            if record.action in {"validated_only", "skipped"}:
+                continue
+            if record.action not in {"update", "present"} or not record.id:
+                raise ValidationError(f"{record.blueprint}.{record.type}.{record.key} is not present after verification")
+            before = baseline.get((record.blueprint, record.type, record.key))
+            if before and before.id and record.type in {"flight", "dive", "guide"} and before.id != record.id:
+                raise ValidationError(f"{record.blueprint}.{record.type}.{record.key} changed identity: {before.id} -> {record.id}")
+            desired_status = record.desired_status
+            if before and record.type == "dive" and desired_status is None:
+                desired_status = before.current_status or ("draft" if before.action == "create" else None)
+            if desired_status and record.current_status != desired_status:
+                raise ValidationError(
+                    f"{record.blueprint}.{record.key} status is {record.current_status}, expected {desired_status}"
+                )
+        return [
+            replace(record, action="verified", notes="live identity and dependencies verified")
+            if record.action not in {"validated_only", "skipped"} else record
+            for record in actual
+        ]
+
+    def deploy(
+        self, *, target: str, branch: str | None, names: list[str] | None, verify: bool = True,
+    ) -> None:
         rendered = self._validate_and_render(target, branch, names)
         self._prepare_live_command(target, "deploy")
         self._preflight_rbac(rendered)
@@ -200,6 +255,12 @@ class Deployer:
 
         for blueprint in rendered:
             self._deploy_blueprint(blueprint, target, plan_index)
+        if verify:
+            try:
+                verified = self._verify_rendered(rendered, records)
+            except (ValidationError, CommandError) as exc:
+                raise CommandError(f"Deployment applied, but verification failed: {exc}. No rollback was attempted.") from exc
+            print(self._verification_summary(verified))
 
     def cleanup_plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         if target != "preview":
@@ -230,6 +291,13 @@ class Deployer:
         self._apply_cleanup_plan(records)
 
     def ensure_plan_succeeds(self, records: list[PlanRecord]) -> None:
+        identities: set[tuple[str, str]] = set()
+        for record in records:
+            if record.id and record.action == "update":
+                identity = (record.type, record.id)
+                if identity in identities:
+                    raise ValidationError(f"Multiple resources would update the same {record.type} id {record.id}")
+                identities.add(identity)
         errors = [record for record in records if record.action == "error"]
         if not errors:
             return
@@ -283,7 +351,10 @@ class Deployer:
         )
         live_role_names = self._live_role_names() if needs_role_catalog else set()
         can_produce = {
-            blueprint.name: any(flight.get("runOnDeploy") is True for flight in blueprint.flights.values())
+            blueprint.name: any(
+                flight.get("runOnDeploy") is True and flight.get("deploy") is not False
+                for flight in blueprint.flights.values()
+            )
             for blueprint in rendered
         }
         for blueprint in rendered:
@@ -330,6 +401,16 @@ class Deployer:
                 )
 
             for key, flight in blueprint.flights.items():
+                if flight.get("deploy") is False:
+                    records.append(PlanRecord(
+                        blueprint.name, "flight", key, str(flight["name"]), "validated_only",
+                        None, str(flight["id"]) if flight.get("id") else None,
+                        "set deploy: true in the intended target after reviewing the import",
+                    ))
+                    continue
+                if flight.get("id"):
+                    records.append(self._bound_resource_record(blueprint, "flight", key, flight))
+                    continue
                 records.append(
                     self._existing_resource_record(
                         blueprint=blueprint,
@@ -508,6 +589,8 @@ class Deployer:
         for blueprint in dependency_safe:
             production_blueprint = production.get(blueprint.name) if production else None
             for key, dive in blueprint.dives.items():
+                if dive.get("deploy") is False:
+                    continue
                 title = str(dive["title"])
                 production_title = None
                 if production_blueprint and key in production_blueprint.dives:
@@ -530,6 +613,8 @@ class Deployer:
         for blueprint in dependency_safe:
             production_blueprint = production.get(blueprint.name) if production else None
             for key, flight in blueprint.flights.items():
+                if flight.get("deploy") is False:
+                    continue
                 name = str(flight["name"])
                 production_name = None
                 if production_blueprint and key in production_blueprint.flights:
@@ -655,6 +740,42 @@ class Deployer:
             return PlanRecord(blueprint.name, type_name, key, name, "update", True, ids[0])
         return PlanRecord(blueprint.name, type_name, key, name, "error", True, ",".join(ids), duplicate_note)
 
+    def _bound_resource_record(
+        self, blueprint: RenderedBlueprint, kind: str, key: str, resource: dict[str, object],
+    ) -> PlanRecord:
+        resource_id = str(resource["id"])
+        name = str(resource.get("name", resource.get("title", key)))
+        record = PlanRecord(blueprint.name, kind, key, name, "error", False, resource_id)
+        id_column = "flight_id" if kind == "flight" else "id"
+        status_column = ", status" if kind == "dive" else ""
+        try:
+            rows = self._query_rows(
+                f"SELECT {id_column}, owner_name{status_column} FROM MD_GET_{kind.upper()}("
+                f"{id_column} := {sql_string(resource_id)}::UUID)"
+            )
+        except CommandError:
+            record.notes = f"configured {kind.title()} id is missing or inaccessible; refusing to create a replacement"
+            return record
+        if len(rows) != 1 or str(rows[0][0]) != resource_id:
+            record.notes = f"configured {kind.title()} id does not exist; refusing to create a replacement"
+            return record
+        record.exists = True
+        live_owner = str(rows[0][1]) if len(rows[0]) > 1 and rows[0][1] is not None else ""
+        if resource.get("owner") and str(resource["owner"]) != live_owner:
+            record.notes = "live owner differs from the imported owner; review identity before deployment"
+            return record
+        if kind == "flight":
+            current = self._sql("SELECT current_user").strip()
+            if not live_owner or current != live_owner:
+                record.notes = "only the Flight creator can update it; use its owner's deployment identity"
+                return record
+        record.action = "update"
+        record.notes = "bound to existing id; no name-based fallback"
+        if kind == "dive":
+            record.current_status = str(rows[0][2]).lower() if rows[0][2] is not None else None
+            record.desired_status = str(resource["status"]) if resource.get("status") else None
+        return record
+
     def _dive_plan_record(
         self,
         blueprint: RenderedBlueprint,
@@ -662,6 +783,14 @@ class Deployer:
         dive: dict[str, object],
     ) -> PlanRecord:
         title = str(dive["title"])
+        if dive.get("deploy") is False:
+            return PlanRecord(
+                blueprint.name, "dive", key, title, "validated_only", None,
+                str(dive["id"]) if dive.get("id") else None,
+                "set deploy: true in the intended target after reviewing the import",
+            )
+        if dive.get("id"):
+            return self._bound_resource_record(blueprint, "dive", key, dive)
         desired_status_value = dive.get("status")
         desired_status = str(desired_status_value) if desired_status_value is not None else None
         states = self._list_dive_states(title)
@@ -733,14 +862,7 @@ class Deployer:
         title = str(guide["title"])
         guide_id = guide.get("id")
         if guide_id:
-            try:
-                rows = self._query_rows(
-                    f"SELECT id FROM MD_GET_GUIDE(id := {sql_string(guide_id)}::UUID)"
-                )
-            except CommandError as exc:
-                if "does not exist" not in str(exc).lower() and "not found" not in str(exc).lower():
-                    raise
-                rows = []
+            return self._bound_resource_record(blueprint, "guide", key, guide)
         else:
             topic = str(guide.get("topic", ""))
             topic_predicate = (
@@ -812,11 +934,10 @@ class Deployer:
                 return f"Guide reference blueprint {producer_name!r} is not available"
             resource_key = str(reference["resource"])
             selected_resource_will_deploy = producer_name in selected_names
-            if reference_type == "guide":
-                referenced_guide = producer.guides[resource_key]
-                selected_resource_will_deploy = (
-                    selected_resource_will_deploy and bool(referenced_guide.get("deploy"))
-                )
+            group = {"flight": producer.flights, "dive": producer.dives, "guide": producer.guides}[reference_type]
+            selected_resource_will_deploy = selected_resource_will_deploy and bool(
+                group[resource_key].get("deploy", reference_type != "guide")
+            )
             if selected_resource_will_deploy:
                 continue
 
@@ -831,12 +952,10 @@ class Deployer:
     def _resource_ids_by_uuid(self, reference_type: str, uuid_value: str) -> list[str]:
         uuid_sql = f"{sql_string(uuid_value)}::UUID"
         if reference_type == "dive":
-            rows = self._query_rows(f"SELECT id FROM MD_LIST_DIVES() WHERE id = {uuid_sql}")
+            rows = self._query_rows(f"SELECT id FROM MD_GET_DIVE(id := {uuid_sql})")
         elif reference_type == "flight":
             rows = self._query_rows(
-                "SELECT flight_id FROM MD_LIST_FLIGHTS("
-                '"offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) '
-                f"WHERE flight_id = {uuid_sql}"
+                f"SELECT flight_id FROM MD_GET_FLIGHT(flight_id := {uuid_sql})"
             )
         else:
             rows = self._get_guide_rows_by_id(uuid_value)
@@ -848,6 +967,9 @@ class Deployer:
         producer: RenderedBlueprint,
         resource_key: str,
     ) -> list[str]:
+        group = {"flight": producer.flights, "dive": producer.dives, "guide": producer.guides}[reference_type]
+        if group[resource_key].get("id"):
+            return self._resource_ids_by_uuid(reference_type, str(group[resource_key]["id"]))
         if reference_type == "dive":
             return [
                 state[0]
@@ -910,6 +1032,8 @@ class Deployer:
         guide_rows: list[str] = []
 
         for key, flight in blueprint.flights.items():
+            if flight.get("deploy") is False:
+                continue
             print(f"Deploying Flight {blueprint.name}.{key}...", file=sys.stderr)
             row = self._deploy_flight(flight, target, plan_index[(blueprint.name, "flight", key)])
             if row:
@@ -922,6 +1046,8 @@ class Deployer:
                 share_rows.append(f"| {share['name']} | [Open Share]({url}) |")
 
         for key, dive in blueprint.dives.items():
+            if dive.get("deploy") is False:
+                continue
             print(f"Deploying Dive {blueprint.name}.{key}...", file=sys.stderr)
             row = self._deploy_dive(
                 dive,
@@ -988,6 +1114,8 @@ class Deployer:
             '"source_code" => getvariable(\'source_code\')',
             '"requirements_txt" => getvariable(\'requirements_txt\')',
         ]
+        if flight.get("manageSchedule") is False and plan.action == "update":
+            common_args.remove(schedule_arg)
         access_token_name = str(flight.get("accessTokenName", ""))
         if access_token_name:
             common_args.insert(3, f'"access_token_name" => {sql_string(access_token_name)}')
@@ -1027,6 +1155,7 @@ class Deployer:
         else:
             raise ValidationError(f"Cannot deploy Flight {name} with plan action {plan.action}")
 
+        plan.id = flight_id
         run_started = False
         if flight.get("runOnDeploy", False):
             print(f"  Starting flight run for '{name}'...", file=sys.stderr)
@@ -1114,6 +1243,7 @@ class Deployer:
         else:
             raise ValidationError(f"Cannot deploy Dive {title} with plan action {plan.action}")
 
+        plan.id = dive_id
         desired_status_value = dive.get("status")
         desired_status = str(desired_status_value) if desired_status_value is not None else None
         if (
@@ -1417,6 +1547,7 @@ class Deployer:
         else:
             raise ValidationError(f"Cannot deploy Guide {title} with plan action {plan.action}")
 
+        plan.id = guide_id
         return f"| {title} | {guide_id} |" if target == "preview" else None
 
     def _guide_references_sql(
@@ -1449,17 +1580,7 @@ class Deployer:
                 if producer is None:
                     raise ValidationError(f"Guide reference blueprint {producer_name!r} was not selected")
                 resource_key = str(reference["resource"])
-                if reference_type == "dive":
-                    states = self._list_dive_states(str(producer.dives[resource_key]["title"]))
-                    ids = [state[0] for state in states]
-                elif reference_type == "flight":
-                    ids = self._list_flight_ids(str(producer.flights[resource_key]["name"]))
-                else:
-                    ids = self._resource_ids_for_reference(
-                        reference_type,
-                        producer,
-                        resource_key,
-                    )
+                ids = self._resource_ids_for_reference(reference_type, producer, resource_key)
                 if len(ids) != 1:
                     raise CommandError(
                         f"Expected one {reference_type} for Guide reference "

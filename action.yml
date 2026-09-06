@@ -8,7 +8,7 @@ branding:
 
 inputs:
   command:
-    description: CLI command to run, such as init, validate, render, changed, plan, deploy, cleanup, doctor, or migrate.
+    description: CLI command to run, such as validate, verify, import, plan, deploy, cleanup, doctor, or upgrade.
     required: false
     default: validate
   target:
@@ -31,6 +31,10 @@ inputs:
     description: Python version used to install md-blueprints.
     required: false
     default: "3.11"
+  verify-after-deploy:
+    description: Verify live identities, dependencies, and Dive status after deployment. Pre-deploy validation always runs.
+    required: false
+    default: "true"
 
 outputs:
   stdout:
@@ -53,7 +57,7 @@ runs:
         install_target="$GITHUB_ACTION_PATH"
         install_mode="base"
         case "$MD_BLUEPRINTS_COMMAND" in
-          plan|deploy|cleanup)
+          plan|deploy|cleanup|import|verify)
             install_target="${GITHUB_ACTION_PATH}[deploy]"
             install_mode="deploy"
             ;;
@@ -84,6 +88,7 @@ runs:
         MD_BLUEPRINTS_BRANCH: ${{ inputs.branch }}
         MD_BLUEPRINTS_BLUEPRINTS: ${{ inputs.blueprints }}
         MD_BLUEPRINTS_ROOT: ${{ inputs.root }}
+        MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY: ${{ inputs.verify-after-deploy }}
       run: |
         set -euo pipefail
         stdout_file="$(mktemp)"
@@ -103,6 +108,11 @@ runs:
             value = os.environ.get(f"MD_BLUEPRINTS_{name.upper()}", "")
             if value:
                 argv.append(f"--{name}={value}")
+        if os.environ["MD_BLUEPRINTS_COMMAND"] == "deploy":
+            verify = os.environ.get("MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY", "true").lower()
+            if verify not in {"true", "false"}:
+                raise SystemExit("verify-after-deploy must be true or false")
+            argv.append("--verify" if verify == "true" else "--skip-verification")
         completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, check=False)
         sys.stdout.write(completed.stdout)
         raise SystemExit(completed.returncode)

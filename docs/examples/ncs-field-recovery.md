@@ -9,6 +9,7 @@ The optional implementation lives in [`examples/ncs-field-recovery/`](../../exam
 From your repository root, copy it into the active projects directory, then validate:
 
 ```bash
+mkdir -p projects
 cp -R examples/ncs-field-recovery projects/ncs-field-recovery
 make validate
 ```

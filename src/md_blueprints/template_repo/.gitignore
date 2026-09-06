@@ -16,6 +16,7 @@ __pycache__/
 *.py[cod]
 
 # local-only
+.imports/
 notes/
 .release-notes.md
 .DS_Store
