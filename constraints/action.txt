@@ -3,7 +3,7 @@ pip==26.2
 setuptools==83.0.0
 wheel==0.47.0
 build==1.5.0
-packaging==26.2
+packaging==26.3
 PyYAML==6.0.3
 duckdb==1.5.4
 pytz==2026.2
