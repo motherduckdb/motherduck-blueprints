@@ -9,7 +9,7 @@ Customers should upgrade the exact CLI, reusable workflow, and any direct action
 
 ## CLI and Action Pinning
 
-Generated repositories pin the Blueprints CLI version in the `Makefile` `CLI_VERSION` variable. `make setup` installs `md-blueprints` from the matching Git tag in this repository. The same wheel and source distribution are published to PyPI and attached to the GitHub Release.
+Generated repositories pin the Blueprints CLI version in the `Makefile` `CLI_VERSION` variable. `make setup` installs `md-blueprints` from the matching Git tag in this repository. The wheel and source distribution are attached to the GitHub Release. A PyPI project or publisher is not required to distribute the action or CLI.
 
 For export or live commands, install the supported native MotherDuck CLI:
 
@@ -117,15 +117,16 @@ Stable `vMAJOR.MINOR.PATCH` tag pushes run the release workflow. The workflow tr
 3. Smoke test the installed wheel as an internal packaging check.
 4. Smoke test the local action wrapper.
 5. Generate a reproducible CycloneDX SBOM and attest every release artifact.
-6. Verify the generated-template repository, PyPI trusted publisher, and protected release environments.
+6. Verify the generated-template repository and protected release environments.
 7. Install the built wheel, generate the customer template with an exact action tag, and push it to `motherduckdb/blueprints-template`.
 8. Require the generated repository's triggered workflow to pass against that exact action tag.
-9. Publish the wheel and source distribution to PyPI through trusted publishing.
-10. Attach the distributions and SBOM to the GitHub Release, then update the compatibility-only floating major alias.
+9. Attach the distributions and SBOM to the GitHub Release, then update the compatibility-only floating major alias.
 
-The action installs the tagged checkout directly, generated repositories install local tooling from the matching Git tag, and Python users can install the identical package from PyPI. The floating major tag remains available for compatibility but generated repositories do not depend on it.
+The action installs the tagged checkout directly, generated repositories install local tooling from the matching Git tag, and built Python distributions are attached to the GitHub Release. The floating major tag remains available for compatibility but generated repositories do not depend on it.
 
-One-time template setup: create `motherduckdb/blueprints-template`, mark it as a GitHub template repository, and add a `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` secret that can force-push to that repository. Tagged releases fail before publishing when this setup is missing; the template push is part of the release contract, not an optional best-effort step.
+Marketplace listing is configured through GitHub's release UI. Any required GitHub Marketplace agreement must be accepted by an authorized organization maintainer. The automated release workflow publishes the repository release and action tags without relying on PyPI.
+
+One-time template setup: create `motherduckdb/blueprints-template`, mark it as a GitHub template repository, and add a `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` secret that can push to that repository. Tagged releases fail before publishing when this setup is missing; the template push is part of the release contract, not an optional best-effort step.
 
 Before creating a release tag:
 

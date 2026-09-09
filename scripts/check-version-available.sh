@@ -3,8 +3,6 @@
 set -euo pipefail
 
 REPOSITORY="${GITHUB_REPOSITORY:-motherduckdb/motherduck-blueprints}"
-PYPI_JSON_BASE_URL="${PYPI_JSON_BASE_URL:-https://pypi.org/pypi}"
-PYPI_PROJECT="${PYPI_PROJECT:-md-blueprints}"
 
 version="$(python3 - <<'PY'
 import pathlib
@@ -31,18 +29,17 @@ if [[ "$release_result" != *"HTTP 404"* ]]; then
   exit 1
 fi
 
-status="$(curl --silent --output /dev/null --write-out '%{http_code}' "${PYPI_JSON_BASE_URL%/}/${PYPI_PROJECT}/${version}/json")"
-case "$status" in
-  404)
-    ;;
-  200)
-    echo "Version ${version} is already published on PyPI; bump the package version before merging more changes." >&2
-    exit 1
-    ;;
-  *)
-    echo "Could not verify md-blueprints ${version} availability on PyPI (HTTP ${status})." >&2
-    exit 1
-    ;;
-esac
+set +e
+tag_result="$(gh api "repos/${REPOSITORY}/git/ref/tags/v${version}" 2>&1)"
+tag_status=$?
+set -e
+if [ "$tag_status" -eq 0 ]; then
+  echo "Version ${version} already has a GitHub tag; choose a new version instead of replacing the tag." >&2
+  exit 1
+fi
+if [[ "$tag_result" != *"HTTP 404"* ]]; then
+  echo "Could not verify GitHub tag availability for v${version}: ${tag_result}" >&2
+  exit 1
+fi
 
 echo "Version available for future release: ${version}"
