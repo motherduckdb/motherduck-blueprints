@@ -19,6 +19,8 @@
 
 ## Tooling and Release
 
+- Publish the action, template, and release assets through GitHub without a PyPI publisher. Version checks reject existing GitHub releases and tags. [#67](https://github.com/motherduckdb/motherduck-blueprints/pull/67)
+
 - Prepare version 0.5.0. Use the tested native CLI for import and CLI smoke checks, while bulk CI deployment keeps the Python runtime after live cycle comparison. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Compatibility
