@@ -9,6 +9,17 @@ from md_blueprints.schema import ValidationError
 from md_blueprints.upgrade import run_upgrade, update_action_pins
 
 
+def test_upgrade_preserves_reusable_workflow_paths_and_unrelated_actions() -> None:
+    text = (
+        "jobs:\n  deploy:\n"
+        "    uses: 'motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0.4.3' # keep\n"
+        "  other:\n    uses: another/repo/.github/workflows/deploy.yml@v1\n"
+    )
+    updated, count = update_action_pins(text, "1.2.3")
+    assert count == 1
+    assert updated == text.replace("@v0.4.3", "@v1.2.3")
+
+
 def test_inline_action_pin_and_comment_are_preserved() -> None:
     text = "steps:\n  - {uses: 'motherduckdb/motherduck-blueprints@v0', with: {command: validate}} # keep\n"
     updated, count = update_action_pins(text, "1.2.3")

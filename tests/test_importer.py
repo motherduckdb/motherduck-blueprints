@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -313,13 +314,22 @@ def test_all_import_executes_readonly_sql_contracts(tmp_path: Path, monkeypatch:
             )
         queries = []
 
-        def execute(self: Deployer, statement: str) -> list[tuple[object, ...]]:
+        def execute(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            assert argv[1:3] == ["query", "--file"]
+            statement = Path(argv[3]).read_text()
             queries.append(statement)
             assert statement.startswith("SELECT ")
-            return connection.execute(statement).fetchall()
+            assert kwargs["env"]["MOTHERDUCK_TOKEN"] == "fake-local-only-token"
+            result = connection.execute(statement)
+            columns = [description[0] for description in result.description]
+            rows = [dict(zip(columns, row)) for row in result.fetchall()]
+            return subprocess.CompletedProcess(argv, 0, json.dumps(rows))
 
+        from md_blueprints import motherduck_cli
         monkeypatch.setenv("MOTHERDUCK_TOKEN", "fake-local-only-token")
-        monkeypatch.setattr(Deployer, "_query_rows", execute)
+        monkeypatch.setenv("MD_BLUEPRINTS_SQL_BACKEND", "motherduck")
+        monkeypatch.setattr(motherduck_cli, "executable", lambda: "/fake/motherduck")
+        monkeypatch.setattr(subprocess, "run", execute)
         report = run_import(project, target="prod", selectors=[], all_resources=True, write=True)
     assert len(report["resources"]) == 3
     assert len(Project(tmp_path).blueprints) == 5
@@ -439,3 +449,19 @@ def test_customer_cd_checks_every_bound_id_before_first_write(
     with pytest.raises((ValidationError, CommandError)):
         Deployer(Project(tmp_path)).deploy(target="prod", branch=None, names=names)
     assert calls and all(statement.startswith("SELECT ") for statement in calls)
+
+
+def test_import_normalizes_native_javascript_mounts_without_evaluating_code() -> None:
+    component = 'export default function Dive() { return null; }\n'
+    source = (
+        'export const REQUIRED_DATABASES = [\n'
+        "  // Native CLI Dives use JavaScript object syntax.\n"
+        "  { type: 'database', path: 'md:old', alias: 'data', },\n"
+        '] as const;\n' + component
+    )
+    mounts = [{'type': 'database', 'path': 'md:live', 'alias': 'data'}]
+    imported = dive_source(source, mounts)
+    assert imported == 'export const REQUIRED_DATABASES = ' + json.dumps(mounts) + ';\n' + component
+    for expression in ('[getMounts()]', '[...mounts]', '[{path: "x", path: "y"}]', '[]; runSomething();'):
+        with pytest.raises(ValidationError):
+            dive_source('export const REQUIRED_DATABASES = ' + expression + '\n' + component, mounts)

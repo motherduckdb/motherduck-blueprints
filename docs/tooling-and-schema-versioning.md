@@ -5,32 +5,35 @@ MotherDuck Blueprints has two distribution surfaces:
 - The template repository gives customer repos a working layout, examples, docs, and customer-facing GitHub workflows.
 - Versioned tags in this repository provide both the `md-blueprints` CLI source and the composite action used for schema validation, rendering, planning, deployment, cleanup, update checks, and migrations.
 
-Customers should upgrade the exact CLI and action pins together. They should not need to re-copy this template just to receive validator or deployer fixes.
+Customers should upgrade the exact CLI, reusable workflow, and any direct action pins together. They should not need to re-copy this template just to receive validator or deployer fixes.
 
 ## CLI and Action Pinning
 
-Generated repositories pin the CLI version in the `Makefile` `CLI_VERSION` variable. `make setup` installs `md-blueprints` from the matching Git tag in this repository; the same wheel and source distribution are published to PyPI and attached to the GitHub Release. Live `plan`, `deploy`, and `cleanup` commands need the deploy extra, which includes the DuckDB Python runtime dependencies needed for MotherDuck connections:
+Generated repositories pin the Blueprints CLI version in the `Makefile` `CLI_VERSION` variable. `make setup` installs `md-blueprints` from the matching Git tag in this repository. The same wheel and source distribution are published to PyPI and attached to the GitHub Release.
+
+For export or live commands, install the supported native MotherDuck CLI:
 
 ```bash
-make setup
 make install-deploy
 ```
 
-Upgrade local tooling by bumping `CLI_VERSION` in `Makefile` and every Blueprints action tag in `.github/workflows/` to the same exact release.
+The native CLI bundles its DuckDB runtime. Its tested version is maintained inside the Blueprints package, so customers do not need another version pin. `motherduck upgrade` updates a local CLI independently. CI installs the version tested with its Blueprints release.
+
+Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints workflow or direct action reference to the same exact release. Review the diff and open a pull request. Customer triggers, permissions, and other workflow settings are preserved.
 
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.4.3
+- uses: motherduckdb/motherduck-blueprints@v0.5.0
   with:
     command: validate
 ```
 
-The action installs the CLI from the pinned action checkout. For `plan`, `deploy`, and `cleanup`, it installs `.[deploy]`; validate-only commands stay light.
+The action installs Blueprints from the pinned action checkout. Import also installs the native MotherDuck CLI using the official checksum-verifying installer. Deployment, planning, verification, and cleanup install `md-blueprints[deploy]` and use the Python backend, avoiding a CLI process per SQL call. Validation needs neither a token nor the native CLI. Locally, `MD_BLUEPRINTS_SQL_BACKEND=duckdb` explicitly selects the Python backend after installing that extra.
 
 ## Customer Upgrade Loop
 
-The template keeps Dependabot enabled for third-party GitHub Actions. Blueprints Doctor coordinates Blueprints upgrades because the action and local CLI pins must move together.
+Blueprints maintains third-party actions inside its reusable workflows. The template keeps Dependabot enabled for any customer-added GitHub Actions and the local preview dependencies. Blueprints Doctor coordinates Blueprints upgrades because workflow and local CLI pins must move together.
 
 For local checks around a bump:
 
@@ -44,6 +47,14 @@ make preview-smoke <blueprint-name>
 The scheduled `Blueprints Doctor` workflow runs `doctor --check-updates` and opens or updates one tracking issue when a release is stale, action and CLI pins drift, or the project schema needs migration.
 
 Doctor also reports deployment-model drift. Repository-level `MOTHERDUCK_TOKEN` workflows are deprecated: generated workflows now select the GitHub Environment declared by each target and read that environment's `MOTHERDUCK_TOKEN`. Existing pre-1.0 workflows remain executable during the compatibility window, but the legacy secret model is scheduled for removal at the next major release.
+
+## Existing customer workflows
+
+Existing expanded workflows and direct action calls continue to work. `make upgrade` updates their pins but does not replace customer-authored jobs.
+
+To adopt the shorter callers after a release includes them, generate a fresh template in a separate empty directory with that release's CLI. Compare its three `.github/workflows/` files with yours. Copy the callers while preserving any custom event filters, branch names, and permissions. Keep customized jobs as direct action workflows if they need extra steps. Review the migration in a pull request, confirm the preview and plan, then merge.
+
+Reusable workflow definitions are released from this tooling repository's `.github/workflows/reusable_*.yaml` files. Their internal action references must match the package release. New reusable definitions are available to customer callers only after that release is published.
 
 ## Schema Source of Truth
 
@@ -119,7 +130,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.4.3
+make release-check TAG=v0.5.0
 make release-external-check
 make validate
 make mock-test

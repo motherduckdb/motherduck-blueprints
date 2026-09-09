@@ -97,9 +97,12 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert 'if [ "$$installed_version" != "$(CLI_VERSION)" ]; then' in makefile
     assert '.venv/bin/python -m pip install "md-blueprints @ $(CLI_SOURCE)"' in makefile
     assert "install-deploy: $(CLI)" in makefile
-    assert '.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"' in makefile
-    assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in deploy_workflow
+    assert "$(CLI) install-cli" in makefile
     assert "md-blueprints-environment-model: v1" in deploy_workflow
+    assert f"/.github/workflows/reusable_deploy_blueprints.yaml@{action_tag()}" in deploy_workflow
+    assert f"/.github/workflows/reusable_cleanup_preview_blueprints.yaml@{action_tag()}" in cleanup_workflow
+    deploy_workflow = (REPO_ROOT / ".github/workflows/reusable_deploy_blueprints.yaml").read_text()
+    cleanup_workflow = (REPO_ROOT / ".github/workflows/reusable_cleanup_preview_blueprints.yaml").read_text()
     assert "targets.staging" in deploy_workflow
     assert "github.event_name == 'release'" in deploy_workflow
     assert "environment: ${{ needs.compute_changes.outputs.target_environment }}" in deploy_workflow
@@ -107,8 +110,6 @@ def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> 
     assert 'git", "show", f"origin/{base_ref}:motherduck.yml"' in deploy_workflow
     assert "branch_identity != base_identity" in deploy_workflow
     assert "must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN" in deploy_workflow
-    assert '"guides/**"' in deploy_workflow
-    assert '"roles/**"' in deploy_workflow
     assert f"motherduckdb/motherduck-blueprints@{action_tag()}" in cleanup_workflow
     assert "environment: ${{ needs.resolve-environment.outputs.environment }}" in cleanup_workflow
     assert "github.event.pull_request.head.sha" in cleanup_workflow
@@ -151,7 +152,7 @@ def test_ci_runs_for_all_main_and_pull_request_changes() -> None:
 def test_doctor_workflows_close_resolved_upgrade_issues() -> None:
     for workflow in [
         REPO_ROOT / ".github/workflows/blueprints_doctor.yaml",
-        REPO_ROOT / "src/md_blueprints/template_repo/.github/workflows/blueprints_doctor.yaml",
+        REPO_ROOT / ".github/workflows/reusable_blueprints_doctor.yaml",
     ]:
         text = workflow.read_text(encoding="utf-8")
         assert "DOCTOR_OUTCOME" in text

@@ -356,15 +356,20 @@ def test_flight_update_retries_without_schedule_when_existing_flight_is_unschedu
     assert '"schedule_cron"' not in calls[1]
 
 
-def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("wait_for_run", [False, "success"])
+def test_flight_run_uses_named_motherduck_arguments(
+    monkeypatch: pytest.MonkeyPatch, wait_for_run: bool | str,
+) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []
+    waited: list[tuple[str, int]] = []
 
     def fake_sql(statement: str) -> str:
         calls.append(statement)
-        return ""
+        return "42" if "MD_RUN_FLIGHT" in statement else ""
 
     monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(deployer, "_wait_for_flight_run_success", lambda fid, number: waited.append((fid, number)))
 
     deployer._deploy_flight(
         {
@@ -373,7 +378,7 @@ def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPa
             "requirementsPath": "src/requirements.txt",
             "scheduleCron": "",
             "runOnDeploy": True,
-            "waitForRun": False,
+            "waitForRun": wait_for_run,
             "config": {"article": "DuckDB"},
         },
         "preview",
@@ -391,6 +396,9 @@ def test_flight_run_uses_named_motherduck_arguments(monkeypatch: pytest.MonkeyPa
     run_call = next(call for call in calls if "MD_RUN_FLIGHT" in call)
     assert 'MD_RUN_FLIGHT("config" => map(' in run_call
     assert '"flight_id" => \'1a4ea2e6-0997-43ea-afe9-78c15c62220e\'::UUID' in run_call
+
+
+    assert waited == ([("1a4ea2e6-0997-43ea-afe9-78c15c62220e", 42)] if wait_for_run else [])
 
 
 def test_flight_deploy_passes_max_runtime_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1002,3 +1010,67 @@ def test_plan_formatter_escapes_markdown_cells() -> None:
 
     assert "bp\\|name" in output
     assert "name with newline" in output
+
+
+@pytest.mark.parametrize('status', ['SUCCEEDED', 'RUN_STATUS_SUCCEEDED'])
+def test_wait_tracks_the_submitted_run_not_the_latest(monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+    deployer = Deployer(Project(FIXTURES / 'complex'))
+    queries: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        queries.append(statement)
+        assert 'MD_LIST_FLIGHT_RUNS' in statement
+        return [(43, 'FAILED'), (42, status)]
+
+    monkeypatch.setattr(deployer, '_query_rows', rows)
+    deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)
+    assert len(queries) == 1
+
+
+@pytest.mark.parametrize('status', ['FAILED', 'CANCELLED', 'RUN_STATUS_FAILED', 'RUN_STATUS_CANCELLED'])
+@pytest.mark.parametrize('record', ['{"line":"test log","line_number":1}', '{"logs":"test log"}'])
+def test_wait_recognizes_current_and_legacy_failure_statuses(
+    monkeypatch: pytest.MonkeyPatch, status: str, record: str,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / 'complex'))
+    queries: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        queries.append(statement)
+        if 'MD_GET_FLIGHT_LOGS' in statement:
+            assert 'run_number := 42' in statement
+            return [(record,)]
+        return [(43, 'SUCCEEDED'), (42, status)]
+
+    monkeypatch.setattr(deployer, '_query_rows', rows)
+    with pytest.raises(CommandError, match='Flight run 42 ended with .*test log'):
+        deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)
+    assert len(queries) == 2
+
+
+def test_wait_follows_pagination_for_exact_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / 'complex'))
+    queries: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        queries.append(statement)
+        if '\"offset\" := 0' in statement:
+            return [(number, 'SUCCEEDED') for number in range(200, 100, -1)]
+        assert '\"offset\" := 100' in statement
+        return [(42, 'FAILED')]
+
+    monkeypatch.setattr(deployer, '_query_rows', rows)
+    assert deployer._flight_run_status('00000000-0000-0000-0000-000000000001', 42) == 'FAILED'
+    assert len(queries) == 2
+
+
+def test_log_read_failure_does_not_hide_failed_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / 'complex'))
+    monkeypatch.setattr(deployer, '_flight_run_status', lambda *args: 'FAILED')
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        raise CommandError('log service unavailable')
+
+    monkeypatch.setattr(deployer, '_query_rows', rows)
+    with pytest.raises(CommandError, match='Flight run 42 ended with FAILED.*Logs unavailable'):
+        deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)

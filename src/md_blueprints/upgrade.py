@@ -14,7 +14,9 @@ from .schema import ValidationError
 
 
 CLI_PIN = re.compile(r"^(CLI_VERSION\s*:?=\s*)([^\s#]+)", re.MULTILINE)
-ACTION_PREFIX = "motherduckdb/motherduck-blueprints@"
+TOOLING_PIN = re.compile(
+    r"^(motherduckdb/motherduck-blueprints(?:/\.github/workflows/[^/@]+\.ya?ml)?)@[^\s]+$"
+)
 
 
 def update_action_pins(text: str, version: str) -> tuple[str, int]:
@@ -34,14 +36,15 @@ def update_action_pins(text: str, version: str) -> tuple[str, int]:
             for key, value in node.value:
                 if (
                     isinstance(key, ScalarNode) and key.value == "uses"
-                    and isinstance(value, ScalarNode) and value.value.startswith(ACTION_PREFIX)
+                    and isinstance(value, ScalarNode) and TOOLING_PIN.fullmatch(value.value.strip())
                 ):
                     original = text[value.start_mark.index:value.end_mark.index]
                     pin = value.value.strip()
+                    reference = pin.rsplit("@", 1)[0]
                     if pin not in original:
                         raise ValidationError("Unsupported multiline action pin; no pins were changed.")
                     edits[value.start_mark.index] = (
-                        value.end_mark.index, original.replace(pin, f"{ACTION_PREFIX}v{version}", 1)
+                        value.end_mark.index, original.replace(pin, f"{reference}@v{version}", 1)
                     )
                 visit(value)
         elif isinstance(node, SequenceNode):

@@ -38,6 +38,11 @@ jobs:
           cache: npm
           cache-dependency-path: .dive-preview/package-lock.json
 
+      - name: Install and exercise the MotherDuck CLI
+        run: |
+          md-blueprints install-cli
+          python -m pytest -q tests/native_cli_smoke.py
+
       - name: Validate manifests
         run: make validate
 

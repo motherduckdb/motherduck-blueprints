@@ -25,8 +25,12 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
 
 .PHONY: install-deploy
-install-deploy: $(CLI) ## Install CLI with live MotherDuck deploy dependencies
-	.venv/bin/python -m pip install "md-blueprints[deploy] @ $(CLI_SOURCE)"
+install-deploy: $(CLI) ## Install the supported MotherDuck CLI for export and live commands
+	$(CLI) install-cli
+
+.PHONY: export
+export: $(CLI) ## Export all visible Flights, Dives, and Guides as disabled packages (TARGET=prod)
+	MD_BLUEPRINTS_SQL_BACKEND=motherduck $(CLI) import --all --target "$(or $(TARGET),prod)" --write
 
 .PHONY: preview
 preview: $(CLI) ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)

@@ -8,7 +8,19 @@ If you are viewing the original template, [create your own repository first](htt
 
 ## Already using MotherDuck?
 
-Start with [adopt existing resources](docs/adopt-existing-resources.md), not the example deployment. Run `md-blueprints import --all` to preview a UUID-bound import of Flights, Dives, and Guides; add `--write` to create validated, disabled packages. Import never changes remote resources or transfers ownership.
+With Python 3.10+ and Git installed, export your existing Flights, Dives, and Guides into code before enabling deployment:
+
+```bash
+make install-deploy
+motherduck login
+motherduck status
+make export
+make validate
+```
+
+`make install-deploy` installs the supported MotherDuck CLI. Open a new terminal if `motherduck` is not yet on your PATH. Use the account that owns the resources, or provide its `MOTHERDUCK_TOKEN` through your secret manager instead of logging in.
+
+`make export` writes all visible resources of these three types as disabled, UUID-bound packages. It preserves source and settings and makes no remote changes. Review the files and remove any unwanted starter packages before opening a deployment PR. Follow [adopt existing resources](docs/adopt-existing-resources.md) to check ownership, schedules, and dependencies before enabling them.
 
 Agents: read [the operating guide](AGENTS.md) for the workflow, constraints, and adoption limits.
 
@@ -27,7 +39,7 @@ The default setup uses the same service account for previews and production. For
 
 ## Make it yours
 
-You normally edit only `motherduck.yml`, package manifests, and their source files. Optional roots such as `guides/`, `roles/`, and `projects/` appear when you create those packages; you do not need every resource type.
+You normally edit only `motherduck.yml`, package manifests, and their source files. Deployment, cleanup, and upgrade checks run through versioned workflows maintained by Blueprints. Use `make upgrade` to update the tooling together. Optional roots such as `guides/`, `roles/`, and `projects/` appear when you create those packages; you do not need every resource type.
 
 Each `blueprint.yml` describes what to deploy; the source files beside it contain your code. Start by editing the Wikipedia example:
 

@@ -1,6 +1,12 @@
 # Use the GitHub Action
 
-The template already includes deployment and cleanup workflows. You do not need to write a workflow to use it.
+The template includes short callers for versioned deployment, cleanup, and Doctor workflows maintained in the Blueprints repository. You do not need to write deployment jobs or maintain their third-party actions.
+
+Keep event triggers and permissions in your repository. Configure targets and environments in `motherduck.yml`. The reusable jobs select those environments, so existing environment secrets and approval rules still apply. No `secrets: inherit` is needed. This follows [GitHub's reusable workflow environment handling](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+
+Use `make upgrade` to update the CLI and workflow references together. The referenced release supplies the deployment implementation, including preview comments, dependency selection, verification, and cleanup. The composite action remains available for custom jobs.
+
+The reusable deployment workflow accepts `target`, `branch`, and `blueprints` for manual runs. It expects `motherduck.yml` at the repository root. For a different working directory or custom job steps, use the action directly.
 
 Use the action directly when adding Blueprints to an existing repository with a `motherduck.yml` manifest.
 
@@ -18,10 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.4.3
+      - uses: motherduckdb/motherduck-blueprints@v0.5.0
 ```
 
-The action installs its own Python dependencies. Validation is the default command and needs no token.
+The action installs its own Python dependencies. Validation is the default command and needs no token. For import, it installs the tested MotherDuck CLI and uses `motherduck query --file ... --output json` with the job's environment token. Deployment, planning, verification, and cleanup install the Python deploy dependencies and execute SQL in process. Both paths require the job's environment token. CLI state is isolated under the runner's temporary directory, and SQL is passed through temporary files rather than shell arguments. The adapter handles multiple result arrays and empty DDL output. Flight waits track the submitted run number and fail deployment on a failed or cancelled run.
 
 ## Deploy manually
 
@@ -41,7 +47,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.4.3
+      - uses: motherduckdb/motherduck-blueprints@v0.5.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -83,7 +89,7 @@ By default, deployment then reads back resource identities and checks declared s
 For a separate read-only check of existing resources, including disabled imported bindings, use:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.4.3
+- uses: motherduckdb/motherduck-blueprints@v0.5.0
   env:
     MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   with:

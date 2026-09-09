@@ -19,9 +19,12 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
 
 .PHONY: install-deploy
-install-deploy: ## Install CLI with live MotherDuck deploy dependencies
-	@test -x .venv/bin/python || $(PYTHON) -m venv .venv
-	.venv/bin/python -m pip install -e ".[deploy]"
+install-deploy: $(CLI) ## Install the supported MotherDuck CLI for export and live commands
+	$(CLI) install-cli
+
+.PHONY: export
+export: $(CLI) ## Export all visible Flights, Dives, and Guides as disabled packages (TARGET=prod)
+	MD_BLUEPRINTS_SQL_BACKEND=motherduck $(CLI) import --all --target "$(or $(TARGET),prod)" --write
 
 .PHONY: preview
 preview: $(CLI) ## Preview a blueprint Dive locally (e.g. make preview wikipedia-pageviews)
@@ -100,6 +103,10 @@ release-external-check: ## Verify generated-template repository setup for tagged
 	./scripts/check-release-external-setup.sh
 
 # -- Help ---------------------------------------------------------------------
+
+.PHONY: cli-smoke
+cli-smoke: $(CLI) ## Exercise the installed MotherDuck CLI without authentication
+	.venv/bin/python -m pytest -q tests/native_cli_smoke.py
 
 .PHONY: help
 help: ## Show available targets

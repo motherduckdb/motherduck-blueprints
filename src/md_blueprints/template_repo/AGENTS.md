@@ -16,7 +16,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 
 `motherduck` is the product CLI: it can list and pull remote resources into files. `md-blueprints` validates and deploys this repository's manifests. CLI metadata JSON is not a Blueprints manifest and its IDs are not automatically adopted.
 
-The GitHub workflows, `schemas/`, and `.dive-preview/` are support files. Do not edit them to add a package. Starter templates live in the installed CLI; there is no customer `templates/` directory to maintain. `examples/` is optional and does not deploy.
+The GitHub workflows are short callers into versioned Blueprints workflows. Keep deployment implementation upstream and use `make upgrade` to update workflow and CLI pins together. The workflows, `schemas/`, and `.dive-preview/` are support files. Do not edit them to add a package. Starter templates live in the installed CLI; there is no customer `templates/` directory to maintain. `examples/` is optional and does not deploy.
 
 ## Operating constraints
 
@@ -43,3 +43,9 @@ Use `md-blueprints verify --target prod --blueprints NAME` to check existing IDs
 Run `make validate`. For a changed Dive, run `make preview-smoke NAME`. Run a live plan only with the intended identity and target; report the exact resource IDs, any creates, and unresolved dependencies. Request deployment only after the import baseline and plan have been reviewed.
 
 After adoption, use one writer for managed settings: the repository workflow. Pulling from MotherDuck is an explicit reconciliation step, not continuous two-way sync. Report whether changes are local, merged, deployed, or published; these are different outcomes.
+
+## Native CLI
+
+Use `make install-deploy`, `motherduck login`, and `motherduck status` before local export. `make export` writes disabled packages for all visible Flights, Dives, and Guides through the native CLI. Use `TARGET=staging` only for a configured target. Review exports and unwanted starter packages before opening a PR.
+
+CI installs the tested native CLI for import and uses the Python runtime for deployment orchestration. Do not replace the deployment workflow with individual `push` commands, which do not implement the repository's target and adoption safeguards. Local import can use a saved CLI login. Other live commands and all CI commands require the selected target token.

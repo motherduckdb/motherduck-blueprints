@@ -131,9 +131,13 @@ def test_doctor_warns_about_staging_workflow_routing(
 """,
     )
     manifest.write_text(manifest_text, encoding="utf-8")
+    run_doctor(tmp_path)
+    healthy_output = capsys.readouterr().out
+    assert "default-branch workflow does not select staging" not in healthy_output
+    assert "production is not deployed from a published GitHub Release" not in healthy_output
     workflow = tmp_path / ".github/workflows/deploy_blueprints.yaml"
     workflow.write_text(
-        workflow.read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / ".github/workflows/deploy_blueprints.yaml").read_text(encoding="utf-8")
         .replace('target = "staging" if staging_enabled else "prod"', 'target = "prod"')
         .replace("github.event_name == 'release'", "github.event_name == 'disabled-release'"),
         encoding="utf-8",

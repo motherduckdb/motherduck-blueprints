@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import copy
+import importlib
 import os
 import re
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from .project import CommandError, Project, RenderedBlueprint, branch_slug
 from .schema import ValidationError
+from .motherduck_cli import query_rows as cli_query_rows, sql_backend
 
 DuckDBConfigValue = str | bool | int | float | list[str]
 
@@ -325,6 +327,15 @@ class Deployer:
             token_env_var = str(deployment.get("tokenEnvVar", token_env_var))
         token = os.environ.get(token_env_var, "")
         if not token:
+            if (
+                operation == "import" and token_env_var == "MOTHERDUCK_TOKEN"
+                and not os.environ.get("CI") and not os.environ.get("GITHUB_ACTIONS")
+                and sql_backend() == "motherduck"
+            ):
+                # Local read-only export can use `motherduck login`. CI and all other
+                # live commands still require the selected target's token.
+                self.sql_env = {}
+                return
             environment = self.project.target_config(target).get("environment", target)
             raise ValidationError(
                 f"{token_env_var} is required to {operation} target {target}.\n"
@@ -1159,36 +1170,66 @@ class Deployer:
         run_started = False
         if flight.get("runOnDeploy", False):
             print(f"  Starting flight run for '{name}'...", file=sys.stderr)
-            self._sql(f"FROM MD_RUN_FLIGHT(\"config\" => {config_sql}, \"flight_id\" => '{flight_id}'::UUID);")
+            submitted_run = self._sql(
+                f"SELECT run_number FROM MD_RUN_FLIGHT(\"config\" => {config_sql}, \"flight_id\" => '{flight_id}'::UUID);"
+            ).strip()
+            if not submitted_run.isdecimal() or int(submitted_run) < 1:
+                raise CommandError("Flight run was submitted but returned no valid run number. No retry was attempted.")
+            run_number = int(submitted_run)
             run_started = True
             if flight.get("waitForRun", False) == "success":
-                self._wait_for_flight_run_success(flight_id)
+                self._wait_for_flight_run_success(flight_id, run_number)
 
         return f"| {name} | {flight_id} | {str(run_started).lower()} |" if target == "preview" else None
 
-    def _wait_for_flight_run_success(self, flight_id: str) -> None:
+    def _flight_run_status(self, flight_id: str, run_number: int) -> str:
+        # MD_GET_FLIGHT_RUN is unavailable before DuckDB 1.5.5. The paginated
+        # listing works on both runtimes and must match the submitted run exactly.
+        offset = 0
+        previous_last: int | None = None
+        while True:
+            rows = self._query_rows(
+                "SELECT run_number, status FROM MD_LIST_FLIGHT_RUNS("
+                f"flight_id := '{flight_id}'::UUID, \"limit\" := 100, \"offset\" := {offset})"
+            )
+            for number, status in rows:
+                if int(str(number)) == run_number:
+                    return str(status).removeprefix("RUN_STATUS_")
+            if len(rows) < 100:
+                return ""
+            last = int(str(rows[-1][0]))
+            if previous_last is not None and last >= previous_last:
+                raise CommandError("Flight run pagination did not advance. No new run was submitted.")
+            previous_last = last
+            offset += len(rows)
+
+    def _wait_for_flight_run_success(self, flight_id: str, run_number: int) -> None:
         attempts = max(1, int(os.environ.get("FLIGHT_RUN_POLL_ATTEMPTS", "60")))
         sleep_seconds = int(os.environ.get("FLIGHT_RUN_POLL_SLEEP_SECONDS", "10"))
 
         for index in range(attempts):
-            row = self._sql(
-                "SELECT run_number || '|' || status "
-                f"FROM MD_LIST_FLIGHT_RUNS(flight_id := '{flight_id}'::UUID) "
-                "ORDER BY run_number DESC LIMIT 1"
-            ).strip()
-            run_number, _, status = row.partition("|")
-            if status == "RUN_STATUS_SUCCEEDED":
+            status = self._flight_run_status(flight_id, run_number)
+            if status == "SUCCEEDED":
                 return
-            if status in {"RUN_STATUS_FAILED", "RUN_STATUS_CANCELLED"}:
-                logs = self._sql(
-                    f"SELECT logs FROM MD_GET_FLIGHT_LOGS(flight_id := '{flight_id}'::UUID, "
-                    f"run_number := {int(run_number or '0')})"
-                ).strip()
-                raise CommandError(f"Flight run {int(run_number or '0')} ended with {status}. Log tail: {logs}")
+            if status in {"FAILED", "CANCELLED"}:
+                try:
+                    records = [
+                        json.loads(str(row[0])) for row in self._query_rows(
+                            "SELECT to_json(entry) FROM MD_GET_FLIGHT_LOGS("
+                            f"flight_id := '{flight_id}'::UUID, run_number := {run_number}) entry"
+                        )
+                    ]
+                    records.sort(key=lambda entry: entry.get("line_number") or 0)
+                    # DuckDB <1.5.5 returns one `logs` field. Newer runtimes return
+                    # one `line` per row. Keep the failure message bounded in both.
+                    logs = "\n".join(str(entry.get("line", entry.get("logs")) or "") for entry in records)[-4000:]
+                except (CommandError, ValueError, TypeError, AttributeError) as exc:
+                    logs = f"Logs unavailable: {exc}"
+                raise CommandError(f"Flight run {run_number} ended with {status}. Log tail: {logs}")
             if index < attempts - 1:
                 time.sleep(sleep_seconds)
 
-        raise CommandError(f"Timed out waiting for flight {flight_id} to succeed")
+        raise CommandError(f"Timed out waiting for flight {flight_id} run {run_number} to succeed")
 
     def _wait_for_share(self, share_name: str) -> str:
         attempts = max(1, int(os.environ.get("SHARE_RESOLVE_ATTEMPTS", "18")))
@@ -1698,12 +1739,17 @@ class Deployer:
     def _query_rows(self, statement: str) -> list[tuple[object, ...]]:
         if self.sql_env is None:
             raise ValidationError("MotherDuck token was not prepared for live command")
+        if sql_backend() == "motherduck":
+            token = self.sql_env.get("motherduck_token")
+            return cli_query_rows(statement, token=str(token) if token is not None else None)
         try:
             import duckdb
+            # Timestamp decoding can otherwise fail after a mutating query ran.
+            importlib.import_module("pytz")
         except ModuleNotFoundError as exc:
             raise CommandError(
-                "duckdb Python package is required for live MotherDuck commands. "
-                "Install md-blueprints[deploy] or run through the MotherDuck Blueprints action."
+                "Install the MotherDuck CLI with make install-deploy. "
+                "For the legacy Python backend, install md-blueprints[deploy]."
             ) from exc
 
         connection = None

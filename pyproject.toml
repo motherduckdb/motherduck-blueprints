@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-blueprints"
-version = "0.4.3"
+version = "0.5.0"
 description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "json5>=0.11",
   "packaging>=24.0",
   "PyYAML>=6.0",
   "tomli>=2.0; python_version < '3.11'",
@@ -35,6 +36,7 @@ deploy = [
 ]
 dev = [
   "duckdb>=1.1,<1.5.5",
+  "pytz>=2026.3.post1",
   "mypy>=1.10",
   "pip-audit>=2.10",
   "pytest>=8.0",
