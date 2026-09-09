@@ -16,6 +16,7 @@ from .project import CommandError, Project
 from .scaffold import run_new
 from .schema import ValidationError
 from .upgrade import run_upgrade
+from .motherduck_cli import install_cli
 
 
 def parse_blueprints(value: str | None) -> list[str] | None:
@@ -59,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="md-blueprints",
         usage=(
-            "md-blueprints <init|new|import|validate|verify|render|dive-source|changed|plan|deploy|cleanup|doctor|"
+            "md-blueprints <init|install-cli|new|import|validate|verify|render|dive-source|changed|plan|deploy|cleanup|doctor|"
             "check-updates|upgrade|migrate> [options]"
         ),
     )
@@ -85,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         names = parse_blueprints(options.blueprints)
         if command == "init":
             run_init(Path(options.init_dir or "."), force=options.force)
+        elif command == "install-cli":
+            install_cli()
         elif command == "new":
             if not options.init_dir or not options.new_name:
                 raise ValidationError("Usage: md-blueprints new <flight|dive|guide|role|project> NAME [options]")

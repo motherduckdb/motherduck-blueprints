@@ -1,0 +1,410 @@
+# md-blueprints-environment-model: v1
+name: Reusable deploy blueprints
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Deployment target for manual runs.
+        type: string
+        default: prod
+      branch:
+        description: Preview branch for manual runs.
+        type: string
+        default: ""
+      blueprints:
+        description: Optional comma-separated blueprint names.
+        type: string
+        default: ""
+
+jobs:
+  compute_changes:
+    name: Validate and Identify Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      changed_blueprints: ${{ steps.changed.outputs.changed_blueprints }}
+      changed_csv: ${{ steps.changed.outputs.changed_csv }}
+      target: ${{ steps.topology.outputs.target }}
+      target_environment: ${{ steps.topology.outputs.environment }}
+      target_identity: ${{ steps.topology.outputs.identity }}
+      staging_enabled: ${{ steps.topology.outputs.staging_enabled }}
+      deployment_enabled: ${{ steps.topology.outputs.deployment_enabled }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+
+      - name: Validate configured targets
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        with:
+          command: validate
+
+      - name: Resolve deployment topology
+        id: topology
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TARGET: ${{ inputs.target }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          import yaml
+          from md_blueprints.diagnostics import report_error
+
+          def fail(message):
+              report_error(ValueError(message))
+              raise SystemExit(message)
+
+          manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
+          targets = manifest.get("targets", {})
+          staging_enabled = "staging" in targets
+          event_name = os.environ["EVENT_NAME"]
+          deployment_enabled = True
+
+          if event_name == "pull_request":
+              target = "preview"
+          elif event_name == "push":
+              target = "staging" if staging_enabled else "prod"
+          elif event_name == "release":
+              target = "prod"
+              deployment_enabled = staging_enabled and os.environ.get("RELEASE_PRERELEASE", "false") != "true"
+          elif event_name == "workflow_dispatch":
+              target = os.environ.get("INPUT_TARGET", "prod") or "prod"
+          else:
+              fail(f"Unsupported deployment event: {event_name}")
+
+          if target not in targets:
+              fail(
+                  f"Target {target!r} is not declared in motherduck.yml. "
+                  "Add targets.staging before dispatching a staging deployment."
+              )
+
+          config = targets[target]
+          if event_name == "pull_request":
+              base_ref = os.environ.get("BASE_REF", "")
+              base_text = subprocess.check_output(
+                  ["git", "show", f"origin/{base_ref}:motherduck.yml"],
+                  text=True,
+              )
+              base_manifest = yaml.safe_load(base_text)
+              base_config = base_manifest.get("targets", {}).get("preview", {})
+              branch_deployment = config.get("deployment", {})
+              base_deployment = base_config.get("deployment", {})
+              branch_identity = (
+                  str(branch_deployment.get("identity", "")).strip()
+                  if isinstance(branch_deployment, dict)
+                  else ""
+              )
+              base_identity = (
+                  str(base_deployment.get("identity", "")).strip()
+                  if isinstance(base_deployment, dict)
+                  else ""
+              )
+              if (
+                  str(config.get("environment", "")).strip()
+                  != str(base_config.get("environment", "")).strip()
+                  or branch_identity != base_identity
+              ):
+                  deployment_enabled = False
+              config = base_config
+          environment = str(config.get("environment", "")).strip()
+          deployment = config.get("deployment", {})
+          identity = str(deployment.get("identity", "")).strip() if isinstance(deployment, dict) else ""
+          token_env_var = (
+              str(deployment.get("tokenEnvVar", "MOTHERDUCK_TOKEN")).strip()
+              if isinstance(deployment, dict)
+              else ""
+          )
+          if deployment_enabled and (not environment or not identity):
+              fail(
+                  f"Target {target!r} must declare environment and deployment.identity before live CI deployment"
+              )
+          if deployment_enabled and token_env_var != "MOTHERDUCK_TOKEN":
+              fail(
+                  f"Target {target!r} must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
+                  "GitHub Environment workflow"
+              )
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as handle:
+              handle.write(f"target={target}\n")
+              handle.write(f"environment={environment}\n")
+              handle.write(f"identity={identity}\n")
+              handle.write(f"staging_enabled={str(staging_enabled).lower()}\n")
+              handle.write(f"deployment_enabled={str(deployment_enabled).lower()}\n")
+          PY
+
+      - name: Use manually selected blueprints
+        id: manual-changed
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.blueprints != '' }}
+        shell: bash
+        env:
+          INPUT_BLUEPRINTS: ${{ inputs.blueprints }}
+        run: |
+          set -euo pipefail
+          changed="$(jq -cn --arg list "$INPUT_BLUEPRINTS" '$list | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
+          echo "stdout=${changed}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute changed blueprints for pull request
+        id: changed-pr
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        with:
+          command: changed
+          args: --base origin/${{ github.base_ref }} --head HEAD --json
+
+      - name: Resolve push comparison range
+        id: push-range
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            echo "args=--all --json" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--base ${PUSH_BEFORE} --head HEAD --json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute changed blueprints for push
+        id: changed-push
+        if: ${{ github.event_name == 'push' }}
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        with:
+          command: changed
+          args: ${{ steps.push-range.outputs.args }}
+
+      - name: Select all blueprints
+        id: changed-all
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        with:
+          command: changed
+          args: --all --json
+
+      - name: Set changed blueprint outputs
+        id: changed
+        shell: bash
+        env:
+          MANUAL_CHANGED: ${{ steps.manual-changed.outputs.stdout }}
+          PR_CHANGED: ${{ steps.changed-pr.outputs.stdout }}
+          PUSH_CHANGED: ${{ steps.changed-push.outputs.stdout }}
+          ALL_CHANGED: ${{ steps.changed-all.outputs.stdout }}
+        run: |
+          set -euo pipefail
+          changed="${MANUAL_CHANGED:-${PR_CHANGED:-${PUSH_CHANGED:-${ALL_CHANGED:-[]}}}}"
+          jq -e 'type == "array"' <<< "$changed" >/dev/null
+          csv="$(jq -r 'join(",")' <<< "$changed")"
+          echo "changed_blueprints=${changed}" >> "$GITHUB_OUTPUT"
+          echo "changed_csv=${csv}" >> "$GITHUB_OUTPUT"
+
+  deploy-preview:
+    name: Deploy Preview Blueprints
+    needs: compute_changes
+    if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
+      needs.compute_changes.outputs.changed_blueprints != '[]' &&
+      needs.compute_changes.outputs.target == 'preview' &&
+      needs.compute_changes.outputs.deployment_enabled == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: preview-${{ github.event.pull_request.number || inputs.branch }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve preview branch
+        id: preview-branch
+        shell: bash
+        env:
+          PREVIEW_BRANCH: ${{ github.head_ref || inputs.branch }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_BRANCH" ]; then
+            echo "Preview branch is required for preview deploys" >&2
+            exit 1
+          fi
+          echo "branch=${PREVIEW_BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Plan preview blueprints
+        id: plan-preview
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: plan
+          target: preview
+          branch: ${{ steps.preview-branch.outputs.branch }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Deploy preview blueprints
+        id: deploy-preview
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: deploy
+          verify-after-deploy: "true"
+          target: preview
+          branch: ${{ steps.preview-branch.outputs.branch }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Comment on pull request
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PLAN_OUTPUT: ${{ steps.plan-preview.outputs.stdout }}
+          DEPLOY_OUTPUT: ${{ steps.deploy-preview.outputs.stdout }}
+        with:
+          script: |
+            const marker = '<!-- preview-blueprints-comment -->';
+            const output = `${process.env.PLAN_OUTPUT ?? ''}\n\n${process.env.DEPLOY_OUTPUT ?? ''}`;
+            const body = `${marker}\n### Preview Blueprints\n\n${output}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(comment => comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  deploy-stable:
+    name: Deploy ${{ needs.compute_changes.outputs.target }} Blueprints
+    needs: compute_changes
+    if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
+      needs.compute_changes.outputs.changed_blueprints != '[]' &&
+      needs.compute_changes.outputs.target != 'preview' &&
+      github.event_name != 'release'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: stable-${{ needs.compute_changes.outputs.target }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Plan target blueprints
+        id: plan-stable
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: plan
+          target: ${{ needs.compute_changes.outputs.target }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Summarize deployment plan
+        shell: bash
+        env:
+          PLAN_OUTPUT: ${{ steps.plan-stable.outputs.stdout }}
+          TARGET: ${{ needs.compute_changes.outputs.target }}
+        run: |
+          {
+            echo "### ${TARGET} Blueprint Plan"
+            echo
+            printf "%s\n" "$PLAN_OUTPUT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy target blueprints
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: deploy
+          verify-after-deploy: "true"
+          target: ${{ needs.compute_changes.outputs.target }}
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+  deploy-release-production:
+    name: Deploy Released Production Blueprints
+    needs: compute_changes
+    if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
+      github.event_name == 'release' &&
+      needs.compute_changes.outputs.staging_enabled == 'true' &&
+      needs.compute_changes.outputs.deployment_enabled == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.compute_changes.outputs.target_environment }}
+    concurrency:
+      group: stable-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Verify released commit belongs to the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          release_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          git merge-base --is-ancestor "$release_commit" "origin/$DEFAULT_BRANCH" || {
+            echo "Release tag $RELEASE_TAG does not point to a commit on $DEFAULT_BRANCH." >&2
+            exit 1
+          }
+
+      - name: Plan released production blueprints
+        id: plan-production
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: plan
+          target: prod
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Summarize production plan
+        shell: bash
+        env:
+          PLAN_OUTPUT: ${{ steps.plan-production.outputs.stdout }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          {
+            echo "### Production Blueprint Plan for ${RELEASE_TAG}"
+            echo
+            printf "%s\n" "$PLAN_OUTPUT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy released production blueprints
+        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: deploy
+          verify-after-deploy: "true"
+          target: prod
+          blueprints: ${{ needs.compute_changes.outputs.changed_csv }}

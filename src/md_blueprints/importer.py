@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID
 
 import yaml
+import json5
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
@@ -51,16 +52,15 @@ def literal(value: Any) -> Any:
 def dive_source(source: str, mounts: list[dict[str, Any]]) -> str:
     match = re.search(r"^export const REQUIRED_DATABASES\s*=\s*", source, re.MULTILINE)
     if not match and re.search(r"\b(?:const|let|var)\s+REQUIRED_DATABASES\b", source):
-        raise ValidationError("Unsupported REQUIRED_DATABASES declaration; use a static JSON export before import")
+        raise ValidationError("Unsupported REQUIRED_DATABASES declaration; use a static array export before import")
     if match:
-        try:
-            value, end = json.JSONDecoder().raw_decode(source[match.end():])
-        except json.JSONDecodeError as exc:
-            raise ValidationError("REQUIRED_DATABASES must be a static JSON array before import") from exc
+        value, error, end = json5.parse(source, start=match.end(), consume_trailing=False, allow_duplicate_keys=False)
+        if error:
+            raise ValidationError("REQUIRED_DATABASES must be a static array before import")
         if not isinstance(value, list):
             raise ValidationError("REQUIRED_DATABASES must be an array")
-        tail = match.end() + end
-        suffix = re.match(r"[ \t]*;?[ \t]*(?:\r?\n|$)", source[tail:])
+        tail = end
+        suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?:\r?\n|$)", source[tail:])
         if suffix is None:
             raise ValidationError("Unsupported expression after REQUIRED_DATABASES")
         source = source[:match.start()] + source[tail + suffix.end():]

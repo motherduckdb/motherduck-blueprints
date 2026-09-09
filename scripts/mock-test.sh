@@ -17,96 +17,26 @@ trap cleanup EXIT
 
 mkdir -p "$FAKE_BIN" "$FAKE_PYTHON"
 
-cat > "${FAKE_BIN}/duckdb" <<'MOCK_DUCKDB'
-#!/usr/bin/env bash
-set -euo pipefail
+cat > "${FAKE_BIN}/motherduck" <<'MOCK_CLI'
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+import duckdb
 
-query="$*"
-: "${MOTHERDUCK_TOKEN:?MOTHERDUCK_TOKEN is required by fake duckdb}"
-state_dir="${MOCK_DUCKDB_STATE_DIR:?MOCK_DUCKDB_STATE_DIR is required}"
-flight_state="${state_dir}/flight_id"
-run_state="${state_dir}/run_number"
-dive_state="${state_dir}/dive_id"
-dive_status_state="${state_dir}/dive_status"
-share_url="md:_share/mock/00000000-0000-0000-0000-000000000003"
-run_status="${MOCK_FLIGHT_RUN_STATUS:-RUN_STATUS_SUCCEEDED}"
-
-echo "$query" >> "${state_dir}/queries.log"
-
-if [[ "$query" == *"MD_LIST_DATABASE_SHARES"* ]]; then
-  if [[ "${MOCK_SHARE_MISSING:-false}" != "true" ]]; then
-    echo "$share_url"
-  fi
-elif [[ "$query" == *"MD_LIST_FLIGHT_RUNS"* ]]; then
-  if [[ "$query" == *"COALESCE(MAX(run_number)"* ]]; then
-    if [ -f "$run_state" ]; then
-      cat "$run_state"
-    else
-      echo "0"
-    fi
-  elif [ -f "$run_state" ]; then
-    echo "$(cat "$run_state")|${run_status}"
-  fi
-elif [[ "$query" == *"MD_LIST_FLIGHTS"* ]]; then
-  if [[ "${MOCK_DUPLICATE_FLIGHTS:-false}" == "true" ]]; then
-    echo "00000000-0000-0000-0000-000000000011"
-    echo "00000000-0000-0000-0000-000000000012"
-  elif [ -f "$flight_state" ]; then
-    cat "$flight_state"
-  fi
-elif [[ "$query" == *"MD_CREATE_FLIGHT"* ]]; then
-  echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
-elif [[ "$query" == *"MD_UPDATE_FLIGHT"* ]]; then
-  echo "00000000-0000-0000-0000-000000000001" > "$flight_state"
-elif [[ "$query" == *"MD_RUN_FLIGHT"* ]]; then
-  current_run_number=0
-  if [ -f "$run_state" ]; then
-    current_run_number="$(cat "$run_state")"
-  fi
-  echo "$((current_run_number + 1))" > "$run_state"
-  exit 0
-elif [[ "$query" == *"MD_GET_FLIGHT_LOGS"* ]]; then
-  echo "mock failure log tail"
-elif [[ "$query" == *"MD_DELETE_FLIGHT"* ]]; then
-  rm -f "$flight_state"
-  rm -f "$run_state"
-elif [[ "$query" == *"MD_DROP_DATABASE_SHARE"* ]]; then
-  exit 0
-elif [[ "$query" == *"DROP DATABASE IF EXISTS"* ]]; then
-  exit 0
-elif [[ "$query" == *"MD_LIST_DIVES"* ]]; then
-  if [[ "${MOCK_DUPLICATE_DIVES:-false}" == "true" ]]; then
-    echo "00000000-0000-0000-0000-000000000021,draft"
-    echo "00000000-0000-0000-0000-000000000022,draft"
-  elif [ -f "$dive_state" ]; then
-    if [[ "$query" == *"SELECT id, status"* ]]; then
-      echo "$(cat "$dive_state"),$(cat "$dive_status_state")"
-    else
-      cat "$dive_state"
-    fi
-  fi
-elif [[ "$query" == *"MD_CREATE_DIVE"* ]]; then
-  echo "00000000-0000-0000-0000-000000000002" > "$dive_state"
-  echo "draft" > "$dive_status_state"
-  cat "$dive_state"
-elif [[ "$query" == *"MD_UPDATE_DIVE_STATUS"* ]]; then
-  for status in draft ready endorsed archived; do
-    if [[ "$query" == *"'$status'"* ]]; then
-      echo "$status" > "$dive_status_state"
-    fi
-  done
-elif [[ "$query" == *"MD_UPDATE_DIVE"* ]]; then
-  echo "00000000-0000-0000-0000-000000000002" > "$dive_state"
-elif [[ "$query" == *"MD_DELETE_DIVE"* ]]; then
-  rm -f "$dive_state"
-  rm -f "$dive_status_state"
-else
-  echo "Unexpected fake duckdb query: $query" >&2
-  exit 1
-fi
-MOCK_DUCKDB
-
-chmod +x "${FAKE_BIN}/duckdb"
+assert sys.argv[1] == "query" and "--file" in sys.argv and "json" in sys.argv
+statement = Path(sys.argv[sys.argv.index("--file") + 1]).read_text()
+try:
+    connection = duckdb.connect("md:", config={"motherduck_token": os.environ.get("MOTHERDUCK_TOKEN")})
+    rows = connection.execute(statement).fetchall()
+    print(json.dumps([{str(index): value for index, value in enumerate(row)} for row in rows]))
+except duckdb.Error as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(1)
+MOCK_CLI
+chmod +x "${FAKE_BIN}/motherduck"
+export MD_BLUEPRINTS_SQL_BACKEND=motherduck
 
 cat > "${FAKE_PYTHON}/duckdb.py" <<'PY'
 from __future__ import annotations
@@ -152,7 +82,7 @@ class MockConnection:
         if "MD_LIST_FLIGHT_RUNS" in query:
             if self.run_state.exists():
                 status = os.environ.get("MOCK_FLIGHT_RUN_STATUS", "RUN_STATUS_SUCCEEDED")
-                return MockResult([(f"{self.run_state.read_text().strip()}|{status}",)])
+                return MockResult([(self.run_state.read_text().strip(), status)])
             return MockResult([])
         if "MD_LIST_FLIGHTS" in query:
             if os.environ.get("MOCK_DUPLICATE_FLIGHTS", "false") == "true":
@@ -176,9 +106,11 @@ class MockConnection:
                 raise Error("MD_RUN_FLIGHT must be called with named config and flight_id arguments")
             current_run_number = int(self.run_state.read_text().strip()) if self.run_state.exists() else 0
             self.run_state.write_text(str(current_run_number + 1), encoding="utf-8")
-            return MockResult([])
+            return MockResult([(str(current_run_number + 1),)])
+        if "MD_GET_FLIGHT_RUN" in query:
+            return MockResult([(os.environ.get("MOCK_FLIGHT_RUN_STATUS", "SUCCEEDED"),)])
         if "MD_GET_FLIGHT_LOGS" in query:
-            return MockResult([("mock failure log tail",)])
+            return MockResult([('{"line":"mock failure log tail","line_number":1}',)])
         if "MD_DELETE_FLIGHT" in query:
             if '"flight_id" =>' not in query:
                 raise Error("MD_DELETE_FLIGHT must be called with a named flight_id argument")

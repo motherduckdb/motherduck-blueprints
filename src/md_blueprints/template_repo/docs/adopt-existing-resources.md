@@ -4,9 +4,9 @@ The importer reads existing Flights, Dives, and Guides, creates UUID-bound packa
 
 ## 1. Use the current tooling and intended identity
 
-Import and UUID-bound Flight/Dive updates require Blueprints 0.4.3 or newer. Keep your Makefile and action pins aligned; use `make upgrade VERSION=0.4.3` when upgrading an existing generated repository.
+Import and UUID-bound Flight/Dive updates require Blueprints 0.4.3 or newer. Keep your Makefile and action pins aligned; use `make upgrade VERSION=0.5.0` when upgrading an existing generated repository.
 
-Run `make install-deploy`, then provide the selected target's token through your secret manager. For example, `--target prod` reads the token configured by `targets.prod.deployment.tokenEnvVar`, normally `MOTHERDUCK_TOKEN`. Import from the account where the existing resources live; a new service account is not an ownership transfer.
+Run `make install-deploy` to install the supported MotherDuck CLI, which bundles its DuckDB runtime. Open a new terminal if `motherduck` is not on your PATH. Run `motherduck login` and `motherduck status` for local read-only export, or provide the selected target's token through your secret manager. For example, `--target prod` reads the token configured by `targets.prod.deployment.tokenEnvVar`, normally `MOTHERDUCK_TOKEN`. Import from the account where the existing resources live; a new service account is not an ownership transfer.
 
 If adding Blueprints to an existing code repository, generate support files in a separate directory and integrate them deliberately. Do not use `init --force` over customer work.
 
@@ -35,7 +35,13 @@ Replace the UUID placeholders. Choose either `--all` or explicit selectors. Prev
 
 ## 3. Write the reviewed packages
 
-Repeat the command with `--write`:
+Export every visible Flight, Dive, and Guide into disabled packages with:
+
+```bash
+make export
+```
+
+Use `make export TARGET=staging` for an existing staging target. This runs the same reviewed importer through `motherduck query --file ... --output json`. The equivalent CLI command is below. For selected UUIDs, repeat your earlier `--resource` selection with `--write`:
 
 ```bash
 .venv/bin/md-blueprints import --all --target prod --write
@@ -85,7 +91,11 @@ Planning is read-only. It verifies identity and dependencies, not every source/c
 
 ## CLI, MCP, and offline snapshots
 
-The importer uses the documented read-only SQL APIs behind MotherDuck's tooling, through Blueprints' existing DuckDB connection. It does not require the separate MotherDuck CLI or an MCP connection.
+The importer uses the documented read-only SQL APIs through the MotherDuck CLI. `make export` requires that CLI. Other Blueprints live commands prefer it when installed and retain the Python DuckDB backend for older installations. CI import selects the native CLI. Other CI live operations use the Python runtime.
+
+The native `list` and `pull` commands are useful for individual assets, but there is no native bulk-export command. Their local metadata does not include every adoption guard, such as owner identity and paused schedule state. Blueprints reads authoritative metadata and exact source versions through `motherduck query`, then creates the disabled packages without requiring you to reconcile separate metadata files. See the [CLI workflow and command map](motherduck-cli.md).
+
+Local import can use the CLI's saved login only for the default token variable outside CI. A custom target token variable must be supplied explicitly. Deployment, planning, verification, cleanup, and CI always require the selected target's token.
 
 The product CLI remains useful for inspection: `motherduck flight pull UUID --dir PATH`, `motherduck dive pull UUID --dir PATH`, and `motherduck guide pull UUID --dir PATH`. Pull overwrites local files, so use a fresh ignored `.imports/` directory. MCP alternatives are `get_flight`, `read_dive`, and `get_guide`.
 
@@ -102,7 +112,7 @@ This is the importer snapshot contract, not arbitrary product CLI metadata JSON 
 - There is no ownership transfer, full history migration, automatic source refresh, or two-way sync. Seeing another person's Flight does not grant permission to update it.
 - Missing or inaccessible bound objects produce errors, never replacement objects. To redeploy under a new identity, make that an explicit new-resource decision with new IDs and a separate cutover.
 - Import does not fetch secret values, database contents, or access grants, and does not automatically redirect references to preview objects.
-- Source/API shapes that cannot be represented without loss are rejected. Dive API version 1 and static JSON REQUIRED_DATABASES exports are supported.
+- Source/API shapes that cannot be represented without loss are rejected. Dive API version 1 and static REQUIRED_DATABASES arrays are supported, including JavaScript comments, single quotes, unquoted keys, trailing commas, and `as const`. Expressions and function calls are rejected without evaluation.
 - A resource changing while it is read causes a retryable error. The batch is not a transaction across the remote account; re-check the baseline before deployment.
 - Disabled imports do not deploy or clean up remote objects. Removing their files does not delete production resources.
 

@@ -8,6 +8,8 @@ Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.div
 
 ## Project Layout
 
+Customer workflows are short callers for `.github/workflows/reusable_*.yaml` in this repository. Keep reusable action pins aligned with the package version. Test both caller contracts and provider behavior when changing deployment orchestration.
+
 Generated customer repositories receive their own operating guide from `src/md_blueprints/template_repo/AGENTS.md`. Keep it aligned with the deploy engine. Internal scaffold templates and empty-root READMEs are packaged for tooling but not emitted by `init`. Existing account resources follow `docs/adopt-existing-resources.md`; exporting is not automatic adoption, and CLI metadata IDs do not bind Flight/Dive manifests.
 
 Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Keep root and packaged examples in sync.
@@ -29,6 +31,12 @@ Use top-level `inputs` and `outputs` to connect independently deployed packages.
 Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `make new-project`. `make new-blueprint` remains an alias for a complete project scaffold.
 
 When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, package READMEs, `.github/pull_request_template.md`, and this guide for drift.
+
+## MotherDuck CLI
+
+Use `make install-deploy` to install the MotherDuck CLI version tested by Blueprints. CI import uses its JSON query interface. Deployment, planning, verification, and cleanup use the Python runtime to avoid a process per query. Keep native runtime installation in the action, not customer workflows. `make cli-smoke` checks the real binary's help and local scaffolds without credentials.
+
+`make export` runs the read-only importer through the CLI and writes disabled packages for every visible Flight, Dive, and Guide. Individual native pulls do not include all adoption metadata. Preserve the importer's owner, schedule, pagination, and version checks. Local import alone may use `motherduck login`; CI and other live commands require the target token.
 
 ## Resources
 

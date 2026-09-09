@@ -6,6 +6,19 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Prepare version 0.5.0 for the native CLI and reusable workflow integration.
+
+- Handle the native CLI's multiple JSON result arrays and empty DDL output, fixing failures after successful multi-statement deployments.
+- Check the Python backend's timestamp dependency before connecting so missing dependencies cannot fail result decoding after writes.
+- Wait for the exact submitted Flight run and recognize both current and legacy status names, so a failed run stops downstream deployment.
+
+- Use the native MotherDuck CLI for CI import, local export, and CLI smoke checks, with a tested version, isolated state, JSON output, and temporary SQL files. Keep the Python backend for bulk CI deployment after live cycle comparison.
+- Add `make export` for bulk, read-only export into disabled Flight, Dive, and Guide packages, with local CLI login support and token-only CI authentication.
+- Accept ordinary static JavaScript mount arrays during Dive import without evaluating code, fixing exports of existing Dives that use single quotes, unquoted keys, or trailing commas.
+
+- Move customer deployment, preview cleanup, and Doctor jobs into versioned reusable workflows. Generated repositories keep only event triggers, permissions, and workflow references.
+- Upgrade and diagnose reusable workflow references alongside CLI and direct action pins while preserving customer settings and existing expanded workflows.
+
 ## v0.4.3 - 2026-09-06
 
 - Consolidate the packaging, Ruff, pip, pytz, provenance, and PyPI publishing updates proposed in #48 and #56–60.

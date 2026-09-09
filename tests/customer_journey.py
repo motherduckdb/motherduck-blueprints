@@ -32,7 +32,10 @@ def test_generated_readme_journey(tmp_path: Path) -> None:
     # Execute README commands using the candidate CLI instead of downloading a released version.
     readme = (tmp_path / "README.md").read_text()
     fence = chr(96) * 3
-    blocks = re.findall(fence + r"bash\n(.*?)" + fence, readme, flags=re.DOTALL)
+    # This journey follows the new-project path. Existing-account export and
+    # the native CLI are exercised by test_importer and native_cli_smoke.
+    local_steps = readme.split("## Make it yours", 1)[1]
+    blocks = re.findall(fence + r"bash\n(.*?)" + fence, local_steps, flags=re.DOTALL)
     assert blocks
     commands = [line for block in blocks for line in block.splitlines() if line.strip()]
     assert "make validate" in commands and "make preview-smoke wikipedia-pageviews" in commands

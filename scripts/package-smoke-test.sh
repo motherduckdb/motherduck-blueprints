@@ -95,8 +95,8 @@ grep -Fq 'md-blueprints @ $(CLI_SOURCE)' "$TMP_DIR/generated-template/Makefile"
 # shellcheck disable=SC2016
 grep -Fq 'install-deploy: $(CLI)' "$TMP_DIR/generated-template/Makefile"
 # shellcheck disable=SC2016
-grep -Fq 'md-blueprints[deploy] @ $(CLI_SOURCE)' "$TMP_DIR/generated-template/Makefile"
-grep -q "motherduckdb/motherduck-blueprints@v${CLI_VERSION}" "$TMP_DIR/generated-template/.github/workflows/deploy_blueprints.yaml"
+grep -Fq '$(CLI) install-cli' "$TMP_DIR/generated-template/Makefile"
+grep -q "motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v${CLI_VERSION}" "$TMP_DIR/generated-template/.github/workflows/deploy_blueprints.yaml"
 test -f "$TMP_DIR/generated-template/.dive-preview/.env.example"
 test -f "$TMP_DIR/generated-template/LICENSE"
 test -f "$TMP_DIR/generated-template/AGENTS.md"

@@ -129,16 +129,26 @@ def run_doctor(
     workflow = root / ".github" / "workflows" / "deploy_blueprints.yaml"
     if workflow.is_file():
         workflow_text = workflow.read_text(encoding="utf-8")
+        reusable_deploy = (
+            "motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@"
+            in workflow_text
+        )
         if "md-blueprints-environment-model: v1" not in workflow_text:
             lines.append(
                 "warning: deploy workflow does not use target-declared GitHub Environments; the repository-level "
                 "MOTHERDUCK_TOKEN workflow is deprecated"
             )
-        if project.has_target("staging") and 'target = "staging" if staging_enabled else "prod"' not in workflow_text:
+        if (
+            project.has_target("staging") and not reusable_deploy
+            and 'target = "staging" if staging_enabled else "prod"' not in workflow_text
+        ):
             lines.append(
                 "warning: staging is configured but the default-branch workflow does not select staging"
             )
-        if project.has_target("staging") and "github.event_name == 'release'" not in workflow_text:
+        if (
+            project.has_target("staging") and not reusable_deploy
+            and "github.event_name == 'release'" not in workflow_text
+        ):
             lines.append(
                 "warning: staging is configured but production is not deployed from a published GitHub Release"
             )
@@ -232,7 +242,7 @@ def tooling_pin_status(root: Path) -> tuple[str, bool]:
         for workflow in workflow_root.glob("*.y*ml"):
             action_versions.update(
                 re.findall(
-                    r"motherduckdb/motherduck-blueprints@(v[^\s]+)",
+                    r"motherduckdb/motherduck-blueprints(?:/\.github/workflows/[^/@\s]+\.ya?ml)?@(v[^\s\"',}]+)",
                     workflow.read_text(encoding="utf-8"),
                 )
             )

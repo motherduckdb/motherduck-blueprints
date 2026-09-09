@@ -55,20 +55,15 @@ runs:
       run: |
         set -euo pipefail
         install_target="$GITHUB_ACTION_PATH"
-        install_mode="base"
         case "$MD_BLUEPRINTS_COMMAND" in
-          plan|deploy|cleanup|import|verify)
-            install_target="${GITHUB_ACTION_PATH}[deploy]"
-            install_mode="deploy"
-            ;;
+          plan|deploy|cleanup|verify) install_target="${GITHUB_ACTION_PATH}[deploy]" ;;
         esac
         python_key="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-        action_key="$(printf '%s-%s' "$GITHUB_ACTION_PATH" "$python_key" | cksum | awk '{print $1}')"
+        action_key="$(printf '%s-%s' "$install_target" "$python_key" | cksum | awk '{print $1}')"
         marker_dir="${RUNNER_TEMP}/md-blueprints-action"
-        base_marker="${marker_dir}/${action_key}-base"
-        deploy_marker="${marker_dir}/${action_key}-deploy"
+        marker="${marker_dir}/${action_key}"
         mkdir -p "$marker_dir"
-        if [ -f "$deploy_marker" ] || { [ "$install_mode" = "base" ] && [ -f "$base_marker" ]; }; then
+        if [ -f "$marker" ]; then
           echo "md-blueprints dependencies already installed for this action checkout."
           exit 0
         fi
@@ -76,12 +71,19 @@ runs:
         constraints="$GITHUB_ACTION_PATH/constraints/action.txt"
         python -m pip install --constraint "$constraints" pip setuptools wheel
         python -m pip install --no-build-isolation --constraint "$constraints" "$install_target"
-        touch "$marker_dir/${action_key}-${install_mode}"
+        touch "$marker"
+
+    - name: Install MotherDuck CLI
+      if: inputs.command == 'import'
+      shell: bash
+      run: md-blueprints install-cli
 
     - name: Run md-blueprints
       id: run
       shell: bash
       env:
+        MD_BLUEPRINTS_SQL_BACKEND: ${{ inputs.command == 'import' && 'motherduck' || 'duckdb' }}
+        MOTHERDUCK_HOME: ${{ runner.temp }}/md-blueprints-motherduck
         MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
         MD_BLUEPRINTS_ARGS: ${{ inputs.args }}
         MD_BLUEPRINTS_TARGET: ${{ inputs.target }}
