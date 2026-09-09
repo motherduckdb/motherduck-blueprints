@@ -1,36 +1,33 @@
 ## Highlights
 
-- Import existing Flights, Dives, and Guides with UUID bindings and review-first manifests, then verify live identities before and after deployment. [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
-- Start with a smaller customer repository, clearer setup guidance, and a single active example. [#61](https://github.com/motherduckdb/motherduck-blueprints/pull/61) [#63](https://github.com/motherduckdb/motherduck-blueprints/pull/63)
+- Keep deployment, preview cleanup, and Doctor implementation in versioned reusable workflows, reducing generated customer workflows from 670 to 105 lines. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
+- Export existing Flights, Dives, and Guides into disabled, UUID-bound packages with `make export`, retaining ownership and deployment settings. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Features
 
-- Use named GitHub Action inputs, optional staging with environment-scoped credentials, and release-based production promotion. [#61](https://github.com/motherduckdb/motherduck-blueprints/pull/61)
-- Update CLI and action pins together with make upgrade, and check imported bindings with the read-only verify command. [#63](https://github.com/motherduckdb/motherduck-blueprints/pull/63) [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
+- Install the tested MotherDuck CLI with `make install-deploy` and use a local CLI login for read-only import. CI and other live commands continue to require the selected target token. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Bug Fixes
 
-- Reject empty deployment selections, unsafe import/scaffold paths, missing bound IDs, and owner mismatches; validate migrations before writing. [#61](https://github.com/motherduckdb/motherduck-blueprints/pull/61) [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
-- Generate valid packages for reserved or numeric-leading names and preserve preview files and existing Python environments on setup errors. [#43](https://github.com/motherduckdb/motherduck-blueprints/pull/43) [#61](https://github.com/motherduckdb/motherduck-blueprints/pull/61)
+- Wait for the exact submitted Flight run across supported runtimes. Handle both status and log schemas, preserve the failure reason when logs are unavailable, and stop downstream deployment after failed runs. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
+- Handle multiple native CLI JSON results and empty DDL output without retrying already-applied writes. Check Python timestamp dependencies before connecting. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
+- Import static JavaScript mount arrays with comments, unquoted keys, single quotes, trailing commas, and `as const`, without evaluating source expressions. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Maintenance
 
-- Add customer agent instructions, adoption guidance, and executable README journey tests. [#42](https://github.com/motherduckdb/motherduck-blueprints/pull/42) [#63](https://github.com/motherduckdb/motherduck-blueprints/pull/63) [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
-- Refresh packaging, Ruff, pip, and pytz dependencies. [#48](https://github.com/motherduckdb/motherduck-blueprints/pull/48) [#58](https://github.com/motherduckdb/motherduck-blueprints/pull/58) [#59](https://github.com/motherduckdb/motherduck-blueprints/pull/59) [#60](https://github.com/motherduckdb/motherduck-blueprints/pull/60)
+- Update reusable workflow references together with CLI and direct action pins, preserving customer workflow settings. Keep generated documentation and dependency locks aligned. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Tooling and Release
 
-- Coordinate generated-template and PyPI publication with provenance, SBOMs, and release preflight checks; keep the canonical template validation-only. [#44](https://github.com/motherduckdb/motherduck-blueprints/pull/44) [#62](https://github.com/motherduckdb/motherduck-blueprints/pull/62)
-- Refresh provenance and PyPI publishing actions. [#45](https://github.com/motherduckdb/motherduck-blueprints/pull/45) [#56](https://github.com/motherduckdb/motherduck-blueprints/pull/56) [#57](https://github.com/motherduckdb/motherduck-blueprints/pull/57)
+- Prepare version 0.5.0. Use the tested native CLI for import and CLI smoke checks, while bulk CI deployment keeps the Python runtime after live cycle comparison. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Compatibility
 
-- Schema version 1 and existing action args remain supported. Generated deployments use GitHub Environment secrets named MOTHERDUCK_TOKEN; update CLI/action pins together. Imported UUID bindings require 0.4.3 or newer. [#61](https://github.com/motherduckdb/motherduck-blueprints/pull/61) [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
-- Import does not transfer ownership or copy data or secret values. Imported resources are disabled until reviewed, and deployment verification is not a substitute for customer data-quality tests. [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
+- Schema version 1, existing expanded workflows, and UUID-bound imports remain supported. New reusable callers require the matching release. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
+- `make install-deploy` now installs the native CLI. Local live commands prefer it when available. To select the Python backend explicitly, install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
 ## Verification
 
-- Regression coverage includes import identity and pagination contracts, failed preflight blocking all writes, post-deployment drift, package installation, and the generated customer journey. [#64](https://github.com/motherduckdb/motherduck-blueprints/pull/64)
-- Publication is gated on package build/smoke checks and generated-template validation. [Release workflow](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.4.3/.github/workflows/release.yaml)
+- Passed the local Python 3.10–3.14 matrix, packaging and customer-journey smoke checks, typing, linting, and dependency audits. Isolated live cycles covered repeated updates, identity guards, run failures, preview isolation, and cleanup. [#66](https://github.com/motherduckdb/motherduck-blueprints/pull/66)
 
-**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.4.0...v0.4.3
+**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.4.3...v0.5.0

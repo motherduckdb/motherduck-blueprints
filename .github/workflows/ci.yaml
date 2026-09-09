@@ -40,8 +40,8 @@ jobs:
 
       - name: Install and exercise the MotherDuck CLI
         run: |
-          make install-deploy
-          make cli-smoke
+          md-blueprints install-cli
+          python -m pytest -q tests/native_cli_smoke.py
 
       - name: Validate manifests
         run: make validate
