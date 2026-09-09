@@ -103,7 +103,6 @@ jobs:
         env:
           TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
-          PYPI_PROJECT: md-blueprints
         run: ./scripts/check-release-external-setup.sh
 
   publish-template:
@@ -193,36 +192,11 @@ jobs:
             gh release create "$tag" -R "$TEMPLATE_REPOSITORY" --verify-tag --title "$tag" --notes-file release-artifacts/RELEASE_NOTES.md
           fi
 
-  publish-pypi:
-    name: Publish PyPI Package
-    needs:
-      - build
-      - release-preflight
-      - publish-template
-    if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: pypi
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: md-blueprints-dist
-          path: release-artifacts
-
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        with:
-          packages-dir: release-artifacts/dist
-          attestations: true
-
   finalize-release:
     name: Publish GitHub Release and Action Alias
     needs:
       - build
       - publish-template
-      - publish-pypi
     if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10

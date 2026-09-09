@@ -6,6 +6,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Publish the action, template, and distribution assets through GitHub without a PyPI publisher or availability dependency. Reject already-existing GitHub tags when preparing a new version.
+
 - Prepare version 0.5.0 for the native CLI and reusable workflow integration.
 
 - Handle the native CLI's multiple JSON result arrays and empty DDL output, fixing failures after successful multi-statement deployments.
