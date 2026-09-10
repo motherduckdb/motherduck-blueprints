@@ -169,7 +169,7 @@ The release workflow generates `motherduckdb/blueprints-template` from the built
 | Plan/deploy/cleanup behavior | `src/md_blueprints/deploy.py` |
 | Migration behavior | `src/md_blueprints/migrations.py` |
 | Doctor/update checks | `src/md_blueprints/maintenance.py` |
-| Distribution asset assembly | `src/md_blueprints/asset-map.json`, `src/build_support.py`, `MANIFEST.in` |
+| Distribution asset assembly | `src/md_blueprints/asset-map.json`, `src/build_support.py` |
 | Local compatibility wrapper | `tools/md_blueprints` |
 | GitHub Action wrapper | `action.yml` |
 | Internal CI | `.github/workflows/ci.yaml` |

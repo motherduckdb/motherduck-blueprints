@@ -17,7 +17,7 @@ def test_native_cli_contract_and_local_scaffolds(tmp_path: Path) -> None:
     env.pop('motherduck_token', None)
 
     def run(*args: str) -> str:
-        return subprocess.check_output([cli, *args], env=env, text=True, stderr=subprocess.STDOUT)
+        return subprocess.check_output([cli, *args], env=env, text=True)
 
     assert run('--version').strip() == SUPPORTED_VERSION
     query_help = run('query', '--help')

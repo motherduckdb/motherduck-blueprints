@@ -228,10 +228,8 @@ def test_asset_manifest_has_only_authoritative_sources() -> None:
     import json
 
     mapping = json.loads((REPO_ROOT / 'src/md_blueprints/asset-map.json').read_text())
-    manifest = (REPO_ROOT / 'MANIFEST.in').read_text().splitlines()
     for destination, source in mapping.items():
         assert (REPO_ROOT / source).is_file(), source
-        assert f'include {source}' in manifest, source
         assert not (REPO_ROOT / 'src/md_blueprints' / destination).is_file(), destination
     assert set(mapping) >= {
         'schemas/v1/blueprint.schema.json',

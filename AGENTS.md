@@ -99,6 +99,6 @@ Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep e
 
 ## Source ownership
 
-Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map and source distribution manifest. Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.
+Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map. Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.
 
 Edit job logic in `.github/workflows/reusable_*.yaml`, then run `make sync-workflows`. Repository event headers stay local. Generated repository jobs use the checkout action while customer jobs use the release pin. CI checks generated jobs for drift.
