@@ -10,9 +10,9 @@ Never invent, print, or commit MotherDuck tokens. Local Dives preview uses `.div
 
 Customer workflows are short callers for `.github/workflows/reusable_*.yaml` in this repository. Keep reusable action pins aligned with the package version. Test both caller contracts and provider behavior when changing deployment orchestration.
 
-Generated customer repositories receive their own operating guide from `src/md_blueprints/template_repo/AGENTS.md`. Keep it aligned with the deploy engine. Internal scaffold templates and empty-root READMEs are packaged for tooling but not emitted by `init`. Existing account resources follow `docs/adopt-existing-resources.md`; exporting is not automatic adoption, and CLI metadata IDs do not bind Flight/Dive manifests.
+Generated customer repositories receive their own operating guide from `src/md_blueprints/template_repo/AGENTS.md`. Keep it aligned with the deploy engine. Internal scaffold templates are packaged for tooling but not emitted by `init`. Optional roots are created on demand. Existing account resources follow `docs/adopt-existing-resources.md`; exporting is not automatic adoption, and CLI metadata IDs do not bind Flight/Dive manifests.
 
-Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Keep root and packaged examples in sync.
+Wikipedia is the only active starter. Optional examples live under `examples/` and are not discovered until copied into an active package root. Root examples are authoritative. Package assembly uses `src/md_blueprints/asset-map.json`.
 
 `motherduck.yml` is the canonical repository manifest. It discovers packages below `flights/`, `dives/`, `guides/`, `roles/`, `projects/`, and the compatibility `blueprints/` root, defines shared variables, and declares the required `preview` and `prod` targets plus optional `staging`.
 
@@ -96,3 +96,9 @@ Deployment always runs preflight before writes and verifies live identity/depend
 ## Changelog
 
 Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep entries under `Unreleased` until the change is released or merged into a reusable template.
+
+## Source ownership
+
+Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map and source distribution manifest. Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.
+
+Edit job logic in `.github/workflows/reusable_*.yaml`, then run `make sync-workflows`. Repository event headers stay local. Generated repository jobs use the checkout action while customer jobs use the release pin. CI checks generated jobs for drift.

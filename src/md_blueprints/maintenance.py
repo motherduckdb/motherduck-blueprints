@@ -5,12 +5,13 @@ import os
 import re
 import urllib.error
 import urllib.request
-from importlib import resources, util
+from importlib import util
 from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
 from . import __version__
+from .assets import schema_root
 from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
 
@@ -210,7 +211,7 @@ def schema_mirror_status(root: Path) -> str:
     if not schema_dir.is_dir():
         return "not present"
 
-    package_schema_root = resources.files("md_blueprints").joinpath("schemas")
+    package_schema_root = schema_root()
     mismatched: list[str] = []
     for version in sorted(SUPPORTED_SCHEMA_VERSIONS):
         for name in ["motherduck-root.schema.json", "blueprint.schema.json"]:

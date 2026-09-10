@@ -24,7 +24,7 @@ Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints wo
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.5.0
+- uses: motherduckdb/motherduck-blueprints@v0.5.1
   with:
     command: validate
 ```
@@ -131,7 +131,7 @@ One-time template setup: create `motherduckdb/blueprints-template`, mark it as a
 Before creating a release tag:
 
 ```bash
-make release-check TAG=v0.5.0
+make release-check TAG=v0.5.1
 make release-external-check
 make validate
 make mock-test
@@ -153,7 +153,7 @@ That command writes the customer file set and stamps the same exact release into
 Before the first stable customer handoff, split the generated customer template from tooling:
 
 - Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
-- Template repo: `motherduck.yml`, the active Flight/Dive starter, optional examples, `AGENTS.md`, customer docs, thin Makefile, customer workflows, schemas, preview support, Dependabot, CODEOWNERS, and `.gitignore`. Optional roots are created by scaffolding; internal templates and empty-root READMEs stay in the tooling package.
+- Template repo: `motherduck.yml`, the active Flight/Dive starter, optional examples, `AGENTS.md`, customer docs, thin Makefile, customer workflows, schemas, preview support, Dependabot, CODEOWNERS, and `.gitignore`. Optional roots are created by scaffolding; internal scaffolds stay in the tooling package.
 
 The release workflow generates `motherduckdb/blueprints-template` from the built wheel's `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout; generated customer workflows use the stamped immutable release tag.
 
@@ -163,18 +163,18 @@ The release workflow generates `motherduckdb/blueprints-template` from the built
 | --- | --- |
 | CLI parsing and exit codes | `src/md_blueprints/cli.py` |
 | Customer template generation | `src/md_blueprints/init.py`, `src/md_blueprints/template_repo/` |
-| Schema loading and validation | `src/md_blueprints/schema.py`, `src/md_blueprints/schemas/v*/` |
+| Schema loading and validation | `src/md_blueprints/schema.py`, `schemas/v*/` |
 | Template rendering | `src/md_blueprints/template.py` |
 | Project manifest and changed detection | `src/md_blueprints/project.py` |
 | Plan/deploy/cleanup behavior | `src/md_blueprints/deploy.py` |
 | Migration behavior | `src/md_blueprints/migrations.py` |
 | Doctor/update checks | `src/md_blueprints/maintenance.py` |
-| Editor/docs schema mirror | `schemas/v*/` |
+| Distribution asset assembly | `src/md_blueprints/asset-map.json`, `src/build_support.py`, `MANIFEST.in` |
 | Local compatibility wrapper | `tools/md_blueprints` |
 | GitHub Action wrapper | `action.yml` |
 | Internal CI | `.github/workflows/ci.yaml` |
 | Release automation | `.github/workflows/release.yaml`, `scripts/package-smoke-test.sh`, `scripts/check-release-version.sh` |
-| Customer setup docs | `README.md`, `docs/setup-your-repository.md`, `docs/github-setup.md` |
+| Customer setup docs | `README.md`, `docs/setup-your-repository.md` |
 | Field reference | `docs/blueprint-yml-reference.md` |
 | Change record | `CHANGELOG.md` |
 

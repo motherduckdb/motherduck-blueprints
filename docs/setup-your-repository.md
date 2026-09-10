@@ -54,7 +54,7 @@ Create a new pipeline and dashboard with `make new-project revenue`. Edit its fi
 | Local Python setup fails | Select a working interpreter, for example `make validate PYTHON=python3.13`. |
 | No preview comment on a fork PR | Expected: fork PRs validate only. Use a branch in your own repository to deploy. |
 
-Before team use, [configure branch protection and deployment approvals](github-setup.md). In the default setup, environment approval rules apply to previews and cleanup as well as production.
+Before team use, [configure branch protection and deployment approvals](#protect-your-github-repository). In the default setup, environment approval rules apply to previews and cleanup as well as production.
 
 ## Add staging (optional)
 
@@ -118,6 +118,28 @@ Promotion reconciles the tagged code under the production service account. It do
 
 ## Keep the tooling current
 
-Run `make upgrade` to update the CLI, reusable workflows, and any direct action pins together and show the diff. It does not commit, push, or overwrite workflow settings. Use `make upgrade VERSION=0.5.0` to select a release, or `.venv/bin/md-blueprints upgrade` for a dry run. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
+Run `make upgrade` to update the CLI, reusable workflows, and any direct action pins together and show the diff. It does not commit, push, or overwrite workflow settings. Use `make upgrade VERSION=0.5.1` to select a release, or `.venv/bin/md-blueprints upgrade` for a dry run. The scheduled Doctor workflow reports outdated tooling and configuration problems. See [upgrades and migrations](tooling-and-schema-versioning.md).
 
 For existing resources, run `make install-deploy`, authenticate with `motherduck login`, check `motherduck status`, then run `make export`. Follow the [adoption guide](adopt-existing-resources.md) before enabling deployment. Other live local commands require the target token through your secret manager. For a custom workflow, see [GitHub Action inputs](github-action.md).
+
+## Protect your GitHub repository
+
+Complete the [first deployment](setup-your-repository.md) before adding required checks, so GitHub can list the workflow names.
+
+### Protect main
+
+In **Settings → Branches** (or your repository rulesets), require pull requests, reviews, and the validation checks before merging to `main`. If you enable Code Owner reviews, first replace the examples in `.github/CODEOWNERS` with your own users or teams.
+
+### Require deployment approval
+
+Open **Settings → Environments → motherduck-production** and add required reviewers if your team needs deployment approval.
+
+In the default setup, previews, production, and cleanup all use this environment, so its approval and branch rules apply to all three. Allow PR branches if you want previews to deploy. To approve production separately, [add staging](setup-your-repository.md#add-staging-optional).
+
+### Keep credentials and cleanup configured
+
+Store `MOTHERDUCK_TOKEN` as an environment secret containing a MotherDuck service-account read/write token. Same-repository deployments fail with a configuration message if it is missing. Fork PRs validate without secrets.
+
+Keep **Cleanup Preview Blueprints** enabled. It removes preview resources on PR close or branch deletion, checking both branch and base manifests on PR close.
+
+For custom workflows, see the [GitHub Action guide](github-action.md). For version updates, see [tooling upgrades](tooling-and-schema-versioning.md).

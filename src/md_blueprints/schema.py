@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from importlib import resources
 from pathlib import Path
 
 import yaml
@@ -10,6 +9,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from . import __version__
+from .assets import schema_root
 
 
 LATEST_SCHEMA_VERSION = 1
@@ -67,7 +67,7 @@ def validate_required_cli_version(value: object, *, path: Path) -> None:
 
 class SchemaValidator:
     def __init__(self) -> None:
-        self.schema_root = resources.files("md_blueprints").joinpath("schemas")
+        self.schema_root = schema_root()
         self.schemas: dict[tuple[int, str], dict[str, object]] = {}
 
     def validate(self, data: object, schema_name: str) -> None:

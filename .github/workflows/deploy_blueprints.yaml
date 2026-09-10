@@ -40,9 +40,10 @@ on:
       - "src/**"
       - "tools/**"
       - "scripts/**"
-      - "templates/**"
       - "action.yml"
       - "pyproject.toml"
+      - "MANIFEST.in"
+      - ".github/workflows/reusable_*.yaml"
       - ".github/workflows/deploy_blueprints.yaml"
   pull_request:
     branches:
@@ -59,13 +60,15 @@ on:
       - "src/**"
       - "tools/**"
       - "scripts/**"
-      - "templates/**"
       - "action.yml"
       - "pyproject.toml"
+      - "MANIFEST.in"
+      - ".github/workflows/reusable_*.yaml"
       - ".github/workflows/deploy_blueprints.yaml"
   release:
     types:
       - published
+# Generated jobs: edit reusable workflows, then run make sync-workflows.
 
 jobs:
   compute_changes:
@@ -260,6 +263,7 @@ jobs:
     name: Deploy Preview Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       needs.compute_changes.outputs.changed_blueprints != '[]' &&
       needs.compute_changes.outputs.target == 'preview' &&
       needs.compute_changes.outputs.deployment_enabled == 'true' &&
@@ -345,6 +349,7 @@ jobs:
     name: Deploy ${{ needs.compute_changes.outputs.target }} Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       needs.compute_changes.outputs.changed_blueprints != '[]' &&
       needs.compute_changes.outputs.target != 'preview' &&
       github.event_name != 'release'
@@ -392,6 +397,7 @@ jobs:
     name: Deploy Released Production Blueprints
     needs: compute_changes
     if: >-
+      github.repository != 'motherduckdb/blueprints-template' &&
       github.event_name == 'release' &&
       needs.compute_changes.outputs.staging_enabled == 'true' &&
       needs.compute_changes.outputs.deployment_enabled == 'true'

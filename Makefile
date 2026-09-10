@@ -114,3 +114,7 @@ help: ## Show available targets
 
 %:
 	@:
+
+.PHONY: sync-workflows
+sync-workflows: ## Regenerate repository workflow jobs from reusable providers
+	$(PYTHON) scripts/sync-workflows.py
