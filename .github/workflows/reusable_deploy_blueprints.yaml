@@ -40,7 +40,7 @@ jobs:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
 
       - name: Validate configured targets
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         with:
           command: validate
 
@@ -159,7 +159,7 @@ jobs:
       - name: Compute changed blueprints for pull request
         id: changed-pr
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         with:
           command: changed
           args: --base origin/${{ github.base_ref }} --head HEAD --json
@@ -181,7 +181,7 @@ jobs:
       - name: Compute changed blueprints for push
         id: changed-push
         if: ${{ github.event_name == 'push' }}
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         with:
           command: changed
           args: ${{ steps.push-range.outputs.args }}
@@ -189,7 +189,7 @@ jobs:
       - name: Select all blueprints
         id: changed-all
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         with:
           command: changed
           args: --all --json
@@ -242,7 +242,7 @@ jobs:
 
       - name: Plan preview blueprints
         id: plan-preview
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -253,7 +253,7 @@ jobs:
 
       - name: Deploy preview blueprints
         id: deploy-preview
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -314,7 +314,7 @@ jobs:
 
       - name: Plan target blueprints
         id: plan-stable
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -335,7 +335,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy target blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -379,7 +379,7 @@ jobs:
 
       - name: Plan released production blueprints
         id: plan-production
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -400,7 +400,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy released production blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.5.0
+        uses: motherduckdb/motherduck-blueprints@v0.5.1
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

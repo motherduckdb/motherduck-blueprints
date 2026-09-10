@@ -43,6 +43,9 @@ jobs:
           md-blueprints install-cli
           python -m pytest -q tests/native_cli_smoke.py
 
+      - name: Check generated workflow jobs
+        run: python scripts/sync-workflows.py --check
+
       - name: Validate manifests
         run: make validate
 

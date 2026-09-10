@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-blueprints"
-version = "0.5.0"
+version = "0.5.1"
 description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -56,8 +56,12 @@ md-blueprints = "md_blueprints.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.cmdclass]
+build_py = "build_support.BuildPy"
+
 [tool.setuptools.package-data]
 md_blueprints = [
+  "asset-map.json",
   "schemas/**/*.json",
   "template_repo/**/*",
   "template_repo/.dive-preview/.env.example",

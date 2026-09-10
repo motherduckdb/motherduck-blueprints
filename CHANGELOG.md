@@ -6,6 +6,16 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.5.1 - 2026-09-10
+
+- Assemble package assets from one authoritative source, remove duplicate scaffolds and optional-root placeholders, and merge repository protection guidance into setup docs.
+- Generate repository workflow jobs from reusable providers while preserving local-action testing and customer release pins. Remove the outdated development container configuration.
+- Preserve customer manifests, resource IDs, schemas, commands, and workflow paths. Existing adopters need no file migration.
+
+- Document complete GitHub Action validation and manual production deployment workflows in the README, including environment secrets and package selection.
+
+## v0.5.0 - 2026-09-09
+
 - Publish the action, template, and distribution assets through GitHub without a PyPI publisher or availability dependency. Reject already-existing GitHub tags when preparing a new version.
 
 - Prepare version 0.5.0 for the native CLI and reusable workflow integration.

@@ -106,17 +106,21 @@ test ! -e "$TMP_DIR/generated-template/src"
 test ! -e "$TMP_DIR/generated-template/pyproject.toml"
 test ! -e "$TMP_DIR/generated-template/CHANGELOG.md"
 
-"$INSTALL_VENV/bin/python" - "$CLI_VERSION" <<'PY'
+"$INSTALL_VENV/bin/python" - "$CLI_VERSION" "$REPO_ROOT" <<'PY'
 import importlib.metadata
 import json
 import sys
 from importlib import resources
+from pathlib import Path
 
 cli_version = sys.argv[1]
 version = importlib.metadata.version("md-blueprints")
 if version != cli_version:
     raise SystemExit(f"installed metadata version {version} does not match md-blueprints --version {cli_version}")
 package = resources.files("md_blueprints")
+source_root = Path(sys.argv[2])
+for destination, source in json.loads(package.joinpath("asset-map.json").read_text()).items():
+    assert package.joinpath(destination).read_bytes() == (source_root / source).read_bytes(), destination
 for schema in ["motherduck-root.schema.json", "blueprint.schema.json"]:
     payload = package.joinpath("schemas", "v1", schema).read_text(encoding="utf-8")
     json.loads(payload)

@@ -13,7 +13,7 @@ from md_blueprints.scaffold import run_new
 from md_blueprints.schema import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MIRRORED_TEMPLATE_PATHS = [
+SHARED_TEMPLATE_PATHS = [
     "LICENSE",
     "motherduck.yml",
     "flights",
@@ -43,13 +43,6 @@ def test_slim_template_creates_optional_roots_on_demand(tmp_path: Path) -> None:
     assert (tmp_path / "projects/new-project/src/flight.py").is_file()
     assert not (tmp_path / "templates").exists()
     Project(tmp_path).validate()
-
-
-def test_internal_scaffolds_remain_in_sync() -> None:
-    for path in (REPO_ROOT / "templates/blueprint").iterdir():
-        if path.is_file():
-            packaged = REPO_ROOT / "src/md_blueprints/template_repo/templates/blueprint" / path.name
-            assert packaged.read_bytes() == path.read_bytes()
 
 
 def test_force_init_does_not_delete_existing_optional_roots(tmp_path: Path) -> None:
@@ -192,13 +185,13 @@ def test_init_force_refuses_symlink_that_escapes_target(tmp_path: Path) -> None:
     assert list(outside.iterdir()) == []
 
 
-def test_init_template_does_not_drift_from_mirrored_repo_paths(tmp_path: Path) -> None:
+def test_init_assembles_authoritative_repository_assets(tmp_path: Path) -> None:
     target = tmp_path / "customer-blueprints"
 
     run_init(target)
 
-    source_files = set(repository_files(MIRRORED_TEMPLATE_PATHS))
-    generated_files = set(files_under(target, MIRRORED_TEMPLATE_PATHS))
+    source_files = set(repository_files(SHARED_TEMPLATE_PATHS))
+    generated_files = set(files_under(target, SHARED_TEMPLATE_PATHS))
     assert generated_files == source_files
 
     drifted = [
@@ -229,3 +222,19 @@ def files_under(root: Path, paths: list[str]) -> list[Path]:
             continue
         files.extend(path.relative_to(root) for path in candidate.rglob("*") if path.is_file())
     return sorted(files)
+
+
+def test_asset_manifest_has_only_authoritative_sources() -> None:
+    import json
+
+    mapping = json.loads((REPO_ROOT / 'src/md_blueprints/asset-map.json').read_text())
+    manifest = (REPO_ROOT / 'MANIFEST.in').read_text().splitlines()
+    for destination, source in mapping.items():
+        assert (REPO_ROOT / source).is_file(), source
+        assert f'include {source}' in manifest, source
+        assert not (REPO_ROOT / 'src/md_blueprints' / destination).is_file(), destination
+    assert set(mapping) >= {
+        'schemas/v1/blueprint.schema.json',
+        'template_repo/schemas/v1/blueprint.schema.json',
+        'template_repo/.dive-preview/.env.example',
+    }

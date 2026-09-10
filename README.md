@@ -83,13 +83,57 @@ Edit the generated files in `projects/revenue/`, then open a pull request.
 
 ## Using the action in an existing repository
 
-Once your repository has a `motherduck.yml` manifest and blueprints, this step validates them:
+Use the versioned action directly from GitHub. It installs Blueprints and its dependencies automatically, so no separate Blueprints package installation or Marketplace setup is needed.
+
+Your repository must already contain `motherduck.yml` and its blueprint packages. For a new project, use the [template](https://github.com/motherduckdb/blueprints-template/generate) above.
+
+### Validate pull requests
+
+Save this as `.github/workflows/validate.yaml`. Validation needs no MotherDuck token:
 
 ```yaml
-- uses: actions/checkout@v7
-- uses: motherduckdb/motherduck-blueprints@v0.5.0
+name: Validate Blueprints
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: motherduckdb/motherduck-blueprints@v0.5.1
 ```
 
-Validation is the default. Deployment uses `command: deploy` and named inputs such as `target: prod`. See the [action guide](docs/github-action.md) for a complete workflow.
+### Deploy to production manually
+
+Create the `motherduck-production` GitHub Environment under **Settings → Environments** and add a service-account token as its `MOTHERDUCK_TOKEN` secret. Save this as `.github/workflows/deploy.yaml` on your default branch:
+
+```yaml
+name: Deploy Blueprints
+on: [workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: motherduck-production
+    concurrency:
+      group: motherduck-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: motherduckdb/motherduck-blueprints@v0.5.1
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        with:
+          command: deploy
+          target: prod
+```
+
+Run **Actions → Deploy Blueprints → Run workflow**. This deploys all enabled packages for the `prod` target, runs preflight checks before writes, and verifies the deployment afterward. Approve the deployment if your GitHub Environment requires it.
+
+To select packages, add `blueprints: revenue` under `with`. If `motherduck.yml` lives in a subdirectory, add `root: analytics` with your directory name. The job's `environment` selects the GitHub secrets and approval rules. The action's `target` selects the target in `motherduck.yml`.
+
+For automatic PR previews and cleanup, use the template's included reusable workflows. See the [action guide](docs/github-action.md) for all inputs and verification options.
 
 This is the tooling source repository. For contributions, see [CONTRIBUTING.md](CONTRIBUTING.md); report tooling bugs here, not in the generated template.

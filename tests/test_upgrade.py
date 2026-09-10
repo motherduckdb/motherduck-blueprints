@@ -103,3 +103,41 @@ def test_customer_make_upgrade_prepares_pins_with_one_command(tmp_path: Path) ->
     assert "+CLI_VERSION := 1.2.3" in result.stdout
     assert "Updated tooling pins" in result.stdout
     assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()
+
+
+def test_cleanup_upgrade_preserves_adopted_resources_and_legacy_files(tmp_path: Path) -> None:
+    """A customer upgrade changes pins, never removes old layout or adoption metadata."""
+    run_init(tmp_path)
+    files = {
+        'projects/customer/blueprint.yml': (
+            'name: customer\nresources:\n  flights:\n    existing:\n'
+            '      id: 00000000-0000-0000-0000-000000000001\n'
+            '      owner: customer@example.com\n      manageSchedule: false\n'
+        ),
+        'projects/customer/src/flight.py': '# customer source\n',
+        'templates/blueprint/README.md': 'Customized old scaffold\n',
+        'shared/README.md': 'Customer guidance\n',
+        'docs/github-setup.md': 'Existing local documentation\n',
+        '.devcontainer/devcontainer.json': '{"name":"Customer workspace"}\n',
+        '.github/workflows/legacy.yaml': (
+            'name: Custom deploy\non: [workflow_dispatch]\njobs:\n  deploy:\n'
+            '    runs-on: ubuntu-latest\n    environment: customer-production\n'
+            '    steps:\n      - uses: motherduckdb/motherduck-blueprints@v0.4.3\n'
+            '        env:\n          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}\n'
+            '        with: {command: deploy, target: prod}\n'
+        ),
+    }
+    for file_name, text in files.items():
+        path = tmp_path / file_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    before = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    run_upgrade(tmp_path, to_version='1.2.3', write=True)
+    after = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+    assert after.keys() == before.keys()
+    for name, content in before.items():
+        if name.as_posix().startswith('.github/workflows/'):
+            expected, _ = update_action_pins(content.decode(), '1.2.3')
+            assert after[name] == expected.encode()
+        elif name != Path('Makefile'):
+            assert after[name] == content

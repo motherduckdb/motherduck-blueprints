@@ -6,14 +6,11 @@ from pathlib import Path
 from typing import Protocol
 
 from . import __version__
+from .assets import source_assets
 from .schema import ValidationError
 
 VERSION_PLACEHOLDER = "__MD_BLUEPRINTS_VERSION__"
 ACTION_TAG_PLACEHOLDER = "__MD_BLUEPRINTS_ACTION_TAG__"
-
-# These are package-internal scaffolds or empty-root guidance, not customer assets.
-# Scaffolding creates optional roots when needed and reads templates from the installed CLI.
-EMPTY_ROOT_READMES = {f"{name}/README.md" for name in ("shared", "guides", "roles", "projects")}
 
 
 class _Traversable(Protocol):
@@ -57,15 +54,17 @@ def run_init(target: Path, *, force: bool = False) -> None:
 
     template_root = resources.files("md_blueprints").joinpath("template_repo")
     written = 0
-    for resource, relative in iter_resources(template_root):
+    assets = {relative: resource for resource, relative in iter_resources(template_root) if not resource.is_dir()}
+    assets.update({
+        name.removeprefix("template_repo/"): path
+        for name, path in source_assets().items() if name.startswith("template_repo/")
+    })
+    for relative, resource in sorted(assets.items()):
         if not relative or "/__pycache__/" in f"/{relative}/":
             continue
-        if relative.split("/", 1)[0] == "templates" or relative in EMPTY_ROOT_READMES:
+        if relative.split("/", 1)[0] == "templates":
             continue
         destination = safe_destination(target, relative)
-        if resource.is_dir():
-            continue
-
         destination.parent.mkdir(parents=True, exist_ok=True)
         if is_text_file(relative):
             destination.write_text(render_template_text(resource.read_text(encoding="utf-8")), encoding="utf-8")

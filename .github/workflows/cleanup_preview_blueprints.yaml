@@ -13,6 +13,7 @@ on:
 concurrency:
   group: cleanup-preview-${{ github.event.pull_request.head.ref || github.event.ref }}
   cancel-in-progress: false
+# Generated jobs: edit reusable workflows, then run make sync-workflows.
 
 jobs:
   resolve-environment:

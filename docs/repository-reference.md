@@ -32,7 +32,6 @@ roles/
 projects/
   <project-name>/
     blueprint.yml
-shared/
 schemas/v1/
 ```
 
@@ -179,3 +178,7 @@ Pull requests compute directly changed packages, expand the preview dependency g
 
 - [Wikipedia Pageviews](examples/wikipedia-pageviews.md) uses independent Flight and Dive packages connected through a named output and input.
 - [NCS Field Recovery Explorer](examples/ncs-field-recovery.md) keeps its Flight, share, and Dive in one project because they deploy and roll back together.
+
+## Tooling source layout
+
+In the tooling repository, `src/md_blueprints/asset-map.json` maps authoritative docs, examples, schemas, and preview files into the installed package. Customer-specific template files remain under `src/md_blueprints/template_repo/`. Generated repositories still receive ordinary files and need no build-time assembly. Optional resource directories appear when packages are created.
