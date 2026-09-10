@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md-blueprints"
-version = "0.5.1"
+version = "0.5.2"
 description = "Versioned MotherDuck Blueprints CLI for validation, planning, deployment, cleanup, and migrations."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,6 +58,7 @@ where = ["src"]
 
 [tool.setuptools.cmdclass]
 build_py = "build_support.BuildPy"
+egg_info = "build_support.EggInfo"
 
 [tool.setuptools.package-data]
 md_blueprints = [

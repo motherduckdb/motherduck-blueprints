@@ -6,6 +6,12 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Keep native CLI smoke-test JSON output separate from stderr upgrade notices.
+
+- Prepare package version 0.5.2 for the packaging simplification.
+
+- Use the asset map for both source-distribution and wheel packaging, removing the separately maintained source manifest. Customer files and upgrade steps are unchanged.
+
 ## v0.5.1 - 2026-09-10
 
 - Assemble package assets from one authoritative source, remove duplicate scaffolds and optional-root placeholders, and merge repository protection guidance into setup docs.
