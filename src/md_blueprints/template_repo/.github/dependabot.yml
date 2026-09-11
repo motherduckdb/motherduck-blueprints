@@ -12,5 +12,7 @@ updates:
     groups:
       react:
         patterns: [react, react-dom]
+      motherduck-arrow:
+        patterns: ["@motherduck/wasm-client", apache-arrow]
     schedule:
       interval: weekly

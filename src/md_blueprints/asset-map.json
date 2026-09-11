@@ -2,6 +2,8 @@
   "schemas/v1/blueprint.schema.json": "schemas/v1/blueprint.schema.json",
   "schemas/v1/motherduck-root.schema.json": "schemas/v1/motherduck-root.schema.json",
   "template_repo/.dive-preview/.env.example": ".dive-preview/.env.example",
+  "template_repo/.dive-preview/compat/arrow17-results.json": ".dive-preview/compat/arrow17-results.json",
+  "template_repo/.dive-preview/compat/check-arrow.mjs": ".dive-preview/compat/check-arrow.mjs",
   "template_repo/.dive-preview/index.html": ".dive-preview/index.html",
   "template_repo/.dive-preview/package-lock.json": ".dive-preview/package-lock.json",
   "template_repo/.dive-preview/package.json": ".dive-preview/package.json",

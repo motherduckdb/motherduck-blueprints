@@ -4,17 +4,25 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "test:compat": "node compat/check-arrow.mjs",
+    "prebuild": "npm run test:compat"
   },
   "dependencies": {
     "react": "~19.2.8",
     "react-dom": "~19.2.8",
-    "@motherduck/wasm-client": "^0.8.0",
+    "@motherduck/wasm-client": "0.8.1",
     "recharts": "~3.7.0",
-    "lucide-react": "^1.42.0"
+    "lucide-react": "^1.42.0",
+    "apache-arrow": "21.2.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.2.2"
+  },
+  "overrides": {
+    "@motherduck/wasm-client": {
+      "apache-arrow": "21.2.0"
+    }
   }
 }
