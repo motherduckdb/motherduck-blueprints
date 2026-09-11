@@ -10,5 +10,8 @@ updates:
       interval: weekly
   - package-ecosystem: npm
     directory: /.dive-preview
+    groups:
+      react:
+        patterns: [react, react-dom]
     schedule:
       interval: weekly

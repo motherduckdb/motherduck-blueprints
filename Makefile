@@ -3,6 +3,7 @@
 ARG := $(word 2,$(MAKECMDGOALS))
 CLI := .venv/bin/md-blueprints
 PYTHON ?= python3
+export DBT
 
 # Editable installs read source changes directly; only package metadata needs reinstalling.
 $(CLI): pyproject.toml
@@ -43,12 +44,15 @@ preview-smoke: $(CLI) ## Build a blueprint Dive preview without starting a dev s
 
 # -- Scaffolding --------------------------------------------------------------
 
-.PHONY: init-guides update-guides
-init-guides: $(CLI) ## Draft a repository overview Guide from the current packages
-	$(CLI) guides init
+.PHONY: guides init-guides update-guides
+guides: $(CLI) ## Gather context for your agent to write Guides (optional DBT=/path/to/project)
+	$(CLI) guides $(if $(DBT),--dbt "$$DBT")
 
-update-guides: $(CLI) ## Refresh repository Guide facts and report source changes
-	$(CLI) guides update
+init-guides: $(CLI) ## Gather an agent brief to initialize Guides
+	$(CLI) guides init $(if $(DBT),--dbt "$$DBT")
+
+update-guides: $(CLI) ## Gather an agent brief to update Guides
+	$(CLI) guides update $(if $(DBT),--dbt "$$DBT")
 
 .PHONY: new-blueprint
 new-blueprint: $(CLI) ## Compatibility alias for a complete project blueprint

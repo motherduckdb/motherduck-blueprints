@@ -5,6 +5,7 @@ CLI_VERSION := __MD_BLUEPRINTS_VERSION__
 CLI := .venv/bin/md-blueprints
 CLI_SOURCE := git+https://github.com/motherduckdb/motherduck-blueprints.git@v$(CLI_VERSION)
 PYTHON ?= python3
+export DBT
 
 .PHONY: cli
 cli:
@@ -47,12 +48,15 @@ preview-smoke: $(CLI) ## Build a blueprint Dive preview without starting a dev s
 	cd .dive-preview && { test -x node_modules/.bin/vite || npm install; }
 	cd .dive-preview && npm run build
 
-.PHONY: init-guides update-guides
-init-guides: $(CLI) ## Draft a repository overview Guide from the current packages
-	$(CLI) guides init
+.PHONY: guides init-guides update-guides
+guides: $(CLI) ## Gather context for your agent to write Guides (optional DBT=/path/to/project)
+	$(CLI) guides $(if $(DBT),--dbt "$$DBT")
 
-update-guides: $(CLI) ## Refresh repository Guide facts and report source changes
-	$(CLI) guides update
+init-guides: $(CLI) ## Gather an agent brief to initialize Guides
+	$(CLI) guides init $(if $(DBT),--dbt "$$DBT")
+
+update-guides: $(CLI) ## Gather an agent brief to update Guides
+	$(CLI) guides update $(if $(DBT),--dbt "$$DBT")
 
 .PHONY: new-blueprint
 new-blueprint: $(CLI) ## Compatibility alias for a complete project blueprint

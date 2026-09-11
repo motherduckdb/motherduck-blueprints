@@ -53,6 +53,7 @@ def add_common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dive")
     parser.add_argument("--resource", action="append", default=[])
     parser.add_argument("--snapshot")
+    parser.add_argument("--dbt", metavar="PATH", help="Include YAML documentation from a dbt project in Guide discovery")
     parser.add_argument("--verify", dest="verify", action="store_true", default=True)
     parser.add_argument("--skip-verification", dest="verify", action="store_false")
 
@@ -85,12 +86,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = Path(options.root)
         names = parse_blueprints(options.blueprints)
+        if options.dbt is not None and command != "guides":
+            raise ValidationError("--dbt is only supported by guides")
+        if options.dbt is not None and not options.dbt.strip():
+            raise ValidationError("--dbt must name a dbt project directory or dbt_project.yml")
         if command == "init":
             run_init(Path(options.init_dir or "."), force=options.force)
         elif command == "guides":
             if names is not None or options.target is not None or options.new_name is not None:
-                raise ValidationError("guides covers the whole repository's production declarations. Use --root to select a repository.")
-            run_guides(root, options.init_dir or "", dry_run=options.dry_run)
+                raise ValidationError("guides selects a repository with --root and an optional dbt project with --dbt.")
+            run_guides(root, options.init_dir or "context", dbt_path=Path(options.dbt) if options.dbt else None, dry_run=options.dry_run)
         elif command == "install-cli":
             install_cli()
         elif command == "new":

@@ -72,7 +72,7 @@ make validate
 
 Edit the generated files in `projects/revenue/`, then open a pull request.
 
-Use `make init-guides` to draft a MotherDuck Guide from your repository's packages and data contracts. Run `make update-guides` as the repository changes. Your notes are preserved, and the Guide stays disabled until you enable deployment. See [initialize and refresh Guides](docs/guides-as-code.md#initialize-and-refresh-from-the-repository).
+Ask your Claude, ChatGPT, or Codex agent: **"Initialize or update this repository's MotherDuck Guides. Follow `docs/guides-as-code.md`."** The agent reads the source and writes Markdown that explains the data and workflows. `make guides` gathers context, and `make guides DBT="/path/to/dbt-project"` adds dbt YAML documentation and relationship hints. See [the agent workflow](docs/guides-as-code.md).
 
 ## More help
 

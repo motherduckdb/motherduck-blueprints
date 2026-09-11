@@ -139,6 +139,7 @@ make validate
 make new-flight events-ingest
 make new-dive events-dashboard INPUT=events-ingest.data
 make new-guide analytics-guide
+make guides
 make init-guides
 make update-guides
 make new-role analytics-team
@@ -156,7 +157,7 @@ Omit `--blueprints` to select all packages; an explicitly empty selection is an 
 
 `make new-blueprint NAME` remains a compatibility alias for `make new-project NAME`. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 
-`make init-guides` drafts a private, disabled repository overview Guide from production declarations. `make update-guides` refreshes its generated facts, preserves authored notes and deployment settings, and reports source changes for review. See [Guides as code](guides-as-code.md#initialize-and-refresh-from-the-repository).
+`make guides` prints a read-only context brief for an agent to author Markdown Guides. Pass `DBT="/path/to/project"` to add dbt YAML documentation and relationship hints. `make init-guides` and `make update-guides` select the corresponding agent task, with the same discovery and no file writes. See [Guides as code](guides-as-code.md).
 
 `make validate` renders every declared target, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected stable producer must already expose its declared share or planning fails before deployment.
 

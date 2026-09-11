@@ -75,6 +75,21 @@ echo "==> Exercising installed scaffold commands"
 "$INSTALL_VENV/bin/md-blueprints" new project 123 --root "$TMP_DIR/generated-template"
 make -C "$TMP_DIR/generated-template" CLI="$INSTALL_VENV/bin/md-blueprints" init-guides
 make -C "$TMP_DIR/generated-template" CLI="$INSTALL_VENV/bin/md-blueprints" update-guides
+mkdir -p "$TMP_DIR/dbt-project/models"
+cat > "$TMP_DIR/dbt-project/dbt_project.yml" <<'YAML'
+name: guide_smoke
+YAML
+cat > "$TMP_DIR/dbt-project/models/schema.yaml" <<'YAML'
+version: 2
+models:
+  - name: orders
+    description: One row per completed order.
+YAML
+"$INSTALL_VENV/bin/md-blueprints" guides --root "$TMP_DIR/generated-template" \
+  --dbt "$TMP_DIR/dbt-project" > "$TMP_DIR/guide-context.md"
+grep -q "One row per completed order" "$TMP_DIR/guide-context.md"
+grep -q "Claude, ChatGPT, or Codex" "$TMP_DIR/guide-context.md"
+test ! -e "$TMP_DIR/generated-template/guides/repository-overview"
 "$INSTALL_VENV/bin/md-blueprints" validate --root "$TMP_DIR/generated-template"
 "$INSTALL_VENV/bin/md-blueprints" render \
   --root "$TMP_DIR/generated-template" \
