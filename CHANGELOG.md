@@ -6,6 +6,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Update wheel to 0.48.0 while retaining setuptools 84.0.0 for action and package builds.
+
 - Add `make init-guides` and `make update-guides` to draft and refresh a private repository overview Guide from production package declarations. Preserve authored context and deployment settings, report source changes for review, and support a dry run without contacting MotherDuck.
 
 - Keep native CLI smoke-test JSON output separate from stderr upgrade notices.
