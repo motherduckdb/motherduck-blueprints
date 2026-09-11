@@ -2,7 +2,7 @@
 pip==26.2.1
 setuptools==84.0.0
 wheel==0.48.0
-build==1.5.0
+build==1.6.0
 packaging==26.3
 PyYAML==6.0.3
 json5==0.15.0
