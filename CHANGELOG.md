@@ -16,6 +16,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 - Use the asset map for both source-distribution and wheel packaging, removing the separately maintained source manifest. Customer files and upgrade steps are unchanged.
 
+- Update the React Vite plugin to 6.1.1 alongside Vite 8.2.2, retaining React 18 and Arrow 17 compatibility.
+
 ## v0.5.1 - 2026-09-10
 
 - Assemble package assets from one authoritative source, remove duplicate scaffolds and optional-root placeholders, and merge repository protection guidance into setup docs.
