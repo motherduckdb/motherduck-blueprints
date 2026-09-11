@@ -6,7 +6,7 @@ This workflow requires `md-blueprints >=0.4.0`. Organization-wide Guides require
 
 ## Initialize and refresh from the repository
 
-To draft a Guide from the packages already in your repository, run:
+With `md-blueprints >=0.6.0`, draft a Guide from the packages already in your repository:
 
 ```bash
 make init-guides
