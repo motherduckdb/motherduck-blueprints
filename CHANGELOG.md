@@ -6,17 +6,13 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
-- Update wheel to 0.48.0 while retaining setuptools 84.0.0 for action and package builds.
+## v0.6.0 - 2026-09-11
 
-- Add `make init-guides` and `make update-guides` to draft and refresh a private repository overview Guide from production package declarations. Preserve authored context and deployment settings, report source changes for review, and support a dry run without contacting MotherDuck.
-
-- Keep native CLI smoke-test JSON output separate from stderr upgrade notices.
-
-- Prepare package version 0.5.2 for the packaging simplification.
-
-- Use the asset map for both source-distribution and wheel packaging, removing the separately maintained source manifest. Customer files and upgrade steps are unchanged.
-
-- Update the React Vite plugin to 6.1.1 alongside Vite 8.2.2, retaining React 18 and Arrow 17 compatibility.
+- Add `make init-guides` and `make update-guides` to draft and refresh a private repository overview Guide from production package declarations. Preserve authored context and deployment settings, report source changes for review, and support a dry run without contacting MotherDuck. (#80)
+- Use one asset map for source distributions and wheels, and keep native CLI smoke-test JSON separate from stderr upgrade notices. (#69)
+- Update Vite to 8.2.2, its React plugin to 6.1.1, and Lucide React to 1.42.0. Retain React 18 and Arrow 17 compatibility. (#79, #75, #73)
+- Update action build pins to setuptools 84.0.0 and wheel 0.48.0, plus locked mypy 2.3.1, Ruff 0.16.6, and PyYAML typing definitions. (#76, #71, #74, #78, #72)
+- Publish aligned v0.6.0 CLI, action, and generated-template pins. Existing resource manifests, IDs, and deployment settings need no migration.
 
 ## v0.5.1 - 2026-09-10
 

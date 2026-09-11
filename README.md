@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.5.1
+      - uses: motherduckdb/motherduck-blueprints@v0.6.0
 ```
 
 ### Deploy to production manually
@@ -124,7 +124,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.5.1
+      - uses: motherduckdb/motherduck-blueprints@v0.6.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

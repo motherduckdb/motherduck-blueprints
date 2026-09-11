@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.5.1
+      - uses: motherduckdb/motherduck-blueprints@v0.6.0
 ```
 
 The action installs its own Python dependencies. Validation is the default command and needs no token. For import, it installs the tested MotherDuck CLI and uses `motherduck query --file ... --output json` with the job's environment token. Deployment, planning, verification, and cleanup install the Python deploy dependencies and execute SQL in process. Both paths require the job's environment token. CLI state is isolated under the runner's temporary directory, and SQL is passed through temporary files rather than shell arguments. The adapter handles multiple result arrays and empty DDL output. Flight waits track the submitted run number and fail deployment on a failed or cancelled run.
@@ -47,7 +47,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.5.1
+      - uses: motherduckdb/motherduck-blueprints@v0.6.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -89,7 +89,7 @@ By default, deployment then reads back resource identities and checks declared s
 For a separate read-only check of existing resources, including disabled imported bindings, use:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.5.1
+- uses: motherduckdb/motherduck-blueprints@v0.6.0
   env:
     MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   with:
