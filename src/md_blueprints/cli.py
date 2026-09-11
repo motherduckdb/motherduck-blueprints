@@ -9,6 +9,7 @@ from pathlib import Path
 from .deploy import Deployer, PlanFormatter
 from .diagnostics import report_error
 from .init import run_init
+from .guides import run_guides
 from .importer import run_import
 from .maintenance import run_check_updates, run_doctor
 from .migrations import run_migrate
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="md-blueprints",
         usage=(
-            "md-blueprints <init|install-cli|new|import|validate|verify|render|dive-source|changed|plan|deploy|cleanup|doctor|"
+            "md-blueprints <init|guides|install-cli|new|import|validate|verify|render|dive-source|changed|plan|deploy|cleanup|doctor|"
             "check-updates|upgrade|migrate> [options]"
         ),
     )
@@ -86,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         names = parse_blueprints(options.blueprints)
         if command == "init":
             run_init(Path(options.init_dir or "."), force=options.force)
+        elif command == "guides":
+            if names is not None or options.target is not None or options.new_name is not None:
+                raise ValidationError("guides covers the whole repository's production declarations. Use --root to select a repository.")
+            run_guides(root, options.init_dir or "", dry_run=options.dry_run)
         elif command == "install-cli":
             install_cli()
         elif command == "new":

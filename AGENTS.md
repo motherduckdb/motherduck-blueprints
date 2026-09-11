@@ -30,6 +30,8 @@ Use top-level `inputs` and `outputs` to connect independently deployed packages.
 
 Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `make new-project`. `make new-blueprint` remains an alias for a complete project scaffold.
 
+Use `make init-guides` or `make update-guides` for a repository orientation Guide derived from production declarations. Preserve authored context outside its generated markers and commit `.guide-state.json` with the Guide. Read reported source changes and update business context manually. These commands are local only and never enable deployment. Keep production-derived overview content disabled in preview and staging.
+
 When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, package READMEs, `.github/pull_request_template.md`, and this guide for drift.
 
 ## MotherDuck CLI

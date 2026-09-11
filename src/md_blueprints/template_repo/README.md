@@ -72,6 +72,8 @@ make validate
 
 Edit the generated files in `projects/revenue/`, then open a pull request.
 
+Use `make init-guides` to draft a MotherDuck Guide from your repository's packages and data contracts. Run `make update-guides` as the repository changes. Your notes are preserved, and the Guide stays disabled until you enable deployment. See [initialize and refresh Guides](docs/guides-as-code.md#initialize-and-refresh-from-the-repository).
+
 ## More help
 
 - [Setup and troubleshooting](docs/setup-your-repository.md)
