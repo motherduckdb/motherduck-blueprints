@@ -47,6 +47,13 @@ preview-smoke: $(CLI) ## Build a blueprint Dive preview without starting a dev s
 	cd .dive-preview && { test -x node_modules/.bin/vite || npm install; }
 	cd .dive-preview && npm run build
 
+.PHONY: init-guides update-guides
+init-guides: $(CLI) ## Draft a repository overview Guide from the current packages
+	$(CLI) guides init
+
+update-guides: $(CLI) ## Refresh repository Guide facts and report source changes
+	$(CLI) guides update
+
 .PHONY: new-blueprint
 new-blueprint: $(CLI) ## Compatibility alias for a complete project blueprint
 	@test -n "$(ARG)" || { echo "Usage: make new-blueprint <blueprint-name>"; exit 1; }
