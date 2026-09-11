@@ -8,7 +8,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 - Make Guide authoring an agent workflow: `make guides` gathers read-only repository context and accepts `DBT=/path/to/project` for dbt YAML descriptions, columns, tests, and relationship hints. Agents read the source and write ordinary Markdown, with optional native CLI enrichment.
 - Simplify `init-guides` and `update-guides` into read-only agent briefs. Existing Guide files remain intact, and generated markers and `.guide-state.json` are no longer managed. Document the behavior change from v0.6.0.
-- Update React and React DOM together to 19.2.8 and group future dependency updates. Remove the unused direct Arrow dependency so the MotherDuck WASM client selects its supported Arrow 17 peer without a conflicting top-level pin.
+- Update React and React DOM together to 19.2.8 and group future dependency updates.
+- Upgrade preview Arrow to 21.2.0 with a scoped compatibility override for the pinned WASM client 0.8.1. Check materialized and streaming results against an Arrow 17 reference fixture before every preview build, including lossless numeric and nested values.
 
 ## v0.6.0 - 2026-09-11
 

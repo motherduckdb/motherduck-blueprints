@@ -165,6 +165,10 @@ Omit `--blueprints` to select all packages; an explicitly empty selection is an 
 
 Preview Dives always use `draft`. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
 
+The local preview pins WASM client 0.8.1 and Apache Arrow 21.2.0. A scoped npm override replaces the SDK's published Arrow 17 peer requirement. Blueprints owns compatibility for this specific pair, and Dependabot groups their updates. If you place the preview in an npm workspace, the override must be declared in that workspace's root package.json.
+
+Every preview build first runs `npm run test:compat`. It passes a recorded Arrow 17 IPC stream through the SDK's materialized and streaming result conversion and compares 14 types, including underlying lossless values. It also checks scalar and empty results. The token-free check injects a fixture transport through the pinned SDK's JavaScript constructor, which is private in its TypeScript declarations. It does not exercise WASM startup, authentication, or Arrow-table writes. Changing the SDK or Arrow pin requires reviewing this test and the override together. See [the compatibility check](../.dive-preview/compat/check-arrow.mjs).
+
 ## Guides
 
 Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.
