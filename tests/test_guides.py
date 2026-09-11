@@ -6,156 +6,159 @@ import pytest
 import yaml
 
 from md_blueprints.cli import main
-from md_blueprints.guides import BEGIN, DIRECTORY, STATE, run_guides
+from md_blueprints.guides import run_guides
 from md_blueprints.init import run_init
-from md_blueprints.project import Project
 from md_blueprints.scaffold import run_new
-from md_blueprints.schema import ValidationError
 
 
 def snapshot(root: Path) -> dict[str, bytes]:
     return {str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
 
-def test_init_generates_valid_private_orientation_and_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def write_dbt(root: Path) -> None:
+    root.mkdir(parents=True)
+    (root / "dbt_project.yml").write_text("name: warehouse\nmodel-paths: [transformations]\ntarget-path: generated\n")
+    models = root / "transformations" / "revenue"
+    models.mkdir(parents=True)
+    (models / "orders.sql").write_text("select * from {{ source('billing', 'orders') }}\n")
+    (models / "schema.yaml").write_text("""version: 2
+models:
+  - name: orders
+    description: One row per completed order, excluding test accounts.
+    config: {alias: fact_orders, schema: analytics, materialized: table, secret: NEVER_COPY}
+    meta: {token: NEVER_COPY}
+    columns:
+      - name: customer_id
+        description: Customer key.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: "ref('customers')", field: id}
+              config: {password: NEVER_COPY}
+sources:
+  - name: billing
+    database: raw
+    schema: billing
+    tables:
+      - name: orders
+        identifier: order_events
+        description: "{{ doc('order_events') }}"
+semantic_models:
+  - name: revenue
+    model: ref('orders')
+    measures:
+      - name: net_revenue
+        expr: amount - refunded_amount
+""")
+    (root / "profiles.yml").write_text("!!python/object/apply:INVALID NEVER_COPY")
+    for folder in ("target", "dbt_packages", ".git", "generated"):
+        (root / folder).mkdir()
+        (root / folder / "private.yml").write_text("!!python/object/apply:INVALID NEVER_COPY")
+
+
+@pytest.mark.parametrize("action", ["context", "init", "update"])
+def test_discovery_is_read_only_and_preserves_existing_guide_content(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], action: str,
+) -> None:
     run_init(tmp_path)
-    run_guides(tmp_path, "init")
-    project = Project(tmp_path)
-    assert project.validate()
-    for target in project.target_names():
-        guide = project.render_all(target, branch="test/guides", names=["repository-overview"])[0].guides["overview"]
-        assert guide["deploy"] is False
-        assert guide["access"] == "user"
-        assert guide["references"] == []
-    content = (tmp_path / DIRECTORY / "guide.md").read_text()
-    assert "wikipedia-pageviews-ingest.pageviews" in content
-    assert "wikipedia_pageviews" in content
-    assert "examples/ncs-field-recovery" not in content
-    assert "Package: <code>repository-overview</code>" not in content
-    before = snapshot(tmp_path)
-    run_guides(tmp_path, "init")
-    run_guides(tmp_path, "update")
-    assert snapshot(tmp_path) == before
-    assert "up to date" in capsys.readouterr().out
-
-
-def test_update_adds_changes_and_removes_packages_preserving_notes_and_settings(tmp_path: Path) -> None:
-    run_init(tmp_path)
-    run_guides(tmp_path, "init")
-    directory = tmp_path / DIRECTORY
-    guide_path = directory / "guide.md"
-    guide_path.write_text("Owner-reviewed rule: ignore test accounts.\n\n" + guide_path.read_text() + "\nCustom footer.\n")
-    manifest_path = directory / "blueprint.yml"
-    manifest_path.write_text(manifest_path.read_text().replace("deploy: false", "deploy: true", 1) + "\n# Keep my settings.\n")
-    manifest = manifest_path.read_bytes()
-    run_new(tmp_path, "flight", "events")
-    root_path = tmp_path / "motherduck.yml"
-    root = yaml.safe_load(root_path.read_text())
-    root["include"] = ["flights/**/blueprint.yml", "guides/**/blueprint.yml"]
-    root_path.write_text(yaml.safe_dump(root))
-    path = tmp_path / "flights/wikipedia-pageviews-ingest/blueprint.yml"
-    path.write_text(path.read_text().replace("Wikipedia Pageviews Ingest", "Updated Pageview Ingest"))
-    run_guides(tmp_path, "update")
-    content = guide_path.read_text()
-    assert content.startswith("Owner-reviewed rule")
-    assert content.endswith("Custom footer.\n")
-    assert "Package: <code>events</code>" in content
-    assert "Updated Pageview Ingest" in content
-    assert "dives/wikipedia-pageviews/blueprint.yml" not in content
-    assert manifest_path.read_bytes() == manifest
-    assert Project(tmp_path).validate()
-
-
-def test_source_only_change_is_reported_without_inventing_context(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    run_init(tmp_path)
-    run_guides(tmp_path, "init")
+    guide = run_new(tmp_path, "guide", "repository-overview")
+    (guide / "guide.md").write_text("# Curated context\nHandwritten rules and an edited legacy generated section.\n")
+    (guide / ".guide-state.json").write_text("obsolete state is intentionally ignored")
     capsys.readouterr()
-    path = tmp_path / "flights/wikipedia-pageviews-ingest/src/flight.py"
-    path.write_text(path.read_text() + "\n# Newly reviewed behavior\n")
-    before = (tmp_path / DIRECTORY / "guide.md").read_bytes()
-    run_guides(tmp_path, "update")
-    assert "changed: flights/wikipedia-pageviews-ingest/src/flight.py" in capsys.readouterr().out
-    assert (tmp_path / DIRECTORY / "guide.md").read_bytes() == before
-
-
-@pytest.mark.parametrize("action", ["init", "update"])
-def test_dry_run_writes_nothing_and_update_can_initialize(tmp_path: Path, action: str) -> None:
-    run_init(tmp_path)
     before = snapshot(tmp_path)
-    assert main(["guides", action, "--root", str(tmp_path), "--dry-run"]) == 0
+    run_guides(tmp_path, action)
+    output = capsys.readouterr().out
     assert snapshot(tmp_path) == before
-    assert main(["guides", action, "--root", str(tmp_path)]) == 0
-    run_new(tmp_path, "role", "analysts")
-    before = snapshot(tmp_path)
-    assert main(["guides", "update", "--root", str(tmp_path), "--dry-run"]) == 0
-    assert snapshot(tmp_path) == before
+    assert "Claude, ChatGPT, or Codex" in output
+    assert "wikipedia-pageviews-ingest.pageviews" in output
+    assert "flights/wikipedia-pageviews-ingest/src/flight.py" in output
+    assert "guides/repository-overview/guide.md" in output
+    assert "examples/ncs-field-recovery" not in output
+    assert "No files or live resources were changed" in output
 
 
-@pytest.mark.parametrize("edit", ["facts", "markers", "state", "source"])
-def test_conflicts_fail_without_writing(tmp_path: Path, edit: str) -> None:
-    run_init(tmp_path)
-    run_guides(tmp_path, "init")
-    path = tmp_path / DIRECTORY / "guide.md"
-    if edit == "facts":
-        path.write_text(path.read_text().replace("## Repository facts", "## My facts"))
-    elif edit == "markers":
-        path.write_text(path.read_text().replace(BEGIN, ""))
-    elif edit == "state":
-        (tmp_path / DIRECTORY / STATE).write_text("[]")
-    else:
-        (path.parent / "other.md").write_text("Other Guide")
-        manifest = path.parent / "blueprint.yml"
-        manifest.write_text(manifest.read_text().replace("source: guide.md", "source: other.md"))
+def test_external_dbt_yaml_enriches_blueprints_without_copying_credentials(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = tmp_path / "blueprints"
+    run_init(repo)
+    dbt = tmp_path / "warehouse dbt"
+    write_dbt(dbt)
     before = snapshot(tmp_path)
-    assert main(["guides", "update", "--root", str(tmp_path)]) == 1
+    capsys.readouterr()
+    assert main(["guides", "update", "--root", str(repo), "--dbt", str(dbt)]) == 0
+    output = capsys.readouterr().out
+    assert "One row per completed order" in output
+    assert "fact_orders" in output and "order_events" in output
+    assert "ref('customers')" in output and "field: id" in output
+    assert "net_revenue" in output
+    assert "transformations/revenue/orders.sql" in output
+    excerpt = yaml.safe_load(output.rsplit("```yaml\n", 1)[1].split("```", 1)[0])
+    assert excerpt["sources"][0]["tables"][0]["description"] == "{{ doc('order_events') }}"
+    assert "Jinja is unresolved" in output
+    assert "NEVER_COPY" not in output
+    assert "private.yml" not in output
     assert snapshot(tmp_path) == before
 
 
-def test_existing_unmanaged_guide_and_duplicate_slug_are_preserved(tmp_path: Path) -> None:
-    run_init(tmp_path)
-    run_new(tmp_path, "guide", "repository-overview")
+def test_standalone_dbt_and_project_file_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    dbt = tmp_path / "dbt"
+    write_dbt(dbt)
+    before = snapshot(dbt)
+    for args in (["--root", str(dbt)], ["--root", str(dbt), "--dbt", str(dbt / "dbt_project.yml")]):
+        assert main(["guides", *args]) == 0
+        output = capsys.readouterr().out
+        assert "No motherduck.yml" in output
+        assert "One row per completed order" in output
+        assert "private.yml" not in output
+    assert snapshot(dbt) == before
+
+
+def test_plain_sql_repository_needs_no_blueprints_or_native_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "query.sql").write_text("select 1\n")
     before = snapshot(tmp_path)
-    with pytest.raises(ValidationError, match="not a complete generated Guide"):
-        run_guides(tmp_path, "update")
+    assert main(["guides", "--root", str(tmp_path), "--dry-run"]) == 0
+    assert "query.sql" in capsys.readouterr().out
     assert snapshot(tmp_path) == before
 
 
-def test_custom_include_and_invalid_repository_fail_before_writing(tmp_path: Path) -> None:
-    run_init(tmp_path)
-    manifest = tmp_path / "motherduck.yml"
-    root = yaml.safe_load(manifest.read_text())
-    root["include"] = ["flights/**/blueprint.yml", "dives/**/blueprint.yml"]
-    manifest.write_text(yaml.safe_dump(root))
-    before = snapshot(tmp_path)
-    with pytest.raises(ValidationError, match="Add guides"):
-        run_guides(tmp_path, "init")
-    assert snapshot(tmp_path) == before
+def test_large_dbt_context_is_explicitly_shortened(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from md_blueprints.guides import MAX_EXCERPT
+
+    (tmp_path / "dbt_project.yml").write_text("name: large\n")
+    (tmp_path / "a.yml").write_text(yaml.safe_dump({"models": [{"name": "large", "description": "x" * (MAX_EXCERPT + 1)}]}))
+    (tmp_path / "b.yaml").write_text("models: [{name: next_model}]\n")
+    assert main(["guides", "--root", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "Excerpt shortened" in output
+    assert "YAML excerpt limit reached" in output
+    assert "b.yaml" in output
+    assert "next_model" not in output
 
 
-def test_symlink_destination_is_rejected(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    run_init(root)
+def test_dbt_symlinks_are_not_followed_and_invalid_yaml_is_reported_without_source(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = tmp_path / "repo"
+    write_dbt(repo)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (root / "guides").symlink_to(outside, target_is_directory=True)
-    with pytest.raises(ValidationError, match="must stay within"):
-        run_guides(root, "init")
-    assert list(outside.iterdir()) == []
+    (outside / "private.yml").write_text("models: [{name: DO_NOT_READ}]")
+    (repo / "linked").symlink_to(outside, target_is_directory=True)
+    (repo / "linked.yml").symlink_to(outside / "private.yml")
+    assert main(["guides", "--root", str(repo)]) == 0
+    output = capsys.readouterr().out
+    assert "DO_NOT_READ" not in output and "linked.yml" not in output
+    (repo / "broken.yml").write_text("models: [SECRET_PARSE_ERROR\n")
+    before = snapshot(repo)
+    assert main(["guides", "--root", str(repo)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Cannot parse YAML" in captured.err
+    assert "SECRET_PARSE_ERROR" not in captured.err
+    assert snapshot(repo) == before
 
 
-def test_generation_does_not_copy_flight_config_secrets_or_source(tmp_path: Path) -> None:
-    run_init(tmp_path)
-    manifest = tmp_path / "flights/wikipedia-pageviews-ingest/blueprint.yml"
-    source = yaml.safe_load(manifest.read_text())
-    flight = next(iter(source["resources"]["flights"].values()))
-    flight["config"]["private_setting"] = "do-not-copy-config"
-    flight["secrets"] = ["do-not-copy-secret"]
-    manifest.write_text(yaml.safe_dump(source))
-    run_guides(tmp_path, "init")
-    content = (tmp_path / DIRECTORY / "guide.md").read_text()
-    assert "do-not-copy" not in content
-
-
-@pytest.mark.parametrize("args", [["guides"], ["guides", "delete"], ["guides", "init", "unexpected"], ["guides", "init", "--blueprints", "events"]])
-def test_cli_rejects_invalid_guide_requests(args: list[str], tmp_path: Path) -> None:
+@pytest.mark.parametrize("args", [["guides", "delete"], ["guides", "init", "unexpected"], ["guides", "--dbt", "/missing-dbt-project"], ["guides", "--dbt", ""], ["validate", "--dbt", "."]])
+def test_invalid_requests_fail(args: list[str], tmp_path: Path) -> None:
     assert main([*args, "--root", str(tmp_path)]) == 1

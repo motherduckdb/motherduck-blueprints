@@ -9,5 +9,8 @@ updates:
       - dependency-name: motherduckdb/motherduck-blueprints
   - package-ecosystem: npm
     directory: /.dive-preview
+    groups:
+      react:
+        patterns: [react, react-dom]
     schedule:
       interval: weekly
