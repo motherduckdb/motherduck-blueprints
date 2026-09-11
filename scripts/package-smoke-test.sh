@@ -73,6 +73,8 @@ echo "==> Exercising installed scaffold commands"
 "$INSTALL_VENV/bin/md-blueprints" new guide null --root "$TMP_DIR/generated-template"
 "$INSTALL_VENV/bin/md-blueprints" new role on --root "$TMP_DIR/generated-template"
 "$INSTALL_VENV/bin/md-blueprints" new project 123 --root "$TMP_DIR/generated-template"
+make -C "$TMP_DIR/generated-template" CLI="$INSTALL_VENV/bin/md-blueprints" init-guides
+make -C "$TMP_DIR/generated-template" CLI="$INSTALL_VENV/bin/md-blueprints" update-guides
 "$INSTALL_VENV/bin/md-blueprints" validate --root "$TMP_DIR/generated-template"
 "$INSTALL_VENV/bin/md-blueprints" render \
   --root "$TMP_DIR/generated-template" \

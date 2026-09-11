@@ -6,11 +6,15 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Add `make init-guides` and `make update-guides` to draft and refresh a private repository overview Guide from production package declarations. Preserve authored context and deployment settings, report source changes for review, and support a dry run without contacting MotherDuck.
+
 - Keep native CLI smoke-test JSON output separate from stderr upgrade notices.
 
 - Prepare package version 0.5.2 for the packaging simplification.
 
 - Use the asset map for both source-distribution and wheel packaging, removing the separately maintained source manifest. Customer files and upgrade steps are unchanged.
+
+- Update the React Vite plugin to 6.1.1 alongside Vite 8.2.2, retaining React 18 and Arrow 17 compatibility.
 
 ## v0.5.1 - 2026-09-10
 

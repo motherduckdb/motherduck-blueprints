@@ -4,6 +4,39 @@ Use a Guide package when your team wants metric definitions, query conventions, 
 
 This workflow requires `md-blueprints >=0.4.0`. Organization-wide Guides require an admin deployment identity.
 
+## Initialize and refresh from the repository
+
+To draft a Guide from the packages already in your repository, run:
+
+```bash
+make init-guides
+```
+
+This creates `guides/repository-overview/` with a private, disabled Guide. It records production package descriptions, Flights and schedules, Dives and mounts, shares, input/output contracts, and the locations of other Guides and roles. Only packages discovered by `motherduck.yml` are included. Optional examples stay out until enabled.
+
+After adding or changing packages, run:
+
+```bash
+make update-guides
+make validate
+```
+
+`update-guides` also initializes the Guide if it does not exist. Repeating either command without changes leaves the files untouched. For a preview of the changes, use:
+
+```bash
+.venv/bin/md-blueprints guides update --dry-run
+```
+
+Both CLI commands accept `--root PATH`. They always describe the entire repository's production declarations. Existing repositories can call the CLI directly after upgrading if their Makefile does not yet have these targets.
+
+The generated section of `guide.md` tracks added, changed, and removed package declarations. Write business definitions, join rules, tested SQL, and pitfalls under **Reviewed context**, outside the generated markers. Updates preserve those notes, the package README, and the manifest's IDs, access, and deployment settings. Edits inside the generated section cause a conflict instead of being overwritten. Move those edits outside the markers and restore the generated section from Git before retrying.
+
+The command reports changes to declared source files, requirements, package READMEs, and manifests using hashes stored in `.guide-state.json`. Commit that file with the Guide. A code-only change updates the hashes and reports the affected file. Read that file and update the reviewed context as needed. The command does not infer business rules from Python or SQL, copy source code or Flight config, or query live MotherDuck state.
+
+This is a broad orientation Guide with no resource references, so it adds no deployment dependencies. Use separate subject Guides with references for rules governing particular catalog objects, Flights, or Dives. Existing authored and imported Guides are preserved.
+
+Review the diff and enable `resources.guides.overview.deploy: true` only when the production Guide is ready. Its preview and staging overrides remain disabled because the generated content describes production. Publish through the normal repository deployment workflow. Init and update only change local files.
+
 ## 1. Scaffold a Guide package
 
 Create a package below the typed `guides/` root:
