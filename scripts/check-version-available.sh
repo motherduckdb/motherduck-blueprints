@@ -16,6 +16,17 @@ print(payload["project"]["version"])
 PY
 )"
 
+# The release commit itself is checked after its tag is pushed, so accept a tag that points here.
+current="${GITHUB_SHA:-$(git rev-parse HEAD)}"
+set +e
+tagged="$(gh api "repos/${REPOSITORY}/commits/v${version}" --jq .sha 2>/dev/null)"
+tagged_status=$?
+set -e
+if [ "$tagged_status" -eq 0 ] && [ "$tagged" = "$current" ]; then
+  echo "Commit ${current} is the v${version} release."
+  exit 0
+fi
+
 set +e
 release_result="$(gh api "repos/${REPOSITORY}/releases/tags/v${version}" 2>&1)"
 release_status=$?

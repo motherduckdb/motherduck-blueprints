@@ -164,6 +164,19 @@ def test_version_availability_rejects_existing_github_distribution(tmp_path: Pat
     assert f"already has a {message}" in result.stderr
 
 
+def test_version_availability_accepts_the_tagged_release_commit(tmp_path: Path) -> None:
+    sha = "a" * 40
+    result = run_version_availability_check(tmp_path, existing="release", tagged_sha=sha, sha=sha)
+    assert result.returncode == 0
+    assert f"is the v{__version__} release" in result.stdout
+
+
+def test_version_availability_rejects_a_tag_on_another_commit(tmp_path: Path) -> None:
+    result = run_version_availability_check(tmp_path, existing="tag", tagged_sha="b" * 40, sha="a" * 40)
+    assert result.returncode == 1
+    assert "already has a GitHub tag" in result.stderr
+
+
 @pytest.mark.parametrize("error_at", ["release", "tag"])
 def test_version_availability_fails_closed_on_github_errors(tmp_path: Path, error_at: str) -> None:
     result = run_version_availability_check(tmp_path, error_at=error_at)
@@ -200,7 +213,7 @@ printf '{"is_template":%s,"permissions":{"push":%s}}' "${GH_IS_TEMPLATE}" "${GH_
 
 
 def run_version_availability_check(
-    tmp_path: Path, *, existing: str = "", error_at: str = "",
+    tmp_path: Path, *, existing: str = "", error_at: str = "", tagged_sha: str = "", sha: str = "",
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -208,6 +221,11 @@ def run_version_availability_check(
     gh.write_text('''#!/usr/bin/env bash
 set -euo pipefail
 case "$2" in
+  */commits/v*)
+    if [ -n "$GH_TAGGED_SHA" ]; then printf '%s\\n' "$GH_TAGGED_SHA"; exit 0; fi
+    echo 'gh: No commit found for SHA (HTTP 422)' >&2
+    exit 1
+    ;;
   */releases/tags/v*) kind=release ;;
   */git/ref/tags/v*) kind=tag ;;
   *) echo "unexpected GitHub endpoint" >&2; exit 2 ;;
@@ -229,6 +247,9 @@ fi
     curl.chmod(0o755)
     return subprocess.run(
         [str(REPO_ROOT / "scripts/check-version-available.sh")], cwd=REPO_ROOT,
-        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "GH_EXISTING": existing, "GH_ERROR_AT": error_at},
+        env={
+            **os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "GH_EXISTING": existing, "GH_ERROR_AT": error_at,
+            "GH_TAGGED_SHA": tagged_sha, "GITHUB_SHA": sha or "0" * 40,
+        },
         text=True, capture_output=True,
     )
