@@ -30,6 +30,7 @@ jobs:
         id: context
         uses: ./
         with:
+          python-version: "3.11"
           command: guides
           root: ${{ inputs.root }}
           dbt: ${{ inputs.dbt }}

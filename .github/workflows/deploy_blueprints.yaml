@@ -85,23 +85,30 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+          persist-credentials: false
 
       - name: Validate configured targets
+        id: validate
         uses: ./
         with:
+          python-version: "3.11"
           command: validate
 
       - name: Resolve deployment topology
         id: topology
         shell: bash
         env:
+          MD_BLUEPRINTS_PYTHON: ${{ steps.validate.outputs.python }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_TARGET: ${{ inputs.target }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           BASE_REF: ${{ github.base_ref }}
+          GIT_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
-          python - <<'PY'
+          "$MD_BLUEPRINTS_PYTHON" - <<'PY'
           import os
           import subprocess
           from pathlib import Path
@@ -112,6 +119,13 @@ jobs:
           def fail(message):
               report_error(ValueError(message))
               raise SystemExit(message)
+
+          def notice(message):
+              print(f"::notice title=Blueprints preview skipped::{message}")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with Path(summary).open("a", encoding="utf-8") as handle:
+                      handle.write(f"### Blueprints preview skipped\n\n{message}\n")
 
           manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
           targets = manifest.get("targets", {})
@@ -128,16 +142,33 @@ jobs:
               deployment_enabled = staging_enabled and os.environ.get("RELEASE_PRERELEASE", "false") != "true"
           elif event_name == "workflow_dispatch":
               target = os.environ.get("INPUT_TARGET", "prod") or "prod"
+              default_branch = os.environ.get("DEFAULT_BRANCH", "")
+              git_ref = os.environ.get("GIT_REF", "")
+              if target != "preview" and git_ref != f"refs/heads/{default_branch}":
+                  fail(
+                      f"Manual {target} deployments must run from the default branch {default_branch!r}, "
+                      f"but this run uses {git_ref!r}. Re-run the workflow from {default_branch!r}, "
+                      "or choose target preview with a branch name to test this branch."
+                  )
           else:
               fail(f"Unsupported deployment event: {event_name}")
 
           if target not in targets:
-              fail(
-                  f"Target {target!r} is not declared in motherduck.yml. "
-                  "Add targets.staging before dispatching a staging deployment."
-              )
+              if target == "staging":
+                  fail(
+                      "Target 'staging' is not declared in motherduck.yml. Choose preview or prod, "
+                      "or add targets.staging before dispatching a staging deployment."
+                  )
+              fail(f"Target {target!r} is not declared in motherduck.yml.")
 
           config = targets[target]
+          if event_name == "pull_request" and os.environ.get("PR_AUTHOR", "") == "dependabot[bot]":
+              # Dependabot runs receive no environment secrets, so validate without deploying a preview.
+              deployment_enabled = False
+              notice(
+                  "Dependabot pull requests are validated without a preview deployment because "
+                  "Dependabot runs cannot read GitHub Environment secrets."
+              )
           if event_name == "pull_request":
               base_ref = os.environ.get("BASE_REF", "")
               base_text = subprocess.check_output(
@@ -208,6 +239,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         uses: ./
         with:
+          python-version: "3.11"
           command: changed
           args: --base origin/${{ github.base_ref }} --head HEAD --json
 
@@ -230,6 +262,7 @@ jobs:
         if: ${{ github.event_name == 'push' }}
         uses: ./
         with:
+          python-version: "3.11"
           command: changed
           args: ${{ steps.push-range.outputs.args }}
 
@@ -238,6 +271,7 @@ jobs:
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
         uses: ./
         with:
+          python-version: "3.11"
           command: changed
           args: --all --json
 
@@ -269,10 +303,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ needs.compute_changes.outputs.target_environment }}
     concurrency:
-      group: preview-${{ github.event.pull_request.number || inputs.branch }}
+      # Shared with preview cleanup so a closed pull request cannot be redeployed after cleanup.
+      group: md-blueprints-preview-${{ github.head_ref || inputs.branch }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve preview branch
         id: preview-branch
@@ -293,6 +330,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: plan
           target: preview
           branch: ${{ steps.preview-branch.outputs.branch }}
@@ -304,6 +342,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: deploy
           verify-after-deploy: "true"
           target: preview
@@ -319,14 +358,26 @@ jobs:
         with:
           script: |
             const marker = '<!-- preview-blueprints-comment -->';
-            const output = `${process.env.PLAN_OUTPUT ?? ''}\n\n${process.env.DEPLOY_OUTPUT ?? ''}`;
-            const body = `${marker}\n### Preview Blueprints\n\n${output}`;
-            const { data: comments } = await github.rest.issues.listComments({
+            const header = `${marker}\n### Preview Blueprints\n\n`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const notice = `\n\n_Output truncated. See the [workflow run](${runUrl}) for the full plan and deployment log._`;
+            // GitHub rejects comment bodies over 65536 characters.
+            const limit = 65000 - header.length - notice.length;
+            let output = `${process.env.PLAN_OUTPUT ?? ''}\n\n${process.env.DEPLOY_OUTPUT ?? ''}`;
+            if (output.length > limit) {
+              output = output.slice(0, limit) + notice;
+            }
+            const body = header + output;
+            let existing;
+            for await (const { data: comments } of github.paginate.iterator(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-            });
-            const existing = comments.find(comment => comment.body.includes(marker));
+              per_page: 100,
+            })) {
+              existing = comments.find(comment => comment.body?.includes(marker));
+              if (existing) break;
+            }
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -358,6 +409,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Plan target blueprints
         id: plan-stable
@@ -365,6 +418,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: plan
           target: ${{ needs.compute_changes.outputs.target }}
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
@@ -386,6 +440,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: deploy
           verify-after-deploy: "true"
           target: ${{ needs.compute_changes.outputs.target }}
@@ -430,6 +485,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: plan
           target: prod
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
@@ -451,6 +507,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: "3.11"
           command: deploy
           verify-after-deploy: "true"
           target: prod

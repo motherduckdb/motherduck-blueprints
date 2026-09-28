@@ -14,12 +14,24 @@ on:
         description: Optional dbt project path relative to the checkout
         type: string
         default: ""
+      runs-on:
+        description: Runner label, or a JSON array of labels such as '["self-hosted", "linux"]'.
+        type: string
+        default: ubuntu-latest
+      python-version:
+        description: Python version used by the Blueprints action.
+        type: string
+        default: "3.11"
+      timeout-minutes:
+        description: Job timeout in minutes.
+        type: number
+        default: 10
 
 jobs:
   context:
     name: Prepare Guide context
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
+    timeout-minutes: ${{ inputs.timeout-minutes || 10 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,6 +41,7 @@ jobs:
         id: context
         uses: motherduckdb/motherduck-blueprints@v0.7.0
         with:
+          python-version: ${{ inputs.python-version }}
           command: guides
           root: ${{ inputs.root }}
           dbt: ${{ inputs.dbt }}

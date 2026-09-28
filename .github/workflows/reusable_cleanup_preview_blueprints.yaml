@@ -6,10 +6,15 @@ permissions:
 
 on:
   workflow_call:
-
-concurrency:
-  group: cleanup-preview-${{ github.event.pull_request.head.ref || github.event.ref }}
-  cancel-in-progress: false
+    inputs:
+      runs-on:
+        description: Runner label, or a JSON array of labels such as '["self-hosted", "linux"]'.
+        type: string
+        default: ubuntu-latest
+      python-version:
+        description: Python version used by the Blueprints action.
+        type: string
+        default: "3.11"
 
 jobs:
   resolve-environment:
@@ -17,26 +22,34 @@ jobs:
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'delete' && github.event.ref_type == 'branch')
-    runs-on: ubuntu-latest
+    runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
     outputs:
       environment: ${{ steps.preview-target.outputs.environment }}
       identity: ${{ steps.preview-target.outputs.identity }}
+      skip: ${{ steps.preview-target.outputs.skip }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
 
       - name: Validate base deployment configuration
+        id: validate
         uses: motherduckdb/motherduck-blueprints@v0.7.0
         with:
+          python-version: ${{ inputs.python-version }}
           command: validate
 
       - name: Resolve preview target
         id: preview-target
         shell: bash
+        env:
+          MD_BLUEPRINTS_PYTHON: ${{ steps.validate.outputs.python }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          python - <<'PY'
+          "$MD_BLUEPRINTS_PYTHON" - <<'PY'
           import os
           from pathlib import Path
 
@@ -54,6 +67,20 @@ jobs:
                   with Path(summary).open("a", encoding="utf-8") as handle:
                       handle.write(f"### Blueprints needs attention\n\n<pre>{html.escape(message)}</pre>\n")
               raise SystemExit(message)
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          if "dependabot[bot]" in {os.environ.get("PR_AUTHOR", ""), os.environ.get("ACTOR", "")}:
+              # Dependabot pull requests never receive a preview, and Dependabot runs cannot read
+              # GitHub Environment secrets, so there is nothing this run could clean up.
+              message = "Skipping preview cleanup for a Dependabot branch: Dependabot pull requests do not deploy previews."
+              print(f"::notice title=Blueprints preview cleanup skipped::{message}")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with Path(summary).open("a", encoding="utf-8") as handle:
+                      handle.write(f"### Blueprints preview cleanup skipped\n\n{message}\n")
+              with output.open("a", encoding="utf-8") as handle:
+                  handle.write("skip=true\n")
+              raise SystemExit(0)
 
           manifest = yaml.safe_load(Path("motherduck.yml").read_text(encoding="utf-8"))
           preview = manifest.get("targets", {}).get("preview", {})
@@ -74,21 +101,27 @@ jobs:
                   "Target 'preview' must use deployment.tokenEnvVar: MOTHERDUCK_TOKEN with the generated "
                   "GitHub Environment workflow"
               )
-          output = Path(os.environ["GITHUB_OUTPUT"])
           with output.open("a", encoding="utf-8") as handle:
               handle.write(f"environment={environment}\n")
               handle.write(f"identity={identity}\n")
+              handle.write("skip=false\n")
           PY
 
   cleanup:
     name: Delete Preview Blueprints for Branch
     needs: resolve-environment
-    runs-on: ubuntu-latest
+    if: needs.resolve-environment.outputs.skip != 'true'
+    runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
     environment: ${{ needs.resolve-environment.outputs.environment }}
+    concurrency:
+      # Shared with preview deploys. Cleanup never cancels or is cancelled by another cleanup.
+      group: md-blueprints-preview-${{ github.head_ref || github.event.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Resolve cleanup branch
         id: cleanup-branch
@@ -112,6 +145,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: ${{ inputs.python-version }}
           command: cleanup
           target: preview
           branch: ${{ steps.cleanup-branch.outputs.branch }}
@@ -121,6 +155,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
 
       - name: Cleanup preview blueprints from the base manifest
         if: ${{ github.event_name == 'pull_request' }}
@@ -128,6 +163,7 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
+          python-version: ${{ inputs.python-version }}
           command: cleanup
           target: preview
           branch: ${{ steps.cleanup-branch.outputs.branch }}

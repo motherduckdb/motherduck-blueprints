@@ -62,7 +62,7 @@ jobs:
         with:
           command: validate
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: md-blueprints-dist
           path: |
@@ -117,7 +117,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: md-blueprints-dist
           path: release-artifacts
@@ -139,7 +139,14 @@ jobs:
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
         run: |
           set -euo pipefail
-          git clone "https://x-access-token:${TEMPLATE_PUSH_TOKEN}@github.com/${TEMPLATE_REPOSITORY}.git" template-checkout
+          # Pass the token as a step-scoped HTTP header so it is not stored in
+          # the clone URL, .git/config, or process arguments.
+          auth="$(printf 'x-access-token:%s' "$TEMPLATE_PUSH_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::${auth}"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}"
+          git clone "https://github.com/${TEMPLATE_REPOSITORY}.git" template-checkout
           cd template-checkout
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -207,7 +214,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: md-blueprints-dist
           path: release-artifacts

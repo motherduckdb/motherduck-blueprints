@@ -10,6 +10,7 @@ python3 - "$EXPECTED_TAG" <<'PY'
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import re
 import sys
@@ -47,6 +48,17 @@ if expected_tag:
         raise SystemExit(
             f"Tag mismatch: {expected_tag} implies {expected_version}, "
             f"but package version is {package_version}"
+        )
+    notes_path = root / os.environ.get("RELEASE_NOTES_FILE", "RELEASE_NOTES.md")
+    try:
+        notes = notes_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise SystemExit(f"{notes_path.name} is required to publish {release_tag}") from None
+    full_diff = re.findall(r"^\*\*Full diff:\*\*(.*)$", notes, re.MULTILINE)
+    if not full_diff or any(not line.rstrip().endswith(f"...{release_tag}") for line in full_diff):
+        raise SystemExit(
+            f"{notes_path.name} is stale: its **Full diff:** line must end with ...{release_tag}. "
+            f"Update the release notes for {release_tag} before tagging."
         )
 
 print(f"Release version OK: {package_version}")

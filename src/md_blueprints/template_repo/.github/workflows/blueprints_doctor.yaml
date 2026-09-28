@@ -12,3 +12,7 @@ on:
 jobs:
   doctor:
     uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_blueprints_doctor.yaml@__MD_BLUEPRINTS_ACTION_TAG__
+    # Optional runner settings. Defaults are shown:
+    # with:
+    #   runs-on: ubuntu-latest # Or a JSON array, such as '["self-hosted", "linux"]'.
+    #   python-version: "3.11"

@@ -46,6 +46,9 @@ outputs:
   stdout-file:
     description: Absolute path to the CLI output file on the current runner. Upload or consume it in a later step.
     value: ${{ steps.run.outputs.stdout-file }}
+  python:
+    description: Python interpreter of the action's isolated md-blueprints environment. Use it for later steps that import md_blueprints or PyYAML.
+    value: ${{ steps.install.outputs.python }}
 
 runs:
   using: composite
@@ -55,34 +58,59 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Install md-blueprints
+      id: install
       shell: bash
       env:
         MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
       run: |
         set -euo pipefail
-        install_target="$GITHUB_ACTION_PATH"
+        # Install into a job-scoped virtual environment so later steps and
+        # persistent runners keep an unmodified setup-python interpreter.
+        extra=""
         case "$MD_BLUEPRINTS_COMMAND" in
-          plan|deploy|cleanup|verify) install_target="${GITHUB_ACTION_PATH}[deploy]" ;;
+          plan|deploy|cleanup|verify) extra="[deploy]" ;;
         esac
-        python_key="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-        action_key="$(printf '%s-%s' "$install_target" "$python_key" | cksum | awk '{print $1}')"
-        marker_dir="${RUNNER_TEMP}/md-blueprints-action"
-        marker="${marker_dir}/${action_key}"
-        mkdir -p "$marker_dir"
-        if [ -f "$marker" ]; then
-          echo "md-blueprints dependencies already installed for this action checkout."
-          exit 0
+        python_key="$(python -c 'import sys; print(sys.executable, sys.version)')"
+        env_key="$(printf '%s-%s' "$GITHUB_ACTION_PATH" "$python_key" | cksum | awk '{print $1}')"
+        env_root="${RUNNER_TEMP}/md-blueprints-action/${env_key}"
+        venv="${env_root}/venv"
+        link_dir="${env_root}/bin"
+        mkdir -p "$link_dir"
+        if [ ! -d "$venv" ]; then
+          python -m venv "$venv"
         fi
-
-        constraints="$GITHUB_ACTION_PATH/constraints/action.txt"
-        python -m pip install --constraint "$constraints" pip setuptools wheel
-        python -m pip install --no-build-isolation --constraint "$constraints" "$install_target"
-        touch "$marker"
+        venv_bin="${venv}/bin"
+        if [ -d "${venv}/Scripts" ]; then
+          venv_bin="${venv}/Scripts"
+        fi
+        venv_python="${venv_bin}/python"
+        marker="${env_root}/installed${extra:+-deploy}"
+        if [ -f "$marker" ] || { [ -z "$extra" ] && [ -f "${env_root}/installed-deploy" ]; }; then
+          echo "md-blueprints dependencies already installed for this action checkout."
+        else
+          constraints="$GITHUB_ACTION_PATH/constraints/action.txt"
+          "$venv_python" -m pip install --constraint "$constraints" pip setuptools wheel
+          "$venv_python" -m pip install --no-build-isolation --constraint "$constraints" "${GITHUB_ACTION_PATH}${extra}"
+          touch "$marker"
+        fi
+        # Expose only the md-blueprints entry point, not the environment's python or pip.
+        for name in md-blueprints md-blueprints.exe; do
+          if [ -e "${venv_bin}/${name}" ]; then
+            ln -sf "${venv_bin}/${name}" "${link_dir}/${name}"
+          fi
+        done
+        echo "$link_dir" >> "$GITHUB_PATH"
+        {
+          echo "bin=${venv_bin}/md-blueprints"
+          echo "python=${venv_python}"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Install MotherDuck CLI
       if: inputs.command == 'import'
       shell: bash
-      run: md-blueprints install-cli
+      env:
+        MD_BLUEPRINTS_BIN: ${{ steps.install.outputs.bin }}
+      run: '"$MD_BLUEPRINTS_BIN" install-cli'
 
     - name: Run md-blueprints
       id: run
@@ -91,6 +119,7 @@ runs:
         MD_BLUEPRINTS_SQL_BACKEND: ${{ inputs.command == 'import' && 'motherduck' || 'duckdb' }}
         MOTHERDUCK_HOME: ${{ runner.temp }}/md-blueprints-motherduck
         MD_BLUEPRINTS_COMMAND: ${{ inputs.command }}
+        MD_BLUEPRINTS_BIN: ${{ steps.install.outputs.bin }}
         MD_BLUEPRINTS_ARGS: ${{ inputs.args }}
         MD_BLUEPRINTS_TARGET: ${{ inputs.target }}
         MD_BLUEPRINTS_BRANCH: ${{ inputs.branch }}
@@ -115,26 +144,40 @@ runs:
         import sys
         from pathlib import Path
 
+        command = os.environ["MD_BLUEPRINTS_COMMAND"]
         argv = [
-            "md-blueprints",
-            os.environ["MD_BLUEPRINTS_COMMAND"],
+            os.environ.get("MD_BLUEPRINTS_BIN") or "md-blueprints",
+            command,
             *shlex.split(os.environ.get("MD_BLUEPRINTS_ARGS", "")),
         ]
         for name in ("root", "target", "branch", "blueprints", "dbt"):
             value = os.environ.get(f"MD_BLUEPRINTS_{name.upper()}", "")
             if value:
                 argv.append(f"--{name}={value}")
-        if os.environ["MD_BLUEPRINTS_COMMAND"] == "deploy":
+        if command == "deploy":
             verify = os.environ.get("MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY", "true").lower()
             if verify not in {"true", "false"}:
                 raise SystemExit("verify-after-deploy must be true or false")
             argv.append("--verify" if verify == "true" else "--skip-verification")
         output = Path(os.environ["MD_BLUEPRINTS_STDOUT_FILE"])
-        with output.open("w", encoding="utf-8") as stream:
-            completed = subprocess.run(argv, text=True, stdout=stream, check=False)
-        if os.environ["MD_BLUEPRINTS_COMMAND"] != "guides":
-            sys.stdout.write(output.read_text(encoding="utf-8"))
-        raise SystemExit(completed.returncode)
+        with output.open("wb") as stream:
+            if command == "guides":
+                # Guide context stays out of logs and is only written to the file.
+                returncode = subprocess.run(argv, stdout=stream, check=False).returncode
+            else:
+                # Stream output live so logs survive cancellation and timeouts,
+                # while keeping a copy for the stdout and stdout-file outputs.
+                env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+                with subprocess.Popen(argv, stdout=subprocess.PIPE, env=env) as process:
+                    pipe = process.stdout
+                    assert pipe is not None
+                    for chunk in iter(lambda: pipe.read1(65536), b""):
+                        stream.write(chunk)
+                        stream.flush()
+                        sys.stdout.buffer.write(chunk)
+                        sys.stdout.buffer.flush()
+                returncode = process.returncode
+        raise SystemExit(returncode)
         PY
         status="$?"
         set -e

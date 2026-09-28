@@ -21,3 +21,7 @@ jobs:
     with:
       root: ${{ inputs.root }}
       dbt: ${{ inputs.dbt }}
+      # Optional runner settings. Defaults are shown:
+      # runs-on: ubuntu-latest # Or a JSON array, such as '["self-hosted", "linux"]'.
+      # python-version: "3.11"
+      # timeout-minutes: 10

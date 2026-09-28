@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import io
 import subprocess
 import os
 import json
 import sys
 from pathlib import Path
-from typing import TextIO, cast
+from typing import Any
 
 import pytest
 import yaml
@@ -31,12 +32,7 @@ def test_action_controls_postcheck_without_changing_deploy_command(
     monkeypatch.setenv("MD_BLUEPRINTS_COMMAND", "deploy")
     monkeypatch.setenv("MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY", value)
     calls: list[list[str]] = []
-
-    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, stdout="")
-
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "Popen", fake_popen(calls, b"", 0))
     with pytest.raises(SystemExit) as result:
         exec(compile(source, "action.yml", "exec"), {})
     if flag:
@@ -65,20 +61,15 @@ def test_action_passes_named_inputs_literally_and_preserves_exit_status(
     }
     for key, value in values.items():
         monkeypatch.setenv(f"MD_BLUEPRINTS_{key}", value)
-    received: list[str] = []
-
-    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        received.extend(argv)
-        assert not kwargs.get("shell")
-        cast(TextIO, kwargs["stdout"]).write("plan output\n")
-        return subprocess.CompletedProcess(argv, returncode, stdout="plan output\n")
-
-    monkeypatch.setattr(subprocess, "run", run)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", fake_popen(calls, b"plan output\n", returncode))
     with pytest.raises(SystemExit) as result:
         exec(compile(source, "action.yml", "exec"), {})
 
     assert result.value.code == returncode
-    assert received == [
+    assert (tmp_path / "stdout").read_text() == "plan output\n"
+    assert len(calls) == 1
+    assert calls[0] == [
         "md-blueprints", "plan", "--target", "prod", "--json",
         "--root=customer analytics", "--target=preview",
         '--branch=feature/customer-"quote"-$(literal)', "--blueprints=orders,revenue",
@@ -121,3 +112,81 @@ def test_guide_action_writes_context_file_without_logging_it(tmp_path: Path, ret
     assert path.stat().st_size > 1024 * 1024
     assert path.read_text() == payload
     assert json.loads(args_file.read_text()) == ["guides", "--root=analytics repo", f"--dbt={dbt}"]
+
+
+def fake_popen(calls: list[list[str]], stdout: bytes, returncode: int) -> Any:
+    class FakePopen:
+        def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            calls.append(argv)
+            assert not kwargs.get("shell")
+            assert kwargs["stdout"] is subprocess.PIPE
+            assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
+            self.stdout = io.BufferedReader(io.BytesIO(stdout))
+            self.returncode = returncode
+
+        def __enter__(self) -> FakePopen:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.stdout.close()
+
+    return FakePopen
+
+
+def action_step(step_id: str) -> dict[str, Any]:
+    action = yaml.safe_load((Path(__file__).resolve().parents[1] / "action.yml").read_text())
+    step: dict[str, Any] = next(step for step in action["runs"]["steps"] if step.get("id") == step_id)
+    return step
+
+
+@pytest.mark.parametrize("returncode", [0, 3])
+def test_action_streams_output_before_exit_and_captures_it(tmp_path: Path, returncode: int) -> None:
+    step = action_step("run")
+    release = tmp_path / "release"
+    binary = tmp_path / "md-blueprints"
+    # The fake CLI does not flush, so live output also proves PYTHONUNBUFFERED is passed through.
+    binary.write_text(
+        f"#!{sys.executable}\nimport sys, time\nfrom pathlib import Path\n"
+        "sys.stdout.write('planning started\\n')\n"
+        f"deadline = time.time() + 20\nwhile not Path({str(release)!r}).exists():\n"
+        "    if time.time() > deadline:\n        sys.exit(99)\n    time.sleep(0.05)\n"
+        f"sys.stdout.write('plan finished\\n')\nsys.exit({returncode})\n"
+    )
+    binary.chmod(0o755)
+    output = tmp_path / "github-output"
+    env = {
+        **os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "RUNNER_TEMP": str(tmp_path), "GITHUB_OUTPUT": str(output),
+        "MD_BLUEPRINTS_COMMAND": "plan", "MD_BLUEPRINTS_ARGS": "", "MD_BLUEPRINTS_DBT": "",
+        "MD_BLUEPRINTS_ROOT": "", "MD_BLUEPRINTS_TARGET": "prod", "MD_BLUEPRINTS_BRANCH": "",
+        "MD_BLUEPRINTS_BLUEPRINTS": "", "MD_BLUEPRINTS_BIN": "",
+    }
+    env.pop("PYTHONUNBUFFERED", None)
+    process = subprocess.Popen(["bash", "-c", step["run"]], env=env, stdout=subprocess.PIPE, text=True)
+    assert process.stdout is not None
+    try:
+        assert process.stdout.readline() == "planning started\n"
+    finally:
+        release.touch()
+    rest = process.stdout.read()
+    assert process.wait(timeout=30) == returncode
+    assert rest == "plan finished\n"
+    values = output.read_text()
+    stdout_file = Path(values.split("stdout-file=", 1)[1].splitlines()[0])
+    assert stdout_file.read_text() == "planning started\nplan finished\n"
+    assert "planning started\nplan finished\n" in values.split("stdout<<", 1)[1]
+
+
+def test_action_installs_into_isolated_environment() -> None:
+    step = action_step("install")
+    script = step["run"]
+    pip_lines = [line.strip() for line in script.splitlines() if "pip install" in line]
+    assert pip_lines and all(line.startswith('"$venv_python" -m pip install') for line in pip_lines)
+    assert 'python -m venv "$venv"' in script
+    assert '"${RUNNER_TEMP}/md-blueprints-action/' in script
+    assert 'ln -sf "${venv_bin}/${name}" "${link_dir}/${name}"' in script
+    assert 'echo "$link_dir" >> "$GITHUB_PATH"' in script
+    action = yaml.safe_load((Path(__file__).resolve().parents[1] / "action.yml").read_text())
+    assert action["outputs"]["python"]["value"] == "${{ steps.install.outputs.python }}"
+    run_env = action_step("run")["env"]
+    assert run_env["MD_BLUEPRINTS_BIN"] == "${{ steps.install.outputs.bin }}"

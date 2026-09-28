@@ -54,19 +54,65 @@ def test_release_external_check_requires_template_repository_mode(tmp_path: Path
     assert "not marked as a GitHub template repository" in result.stderr
 
 
-def test_release_version_check_accepts_only_stable_semantic_tags() -> None:
-    stable = subprocess.run(
-        [str(REPO_ROOT / "scripts/check-release-version.sh"), f"v{__version__}"],
-        cwd=REPO_ROOT, text=True, capture_output=True,
-    )
-    prerelease = subprocess.run(
-        [str(REPO_ROOT / "scripts/check-release-version.sh"), f"v{__version__}-rc.1"],
-        cwd=REPO_ROOT, text=True, capture_output=True,
-    )
+def test_release_version_check_accepts_only_stable_semantic_tags(tmp_path: Path) -> None:
+    notes = release_notes(tmp_path, f"v{__version__}")
+    stable = run_release_version_check(f"v{__version__}", notes)
+    prerelease = run_release_version_check(f"v{__version__}-rc.1", notes)
     assert stable.returncode == 0
     assert prerelease.returncode == 1
     assert "must match vMAJOR.MINOR.PATCH" in prerelease.stderr
 
+
+
+@pytest.mark.parametrize("full_diff", [
+    "**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.0.1...v0.0.2",
+    "**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.0.1...v{version}.1",
+    "No full diff line",
+])
+def test_release_version_check_rejects_stale_release_notes(tmp_path: Path, full_diff: str) -> None:
+    notes = tmp_path / "RELEASE_NOTES.md"
+    notes.write_text("## Highlights\n\n- Something.\n\n" + full_diff.format(version=__version__) + "\n")
+    result = run_release_version_check(f"v{__version__}", notes)
+    assert result.returncode == 1
+    assert f"must end with ...v{__version__}" in result.stderr
+
+
+def test_release_version_check_requires_release_notes_for_tags(tmp_path: Path) -> None:
+    result = run_release_version_check(f"v{__version__}", tmp_path / "missing.md")
+    assert result.returncode == 1
+    assert "is required to publish" in result.stderr
+
+
+def test_release_version_check_ignores_notes_without_a_tag(tmp_path: Path) -> None:
+    result = run_release_version_check("", tmp_path / "missing.md")
+    assert result.returncode == 0
+    assert f"Release version OK: {__version__}" in result.stdout
+
+
+def test_release_workflow_pins_ci_artifact_actions_and_keeps_token_out_of_urls() -> None:
+    release = (REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8")
+    ci = (REPO_ROOT / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+    upload = next(line.split("uses: ", 1)[1] for line in ci.splitlines() if "actions/upload-artifact@" in line)
+    uploads = {line.split("uses: ", 1)[1] for line in release.splitlines() if "actions/upload-artifact@" in line}
+    downloads = {line.split("uses: ", 1)[1] for line in release.splitlines() if "actions/download-artifact@" in line}
+    assert uploads == {upload}
+    assert downloads == {"actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0"}
+    assert "x-access-token:${TEMPLATE_PUSH_TOKEN}@" not in release
+    assert 'GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"' in release
+    assert 'echo "::add-mask::${auth}"' in release
+
+
+def release_notes(tmp_path: Path, tag: str) -> Path:
+    notes = tmp_path / "RELEASE_NOTES.md"
+    notes.write_text(f"## Highlights\n\n**Full diff:** https://example.com/compare/v0.0.1...{tag}\n")
+    return notes
+
+
+def run_release_version_check(tag: str, notes: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(REPO_ROOT / "scripts/check-release-version.sh"), *([tag] if tag else [])],
+        cwd=REPO_ROOT, env={**os.environ, "RELEASE_NOTES_FILE": str(notes)}, text=True, capture_output=True,
+    )
 
 def test_version_availability_check_accepts_unpublished_version(tmp_path: Path) -> None:
     result = run_version_availability_check(tmp_path)
