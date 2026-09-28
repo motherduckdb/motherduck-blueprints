@@ -103,6 +103,8 @@ Deployment always runs preflight before writes and verifies live identity/depend
 
 Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep entries under `Unreleased` until the change is released or merged into a reusable template.
 
+After a release, the first pull request must bump the package version and every action pin. CI rejects versions that already have a tag or release. Release steps and the repository's GitHub settings are in `MAINTAINING.md`.
+
 ## Source ownership
 
 Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map. `MAINTAINING.md` holds release engineering and the maintenance map; it is deliberately not in the map, and shipped docs must not link to it or to `src/`, `tests/`, or `scripts/` (`tests/test_docs.py` checks this and that documented action pins match the package version). Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.

@@ -29,6 +29,7 @@ make preview-smoke <blueprint-name>
 A few repository rules, enforced by review and tests:
 
 - Update `CHANGELOG.md` in every pull request, including docs-only changes. Add entries under `Unreleased`.
+- Pull requests into `main` need the CI checks to pass. If the current package version is already released, CI fails until you bump it. [MAINTAINING.md](MAINTAINING.md#versions-between-releases) lists the files to change.
 - Shared assets have one source: root docs, examples, schemas, and preview files are mapped by `src/md_blueprints/asset-map.json` into built distributions. Update the map when adding assets. Customer-specific overrides and internal scaffolds live under `src/md_blueprints/template_repo/`.
 - Edit reusable workflow jobs, then run `make sync-workflows`. Generated repository jobs test the current checkout. Customer workflows keep versioned references.
 - Run `make package-smoke` after changing packaging or asset ownership. It builds a wheel from the source distribution and tests installed scaffolding.

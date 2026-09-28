@@ -15,7 +15,7 @@ Stable `vMAJOR.MINOR.PATCH` tag pushes run the release workflow. The workflow tr
 3. Smoke test the installed wheel as an internal packaging check.
 4. Smoke test the local action wrapper.
 5. Generate a reproducible CycloneDX SBOM and attest every release artifact.
-6. Verify the generated-template repository and protected release environments.
+6. Verify the generated-template repository and its push token, and compare the tag with published releases.
 7. Install the built wheel, generate the customer template with an exact action tag, and validate it before pushing to `motherduckdb/blueprints-template`.
 8. Require the generated repository's triggered workflow to pass against that exact action tag.
 9. Attach the distributions and SBOM to the GitHub Release, then update the compatibility-only floating major alias.
@@ -28,6 +28,24 @@ Marketplace listing is configured through GitHub's release UI. Any required GitH
 
 One-time template setup: create `motherduckdb/blueprints-template`, mark it as a GitHub template repository, and add a `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` secret that can push to that repository. Tagged releases fail before publishing when this setup is missing; the template push is part of the release contract, not an optional best-effort step.
 
+### Versions between releases
+
+CI runs `scripts/check-version-available.sh` on every pull request and `main` push. It fails when the package version already has a GitHub tag or release, unless that tag points at the commit under test. So the first pull request after a release bumps the version in `pyproject.toml`, `src/md_blueprints/__init__.py`, and `uv.lock`, and moves every `motherduckdb/motherduck-blueprints@vX.Y.Z` pin in the reusable workflows, `README.md`, and `docs/` to the same version. Run `make sync-workflows` afterwards. `tests/test_docs.py` checks that documented pins match the package version. Keep "requires X.Y.Z or newer" notes unchanged.
+
+### Cutting a release
+
+1. Open a release pull request that replaces `RELEASE_NOTES.md` with the new notes and moves the `Unreleased` changelog entries under `## vX.Y.Z - YYYY-MM-DD`. The notes must end with `**Full diff:** .../compare/vPREVIOUS...vX.Y.Z`, which `make release-check` enforces.
+2. Run the checks below, then merge the pull request after CI passes.
+3. Tag the merge commit on `main` with an annotated tag and push only that tag:
+
+   ```bash
+   git switch main && git pull --ff-only
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git push origin refs/tags/vX.Y.Z
+   ```
+
+4. Watch **Release MotherDuck Blueprints**. No approval is needed. Afterwards, check that the GitHub Release is marked Latest, `v0` points at the tag, and `motherduckdb/blueprints-template` has a `Generate template for vX.Y.Z` commit.
+
 Before creating a release tag:
 
 ```bash
@@ -39,6 +57,15 @@ make package-smoke
 make example-smoke
 make preview-smoke wikipedia-pageviews
 ```
+
+## Repository settings
+
+These GitHub settings are part of how the tooling repository works. Change them deliberately.
+
+- **Environments.** `motherduck-production` serves previews, preview cleanup, and production deploys. `motherduck-release` serves template publishing. Neither has required reviewers, so every run starts on its own. Do not add reviewers back without planning for the queue: a production run that waits for approval holds the `stable-prod` concurrency group, later `main` deploys queue behind it, and GitHub cancels all but the newest queued run. Push deploys only include the packages changed by their own push, so after clearing a queue, run **Deploy Blueprints** manually for `prod` to deploy every package.
+- **Deployment token.** `MOTHERDUCK_TOKEN` is a repository secret for the production service account, so pull request previews from branches in this repository run with production credentials. This is an accepted trade-off for this repository. Customer repositories keep the token in the environment instead.
+- **Template token.** `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` is a repository secret that can push to `motherduckdb/blueprints-template`. The template's own workflow check runs only after the push, because verifying on a candidate branch first would need more than push access.
+- **Protect main ruleset.** Changes to `main` need a pull request with no required approvals, and these CI checks must pass: `Validate and Smoke Test`, `Package CLI and Action`, `Workflow and Dependency Audit`, and `Python 3.10` to `Python 3.14`. Force pushes and deletion are blocked, and repository admins can bypass the ruleset. When you rename a CI job or change the Python matrix, update the ruleset in the same change, or pull requests wait for a check that never reports.
 
 ## Repository Boundary
 

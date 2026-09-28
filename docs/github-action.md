@@ -21,7 +21,7 @@ Every reusable workflow accepts these optional inputs. Set them under `with:` in
 The workflows also enforce a few rules:
 
 - Manual `staging` or `prod` runs must start from the default branch. Run them from another branch and they fail before deploying.
-- Dependabot pull requests are validated but do not deploy previews, because Dependabot runs receive no environment secrets.
+- Dependabot pull requests are validated but do not deploy previews, because Dependabot runs receive no environment secrets. Preview cleanup skips Dependabot branches before it checks anything out. A pull request runs the workflow version from its own merge commit, so one opened before you upgraded can still start a cleanup run. It has nothing to clean up.
 - Preview deploys and preview cleanup for the same branch share one concurrency group, so cleanup waits for a running deploy. A new preview deploy for the same branch, for example after reopening a PR, can still cancel a running cleanup. The next close cleans up again.
 
 Use the action directly when adding Blueprints to an existing repository with a `motherduck.yml` manifest.

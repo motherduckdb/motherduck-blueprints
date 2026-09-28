@@ -60,7 +60,8 @@ Create a new pipeline and dashboard with `make new-project revenue`. Edit its fi
 | What you see | What to check |
 | --- | --- |
 | No deployment run | Change a file inside an example package and open the PR against `main`. |
-| Waiting for approval | Approve the deployment in Actions if you configured required environment reviewers. |
+| Waiting for approval | Approve the deployment in Actions if you configured required environment reviewers. Reject runs you no longer need, such as cleanup for a Dependabot branch. |
+| Production deploy stays queued | An older production run is waiting for approval, and later `main` deploys queue behind it. Reject or approve the older run, then run **Deploy Blueprints** manually for `prod` so that changes from cancelled runs deploy too. |
 | Missing token | Put `MOTHERDUCK_TOKEN` in **Settings → Environments → motherduck-production**, not repository secrets. |
 | Permission error from MotherDuck | Check the service account's privileges. Custom roles and organization-wide Guides require an admin identity. |
 | Local Python setup fails | Select a working interpreter, for example `make validate PYTHON=python3.13`. |
@@ -152,6 +153,8 @@ In **Settings → Branches** (or your repository rulesets), require pull request
 Open **Settings → Environments → motherduck-production** and add required reviewers if your team needs deployment approval.
 
 In the default setup, previews, production, and cleanup all use this environment, so its approval and branch rules apply to all three. Allow PR branches if you want previews to deploy. To approve production separately, [add staging](#add-staging-optional).
+
+Handle approvals promptly. Production deploys run one at a time, so a run that waits for approval holds later `main` deploys. GitHub keeps only the newest queued run and cancels the others. Each push deploys only the packages that push changed, so a cancelled run's changes reach production only if a later push changes the same packages. After clearing a stuck queue, run **Actions → Deploy Blueprints → Run workflow** with target `prod` to deploy every package.
 
 ### Keep credentials and cleanup configured
 

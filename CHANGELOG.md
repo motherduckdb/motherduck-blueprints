@@ -6,6 +6,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Document release steps, the version bump after each release, and the tooling repository's GitHub settings in `MAINTAINING.md`. Explain in the setup guide how an unapproved production run holds later deploys, and in the action guide how preview cleanup treats Dependabot branches.
 - CI accepts the package version on the commit its release tag points to, so a release commit no longer fails when the tag is pushed before CI reaches the version check. Bump the package and action pins to 0.7.2.
 
 ## v0.7.1 - 2026-09-28
