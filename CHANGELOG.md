@@ -8,6 +8,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 - Preview cleanup skips Dependabot branches before checking anything out, so pull requests opened before an upgrade no longer wait for environment approval or fail on a missing token. It also works when the pull request's base commit uses an older action.
 - Releases validate the generated template before publishing it. A patch for an older release line no longer moves the template's default branch, the floating major tag, or the GitHub "Latest" release back.
+- Bump the package and action pins to 0.7.1 for the next release.
 
 ## v0.7.0 - 2026-09-28
 
