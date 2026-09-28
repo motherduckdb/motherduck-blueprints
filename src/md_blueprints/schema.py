@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
@@ -18,6 +20,24 @@ SUPPORTED_SCHEMA_VERSIONS = {1}
 
 class ValidationError(Exception):
     pass
+
+
+# Keywords SchemaValidator enforces. Annotation-only keywords are listed separately
+# so tests can prove that every keyword used by the packaged schemas is understood.
+ENFORCED_SCHEMA_KEYWORDS = frozenset({
+    "$ref", "const", "enum", "anyOf", "oneOf", "type",
+    "minLength", "maxLength", "pattern", "format",
+    "minimum", "maximum",
+    "minItems", "maxItems", "uniqueItems", "items",
+    "required", "properties", "additionalProperties",
+})
+ANNOTATION_SCHEMA_KEYWORDS = frozenset({"$id", "$schema", "$defs", "title", "description", "default", "examples"})
+
+_TEMPLATE_REFERENCE = re.compile(r"(?<!\\)\$\{[^}]+\}")
+
+
+def has_template_reference(value: str) -> bool:
+    return _TEMPLATE_REFERENCE.search(value) is not None
 
 
 def unsupported_schema_version_message(version: int) -> str:
@@ -74,6 +94,28 @@ class SchemaValidator:
         version = declared_schema_version(data)
         schema = self.load_schema(schema_name, version)
         self._validate_node(data, schema, "$", schema)
+
+    def validate_definition(
+        self,
+        data: object,
+        schema_name: str,
+        definition: str,
+        *,
+        path: str,
+        version: int = LATEST_SCHEMA_VERSION,
+    ) -> None:
+        """Validate one value against ``#/$defs/<definition>`` of a schema."""
+        schema = self.load_schema(schema_name, version)
+        self._validate_node(data, self._resolve_ref(f"#/$defs/{definition}", schema), path, schema)
+
+    def definition_properties(
+        self, schema_name: str, definition: str, *, version: int = LATEST_SCHEMA_VERSION
+    ) -> dict[str, object]:
+        """Return the ``properties`` map of ``#/$defs/<definition>``, or an empty map."""
+        schema = self.load_schema(schema_name, version)
+        node = self._resolve_ref(f"#/$defs/{definition}", schema)
+        properties = node.get("properties") if isinstance(node, dict) else None
+        return properties if isinstance(properties, dict) else {}
 
     def load_schema(self, schema_name: str, version: int) -> dict[str, object]:
         if version not in SUPPORTED_SCHEMA_VERSIONS:
@@ -137,6 +179,8 @@ class SchemaValidator:
             self._validate_type(data, expected_type, path)
         if isinstance(data, str):
             self._validate_string(data, schema, path)
+        if isinstance(data, (int, float)) and not isinstance(data, bool):
+            self._validate_number(data, schema, path)
         if isinstance(data, list):
             self._validate_array(data, schema, path, root_schema)
         if isinstance(data, dict):
@@ -179,9 +223,32 @@ class SchemaValidator:
         min_length = schema.get("minLength")
         if isinstance(min_length, int) and len(data) < min_length:
             raise ValidationError(f"{path} must have length >= {min_length}")
+        max_length = schema.get("maxLength")
+        if isinstance(max_length, int) and len(data) > max_length:
+            raise ValidationError(f"{path} must have length <= {max_length} (got {len(data)})")
         pattern = schema.get("pattern")
         if isinstance(pattern, str) and re.search(pattern, data) is None:
+            description = schema.get("description")
+            if isinstance(description, str) and description:
+                raise ValidationError(f"{path} must be {description}; got {data!r}")
             raise ValidationError(f"{path} must match {pattern}")
+        string_format = schema.get("format")
+        # Raw manifests may template a value; the rendered resource is checked again.
+        if string_format == "uuid" and not has_template_reference(data):
+            try:
+                UUID(data)
+            except ValueError as exc:
+                raise ValidationError(f"{path} must be a UUID; got {data!r}") from exc
+
+    def _validate_number(self, data: int | float, schema: dict[str, object], path: str) -> None:
+        minimum = schema.get("minimum")
+        if isinstance(minimum, (int, float)) and not isinstance(minimum, bool) and data < minimum:
+            raise ValidationError(f"{path} must be >= {minimum}")
+        maximum = schema.get("maximum")
+        if isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and data > maximum:
+            raise ValidationError(f"{path} must be <= {maximum}")
+        if isinstance(data, float) and not math.isfinite(data):
+            raise ValidationError(f"{path} must be a finite number")
 
     def _validate_array(
         self,
@@ -193,6 +260,16 @@ class SchemaValidator:
         min_items = schema.get("minItems")
         if isinstance(min_items, int) and len(data) < min_items:
             raise ValidationError(f"{path} must contain at least {min_items} item(s)")
+        max_items = schema.get("maxItems")
+        if isinstance(max_items, int) and len(data) > max_items:
+            raise ValidationError(f"{path} must contain at most {max_items} item(s)")
+        if schema.get("uniqueItems") is True:
+            seen: set[str] = set()
+            for index, item in enumerate(data):
+                fingerprint = json.dumps(item, sort_keys=True, default=str)
+                if fingerprint in seen:
+                    raise ValidationError(f"{path}[{index}] duplicates an earlier item: {item!r}")
+                seen.add(fingerprint)
         item_schema = schema.get("items")
         if item_schema is not None:
             for index, item in enumerate(data):

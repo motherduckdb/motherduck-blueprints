@@ -12,11 +12,10 @@ from typing import Any
 from uuid import UUID
 
 import yaml
-import json5
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from .deploy import Deployer, sql_string
+from .deploy import Deployer, required_databases_export, sql_string
 from . import __version__
 from .project import Project, require_within
 from .schema import ValidationError
@@ -50,20 +49,19 @@ def literal(value: Any) -> Any:
 
 
 def dive_source(source: str, mounts: list[dict[str, Any]]) -> str:
-    match = re.search(r"^export const REQUIRED_DATABASES\s*=\s*", source, re.MULTILINE)
-    if not match and re.search(r"\b(?:const|let|var)\s+REQUIRED_DATABASES\b", source):
+    try:
+        found = required_databases_export(source)
+    except ValidationError as exc:
+        if "static array" in str(exc):
+            raise ValidationError("REQUIRED_DATABASES must be a static array before import") from exc
+        raise
+    if found is None and re.search(r"\b(?:const|let|var)\s+REQUIRED_DATABASES\b", source):
         raise ValidationError("Unsupported REQUIRED_DATABASES declaration; use a static array export before import")
-    if match:
-        value, error, end = json5.parse(source, start=match.end(), consume_trailing=False, allow_duplicate_keys=False)
-        if error:
-            raise ValidationError("REQUIRED_DATABASES must be a static array before import")
+    if found is not None:
+        start, end, value = found
         if not isinstance(value, list):
             raise ValidationError("REQUIRED_DATABASES must be an array")
-        tail = end
-        suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?:\r?\n|$)", source[tail:])
-        if suffix is None:
-            raise ValidationError("Unsupported expression after REQUIRED_DATABASES")
-        source = source[:match.start()] + source[tail + suffix.end():]
+        source = source[:start] + source[end:]
     return "export const REQUIRED_DATABASES = " + json.dumps(mounts) + ";\n" + source
 
 

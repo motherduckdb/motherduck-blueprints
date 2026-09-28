@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import copy
 import importlib
+import math
 import os
 import re
 import sys
@@ -10,7 +11,16 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from .project import CommandError, Project, RenderedBlueprint, branch_slug
+import json5
+
+from .project import (
+    CommandError,
+    Project,
+    RenderedBlueprint,
+    branch_slug,
+    contains_branch_marker,
+    legacy_branch_slug,
+)
 from .schema import ValidationError
 from .motherduck_cli import query_rows as cli_query_rows, sql_backend
 
@@ -36,6 +46,7 @@ def sql_map(values: dict[str, object]) -> str:
 
 
 def quote_ident(value: object) -> str:
+    """Strict identifier quoting, kept for compatibility. Deploy SQL uses ``quote_name``."""
     rendered = str(value)
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", rendered):
         raise ValidationError(f"Unsafe SQL identifier: {rendered!r}")
@@ -44,6 +55,65 @@ def quote_ident(value: object) -> str:
 
 def quote_name(value: object) -> str:
     return '"' + str(value).replace('"', '""') + '"'
+
+
+_REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*=\s*", re.MULTILINE)
+_LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*\n")
+FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
+FLIGHT_RUN_START_GRACE_SECONDS = 120
+AUTHORITATIVE_NOTE = (
+    "mode: authoritative revokes every grant not declared here, including grants created outside "
+    "Blueprints (for example by Terraform or the UI)"
+)
+
+
+def required_databases_export(source: str, start: int = 0) -> tuple[int, int, object] | None:
+    """Locate a static ``export const REQUIRED_DATABASES = ...`` at a line start.
+
+    Returns ``(start, end, value)`` where ``end`` includes the trailing ``;`` and line
+    break. The value is parsed with JSON5, so JavaScript object syntax, comments,
+    trailing commas, ``as const`` and multi-line arrays are supported without
+    evaluating code.
+    """
+    match = _REQUIRED_DATABASES_EXPORT.search(source, start)
+    if match is None:
+        return None
+    value, error, end = json5.parse(source, start=match.end(), consume_trailing=False, allow_duplicate_keys=False)
+    if error:
+        raise ValidationError("REQUIRED_DATABASES must be a static array")
+    suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?:\r?\n|$)", source[end:])
+    if suffix is None:
+        raise ValidationError("Unsupported expression after REQUIRED_DATABASES")
+    return match.start(), end + suffix.end(), value
+
+
+def strip_required_databases_export(source: str) -> str:
+    """Remove the local-preview ``REQUIRED_DATABASES`` export before deploying a Dive.
+
+    Single-line exports are removed exactly as before (the legacy line regex).
+    Multi-line static exports are removed as a whole instead of leaving the array
+    body behind.
+    """
+    result = source
+    position = 0
+    while True:
+        try:
+            found = required_databases_export(result, position)
+        except ValidationError:
+            match = _REQUIRED_DATABASES_EXPORT.search(result, position)
+            if match is None:
+                break
+            position = match.end()
+            continue
+        if found is None:
+            break
+        start, end, _ = found
+        if "\n" in result[start:end].rstrip("\r\n"):
+            result = result[:start] + result[end:]
+            position = start
+        else:
+            position = end
+    return _LEGACY_REQUIRED_DATABASES_LINE.sub("", result)
 
 
 def format_sql_value(value: object) -> str:
@@ -183,6 +253,7 @@ class Deployer:
         self.project = project
         self.sql_env: dict[str, DuckDBConfigValue] | None = None
         self.rendered_by_name: dict[str, RenderedBlueprint] = {}
+        self.target: str | None = None
 
     def plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = self._validate_and_render(target, branch, names)
@@ -275,17 +346,77 @@ class Deployer:
         self._prepare_live_command(target, "cleanup")
         rendered_names = [blueprint.name for blueprint in rendered]
         stable_target = self.project.preview_stable_target()
-        stable = {
-            blueprint.name: blueprint
-            for blueprint in self.project.render_all(stable_target, names=rendered_names)
+        # Compare against every stable target, not only the one previews promote to.
+        stable_renders = {
+            name: {
+                blueprint.name: blueprint
+                for blueprint in self.project.render_all(name, names=rendered_names)
+            }
+            for name in self.project.target_names()
+            if name != "preview"
         }
-        return self._build_cleanup_plan(
+        current_slug = branch_slug(branch or "")
+        records = self._build_cleanup_plan(
             rendered,
-            branch_slug(branch or ""),
+            current_slug,
             branch=branch,
-            production=stable,
+            production=stable_renders.get(stable_target),
             stable_target=stable_target,
+            stable_renders=stable_renders,
         )
+        legacy_slug = legacy_branch_slug(branch or "")
+        if legacy_slug == current_slug:
+            return records
+        # Previews created before long slugs were hashed used the plain truncation.
+        # Plan and deploy never use it; cleanup removes what it finds and nothing else.
+        legacy_rendered = self.project.render_all(
+            target, branch=branch, names=rendered_names, slug_override=legacy_slug,
+        )
+        legacy_records = self._build_cleanup_plan(
+            legacy_rendered,
+            legacy_slug,
+            branch=branch,
+            production=stable_renders.get(stable_target),
+            stable_target=stable_target,
+            stable_renders=stable_renders,
+        )
+        return records + self._legacy_cleanup_records(records, legacy_records)
+
+    def _legacy_cleanup_records(
+        self, records: list[PlanRecord], legacy_records: list[PlanRecord],
+    ) -> list[PlanRecord]:
+        """Keep only legacy-slug records that remove something that exists.
+
+        Safety errors and missing resources are dropped: the legacy pass must never
+        block cleanup of current previews, and it never writes unless a resource matches.
+        """
+        seen = {(record.type, record.name, record.id) for record in records}
+        kept: list[PlanRecord] = []
+        for record in legacy_records:
+            identity = (record.type, record.name, record.id)
+            if identity in seen:
+                continue
+            if record.action in {"delete", "drop_share"}:
+                pass
+            elif record.action == "drop_database" and self._database_exists(record.name):
+                record.notes = "legacy preview slug; database exists"
+            else:
+                continue
+            if not record.notes:
+                record.notes = "legacy preview slug from before long branch slugs were hashed"
+            seen.add(identity)
+            kept.append(record)
+        return kept
+
+    def _database_exists(self, name: str) -> bool:
+        try:
+            rows = self._query_rows(
+                "SELECT alias FROM MD_ALL_DATABASES() "
+                f"WHERE lower(alias) = lower({sql_string(name)}) AND type = 'motherduck'"
+            )
+        except CommandError:
+            return False
+        return bool(rows)
 
     def cleanup(self, *, target: str, branch: str | None, names: list[str] | None) -> None:
         records = self.cleanup_plan(target=target, branch=branch, names=names)
@@ -313,6 +444,7 @@ class Deployer:
         names: list[str] | None,
     ) -> list[RenderedBlueprint]:
         self.project.validate(targets=[target], branch=branch)
+        self.target = target
         expanded_names = set(self.project.deployment_blueprint_names(target, names))
         self.rendered_by_name = {
             blueprint.name: blueprint
@@ -393,6 +525,14 @@ class Deployer:
                 )
                 missing_roles = sorted(included_roles - live_role_names - managed_role_names)
                 exists = name in live_role_names
+                role_notes = (
+                    "included role(s) do not exist and are not selected for deployment: "
+                    f"{', '.join(missing_roles)}"
+                    if missing_roles
+                    else ""
+                )
+                if not missing_roles and role.get("mode") == "authoritative":
+                    role_notes = self._authoritative_role_note(role, exists)
                 records.append(
                     PlanRecord(
                         blueprint.name,
@@ -402,12 +542,7 @@ class Deployer:
                         "error" if missing_roles else ("update" if exists else "create"),
                         exists,
                         name if exists else None,
-                        (
-                            "included role(s) do not exist and are not selected for deployment: "
-                            f"{', '.join(missing_roles)}"
-                            if missing_roles
-                            else ""
-                        ),
+                        role_notes,
                     )
                 )
 
@@ -454,6 +589,8 @@ class Deployer:
                 elif url and manages_share:
                     action = "update"
                     notes = "share is available; filter and/or grants will be reconciled"
+                    if isinstance(grants, dict) and grants.get("mode") == "authoritative":
+                        notes = f"{notes}; {self._authoritative_share_note(share)}"
                 elif url:
                     action = "present"
                     notes = "share is available"
@@ -530,7 +667,10 @@ class Deployer:
                         action="validated_only",
                         exists=False,
                         id=None,
-                        notes="context deployment is not available yet",
+                        notes=(
+                            "resources.context is deprecated and never deploys. "
+                            "Next: move this file to resources.guides"
+                        ),
                     )
                 )
             for key, guide in blueprint.guides.items():
@@ -564,24 +704,41 @@ class Deployer:
         branch: str | None = None,
         production: dict[str, RenderedBlueprint] | None = None,
         stable_target: str = "prod",
+        stable_renders: dict[str, dict[str, RenderedBlueprint]] | None = None,
     ) -> list[PlanRecord]:
+        if stable_renders is None:
+            stable_renders = {stable_target: production} if production else {}
+
+        def stable_names(blueprint_name: str, group: str, key: str, field: str) -> list[tuple[str, str]]:
+            names: list[tuple[str, str]] = []
+            for target_name, blueprints in stable_renders.items():
+                stable_blueprint = blueprints.get(blueprint_name)
+                resources = getattr(stable_blueprint, group) if stable_blueprint else {}
+                value = resources.get(key, {}).get(field) if isinstance(resources, dict) else None
+                if value is not None:
+                    names.append((target_name, str(value)))
+            return names
+
+        def scope_error(resource_type: str, name: str, blueprint_name: str, group: str, key: str, field: str) -> str | None:
+            return self._preview_scope_error(
+                resource_type,
+                name,
+                branch,
+                rendered_branch_slug,
+                None,
+                stable_target,
+                stable_names=stable_names(blueprint_name, group, key, field),
+            )
+
         records: list[PlanRecord] = []
         dependency_safe = list(reversed(rendered))
         for blueprint in dependency_safe:
-            production_blueprint = production.get(blueprint.name) if production else None
             for key in reversed(self._guide_deployment_order(blueprint)):
                 guide = blueprint.guides[key]
                 if not guide.get("deploy") or not guide.get("cleanup", True):
                     continue
                 title = str(guide["title"])
-                production_title = None
-                if production_blueprint and key in production_blueprint.guides:
-                    raw_production_title = production_blueprint.guides[key].get("title")
-                    if raw_production_title is not None:
-                        production_title = str(raw_production_title)
-                safety_error = self._preview_scope_error(
-                    "Guide", title, branch, rendered_branch_slug, production_title, stable_target
-                )
+                safety_error = scope_error("Guide", title, blueprint.name, "guides", key, "title")
                 if safety_error:
                     records.append(
                         self._cleanup_record(blueprint, "guide", key, title, "error", None, None, safety_error)
@@ -598,17 +755,11 @@ class Deployer:
                         )
 
         for blueprint in dependency_safe:
-            production_blueprint = production.get(blueprint.name) if production else None
             for key, dive in blueprint.dives.items():
                 if dive.get("deploy") is False:
                     continue
                 title = str(dive["title"])
-                production_title = None
-                if production_blueprint and key in production_blueprint.dives:
-                    production_title = str(production_blueprint.dives[key]["title"])
-                safety_error = self._preview_scope_error(
-                    "Dive", title, branch, rendered_branch_slug, production_title, stable_target
-                )
+                safety_error = scope_error("Dive", title, blueprint.name, "dives", key, "title")
                 if safety_error:
                     records.append(
                         self._cleanup_record(blueprint, "dive", key, title, "error", None, None, safety_error)
@@ -622,17 +773,11 @@ class Deployer:
                         records.append(self._cleanup_record(blueprint, "dive", key, title, "delete", True, resource_id))
 
         for blueprint in dependency_safe:
-            production_blueprint = production.get(blueprint.name) if production else None
             for key, flight in blueprint.flights.items():
                 if flight.get("deploy") is False:
                     continue
                 name = str(flight["name"])
-                production_name = None
-                if production_blueprint and key in production_blueprint.flights:
-                    production_name = str(production_blueprint.flights[key]["name"])
-                safety_error = self._preview_scope_error(
-                    "Flight", name, branch, rendered_branch_slug, production_name, stable_target
-                )
+                safety_error = scope_error("Flight", name, blueprint.name, "flights", key, "name")
                 if safety_error:
                     records.append(
                         self._cleanup_record(blueprint, "flight", key, name, "error", None, None, safety_error)
@@ -646,18 +791,13 @@ class Deployer:
                         records.append(self._cleanup_record(blueprint, "flight", key, name, "delete", True, resource_id))
 
         for blueprint in dependency_safe:
-            production_blueprint = production.get(blueprint.name) if production else None
             for key, share in blueprint.shares.items():
                 if not share.get("cleanup", True):
                     continue
 
                 share_name = str(share["name"])
                 database_name = str(share["database"])
-                production_share = production_blueprint.shares.get(key) if production_blueprint else None
-                production_share_name = str(production_share["name"]) if production_share else None
-                share_safety_error = self._preview_scope_error(
-                    "share", share_name, branch, rendered_branch_slug, production_share_name, stable_target
-                )
+                share_safety_error = scope_error("share", share_name, blueprint.name, "shares", key, "name")
                 if share_safety_error:
                     records.append(
                         self._cleanup_record(
@@ -682,9 +822,8 @@ class Deployer:
                 if not share.get("dropDatabase", False):
                     continue
 
-                production_database_name = str(production_share["database"]) if production_share else None
-                database_safety_error = self._preview_scope_error(
-                    "database", database_name, branch, rendered_branch_slug, production_database_name, stable_target
+                database_safety_error = scope_error(
+                    "database", database_name, blueprint.name, "shares", key, "database"
                 )
                 if database_safety_error:
                     records.append(
@@ -723,14 +862,22 @@ class Deployer:
         rendered_branch_slug: str,
         production_name: str | None,
         stable_target: str = "prod",
+        *,
+        stable_names: list[tuple[str, str]] | None = None,
     ) -> str | None:
-        if production_name is not None and name == production_name:
-            stable_label = "production" if stable_target == "prod" else stable_target
-            return f"refusing to delete preview {resource_type} because it matches {stable_label}: {name}"
+        candidates = list(stable_names or [])
+        if production_name is not None:
+            candidates.insert(0, (stable_target, production_name))
+        for target_name, stable_name in candidates:
+            if name == stable_name:
+                stable_label = "production" if target_name == "prod" else target_name
+                return f"refusing to delete preview {resource_type} because it matches {stable_label}: {name}"
         branch_markers = {rendered_branch_slug}
         if branch:
             branch_markers.add(branch)
-        if not any(marker and marker in name for marker in branch_markers):
+        # The marker must be a whole delimited token so e.g. branch "main" never
+        # authorizes deleting "domain_data".
+        if not any(contains_branch_marker(name, marker) for marker in branch_markers):
             action = "drop" if resource_type in {"share", "database"} else "delete"
             return f"refusing to {action} preview {resource_type} without branch slug {rendered_branch_slug}"
         return None
@@ -748,8 +895,21 @@ class Deployer:
         if not ids:
             return PlanRecord(blueprint.name, type_name, key, name, "create", False, None)
         if len(ids) == 1:
-            return PlanRecord(blueprint.name, type_name, key, name, "update", True, ids[0])
+            return PlanRecord(
+                blueprint.name, type_name, key, name, "update", True, ids[0],
+                self._name_match_note(type_name.title(), name),
+            )
         return PlanRecord(blueprint.name, type_name, key, name, "error", True, ",".join(ids), duplicate_note)
+
+    def _name_match_note(self, type_label: str, name: str, existing: str = "") -> str:
+        """Explain name-based adoption on stable targets, where ``id`` binding is available."""
+        if self.target == "preview":
+            return existing
+        note = (
+            f"matched existing {type_label} '{name}' by name; bind it with `id` "
+            "(see make export / md-blueprints import) so another tool cannot own it silently"
+        )
+        return f"{existing}; {note}" if existing else note
 
     def _bound_resource_record(
         self, blueprint: RenderedBlueprint, kind: str, key: str, resource: dict[str, object],
@@ -827,6 +987,7 @@ class Deployer:
                 notes = "endorsing requires an organization admin"
             elif current_status == "endorsed":
                 notes = "content update remains endorsed"
+            notes = self._name_match_note("Dive", title, notes)
             return PlanRecord(
                 blueprint.name,
                 "dive",
@@ -871,37 +1032,15 @@ class Deployer:
             )
 
         title = str(guide["title"])
-        guide_id = guide.get("id")
-        if guide_id:
+        if guide.get("id"):
             return self._bound_resource_record(blueprint, "guide", key, guide)
-        else:
-            topic = str(guide.get("topic", ""))
-            topic_predicate = (
-                "topic IS NULL OR topic = ''"
-                if not topic
-                else f"topic = {sql_string(topic)}"
-            )
-            rows = self._query_rows(
-                "SELECT id FROM MD_LIST_GUIDES("
-                '"limit" := 1000::UINTEGER, "offset" := 0::UINTEGER) '
-                f"WHERE title = {sql_string(title)} AND ({topic_predicate})"
-            )
-        ids = [str(row[0]) for row in rows]
+        ids = self._list_guide_ids(title, str(guide.get("topic", "")))
         if not ids:
-            if guide_id:
-                return PlanRecord(
-                    blueprint.name,
-                    "guide",
-                    key,
-                    title,
-                    "error",
-                    False,
-                    str(guide_id),
-                    "configured Guide id does not exist",
-                )
             return PlanRecord(blueprint.name, "guide", key, title, "create", False, None)
         if len(ids) == 1:
-            return PlanRecord(blueprint.name, "guide", key, title, "update", True, ids[0])
+            return PlanRecord(
+                blueprint.name, "guide", key, title, "update", True, ids[0], self._name_match_note("Guide", title),
+            )
         return PlanRecord(
             blueprint.name,
             "guide",
@@ -990,11 +1129,6 @@ class Deployer:
             return self._list_flight_ids(str(producer.flights[resource_key]["name"]))
 
         referenced_guide = producer.guides[resource_key]
-        if referenced_guide.get("id"):
-            return [
-                str(row[0])
-                for row in self._get_guide_rows_by_id(str(referenced_guide["id"]))
-            ]
         return self._list_guide_ids(
             str(referenced_guide["title"]),
             str(referenced_guide.get("topic", "")),
@@ -1178,7 +1312,13 @@ class Deployer:
             run_number = int(submitted_run)
             run_started = True
             if flight.get("waitForRun", False) == "success":
-                self._wait_for_flight_run_success(flight_id, run_number)
+                max_runtime = flight.get("maxRuntimeSec")
+                self._wait_for_flight_run_success(
+                    flight_id,
+                    run_number,
+                    max_runtime_sec=max_runtime if isinstance(max_runtime, int) else None,
+                    name=name,
+                )
 
         return f"| {name} | {flight_id} | {str(run_started).lower()} |" if target == "preview" else None
 
@@ -1203,9 +1343,28 @@ class Deployer:
             previous_last = last
             offset += len(rows)
 
-    def _wait_for_flight_run_success(self, flight_id: str, run_number: int) -> None:
-        attempts = max(1, int(os.environ.get("FLIGHT_RUN_POLL_ATTEMPTS", "60")))
+    @staticmethod
+    def _flight_run_poll_attempts(sleep_seconds: int, max_runtime_sec: int | None) -> int:
+        override = os.environ.get("FLIGHT_RUN_POLL_ATTEMPTS")
+        if override is not None:
+            return max(1, int(override))
+        attempts = FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS
+        if max_runtime_sec and max_runtime_sec > 0:
+            # Allow the Flight's own runtime cap plus time to queue and start.
+            derived = math.ceil((max_runtime_sec + FLIGHT_RUN_START_GRACE_SECONDS) / max(1, sleep_seconds))
+            attempts = max(attempts, derived)
+        return attempts
+
+    def _wait_for_flight_run_success(
+        self,
+        flight_id: str,
+        run_number: int,
+        *,
+        max_runtime_sec: int | None = None,
+        name: str | None = None,
+    ) -> None:
         sleep_seconds = int(os.environ.get("FLIGHT_RUN_POLL_SLEEP_SECONDS", "10"))
+        attempts = self._flight_run_poll_attempts(sleep_seconds, max_runtime_sec)
 
         for index in range(attempts):
             status = self._flight_run_status(flight_id, run_number)
@@ -1229,7 +1388,17 @@ class Deployer:
             if index < attempts - 1:
                 time.sleep(sleep_seconds)
 
-        raise CommandError(f"Timed out waiting for flight {flight_id} run {run_number} to succeed")
+        label = f"Flight '{name}' ({flight_id})" if name else f"Flight {flight_id}"
+        waited = attempts * max(0, sleep_seconds) if attempts > 1 else 0
+        raise CommandError(
+            f"Timed out after about {waited}s waiting for {label} run {run_number} to succeed "
+            "(waitForRun: success). Already applied: roles, earlier blueprints and resources in this "
+            f"deployment, and this Flight's source and settings; run {run_number} was started and was not "
+            "cancelled. Not applied: the shares, Dives, and Guides that follow this Flight, and the postcheck. "
+            f"Next: check run {run_number} in MotherDuck and rerun the deployment once it succeeds. If the "
+            "run legitimately takes longer, set maxRuntimeSec on the Flight (the wait follows it) or raise "
+            "FLIGHT_RUN_POLL_ATTEMPTS / FLIGHT_RUN_POLL_SLEEP_SECONDS."
+        )
 
     def _wait_for_share(self, share_name: str) -> str:
         attempts = max(1, int(os.environ.get("SHARE_RESOLVE_ATTEMPTS", "18")))
@@ -1255,10 +1424,7 @@ class Deployer:
     ) -> str | None:
         title = str(dive["title"])
         required_resources_sql = self._required_resources_sql(dive["requiredResources"], shares, inputs)
-        content_sql = (
-            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') "
-            f"FROM read_text({sql_string(dive['sourcePath'])}))"
-        )
+        content_sql = self._dive_content_sql(str(dive["sourcePath"]))
         title_sql = sql_string(title)
         description_sql = sql_string(dive.get("description", ""))
 
@@ -1304,6 +1470,22 @@ class Deployer:
             if target == "preview"
             else None
         )
+
+    @staticmethod
+    def _dive_content_sql(source_path: str) -> str:
+        legacy_sql = (
+            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') "
+            f"FROM read_text({sql_string(source_path)}))"
+        )
+        try:
+            source = Path(source_path).read_text(encoding="utf-8")
+        except OSError:
+            return legacy_sql
+        stripped = strip_required_databases_export(source)
+        if stripped == _LEGACY_REQUIRED_DATABASES_LINE.sub("", source):
+            # Single-line exports keep the exact server-side stripping used before.
+            return legacy_sql
+        return f"({sql_string(stripped)})"
 
     def _required_resources_sql(
         self,
@@ -1352,6 +1534,60 @@ class Deployer:
                 "that require organization administration."
             )
 
+    def _current_role_grants(self, name: str) -> tuple[set[str], set[str]]:
+        name_sql = quote_name(name)
+        current_roles = {
+            str(row[0])
+            for row in self._query_rows(f"SHOW ROLES TO ROLE {name_sql}")
+            if len(row) >= 3 and bool(row[2])
+        }
+        current_users = {str(row[0]) for row in self._query_rows(f"SHOW USERS OF ROLE {name_sql}")}
+        return current_roles, current_users
+
+    def _current_share_grantees(self, name: str) -> tuple[set[str], set[str]]:
+        rows = self._query_rows(
+            "SELECT grantee_name, grantee_type "
+            f"FROM md_list_share_grantees({sql_string(name)})"
+        )
+        roles = {str(row[0]) for row in rows if str(row[1]).lower() == "role"}
+        users = {str(row[0]) for row in rows if str(row[1]).lower() == "user"}
+        return roles, users
+
+    @staticmethod
+    def _revocation_summary(roles: set[str], users: set[str]) -> str:
+        revocations = [f"role {value}" for value in sorted(roles)] + [f"user {value}" for value in sorted(users)]
+        return f"will revoke: {', '.join(revocations)}" if revocations else "nothing to revoke today"
+
+    def _authoritative_role_note(self, role: dict[str, object], exists: bool) -> str:
+        if not exists:
+            return f"{AUTHORITATIVE_NOTE}; nothing to revoke today (new role)"
+        included = role.get("includedRoles", [])
+        members = role.get("members", [])
+        desired_roles = {str(value) for value in included} if isinstance(included, list) else set()
+        desired_users = {str(value) for value in members} if isinstance(members, list) else set()
+        try:
+            current_roles, current_users = self._current_role_grants(str(role["name"]))
+        except CommandError:
+            return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
+        return (
+            f"{AUTHORITATIVE_NOTE}; "
+            f"{self._revocation_summary(current_roles - desired_roles, current_users - desired_users)}"
+        )
+
+    def _authoritative_share_note(self, share: dict[str, object]) -> str:
+        grants = share.get("grants")
+        assert isinstance(grants, dict)
+        desired_roles = {str(value) for value in grants.get("roles", [])}
+        desired_users = {str(value) for value in grants.get("users", [])}
+        try:
+            current_roles, current_users = self._current_share_grantees(str(share["name"]))
+        except CommandError:
+            return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
+        return (
+            f"{AUTHORITATIVE_NOTE}; "
+            f"{self._revocation_summary(current_roles - desired_roles, current_users - desired_users)}"
+        )
+
     def _live_role_names(self) -> set[str]:
         return {
             str(row[0])
@@ -1373,15 +1609,7 @@ class Deployer:
         current_roles: set[str] = set()
         current_users: set[str] = set()
         if role.get("mode") == "authoritative" or plan.action == "update":
-            current_roles = {
-                str(row[0])
-                for row in self._query_rows(f"SHOW ROLES TO ROLE {name_sql}")
-                if len(row) >= 3 and bool(row[2])
-            }
-            current_users = {
-                str(row[0])
-                for row in self._query_rows(f"SHOW USERS OF ROLE {name_sql}")
-            }
+            current_roles, current_users = self._current_role_grants(name)
 
         for included in sorted(desired_roles - current_roles):
             self._sql(f"GRANT ROLE {quote_name(included)} TO ROLE {name_sql};")
@@ -1440,12 +1668,7 @@ class Deployer:
             return
         desired_roles = {str(value) for value in grants.get("roles", [])}
         desired_users = {str(value) for value in grants.get("users", [])}
-        current_rows = self._query_rows(
-            "SELECT grantee_name, grantee_type "
-            f"FROM md_list_share_grantees({sql_string(name)})"
-        )
-        current_roles = {str(row[0]) for row in current_rows if str(row[1]).lower() == "role"}
-        current_users = {str(row[0]) for row in current_rows if str(row[1]).lower() == "user"}
+        current_roles, current_users = self._current_share_grantees(name)
 
         for role in sorted(desired_roles - current_roles):
             self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO ROLE {quote_name(role)};")
@@ -1682,7 +1905,8 @@ class Deployer:
                 )
             elif (record.type, record.action) == ("database", "drop_database"):
                 print(f"Dropping preview database {record.name}")
-                self._sql(f"DROP DATABASE IF EXISTS {quote_ident(record.name)};")
+                # Same quoting as shares and roles: any name the Flight could create can be dropped.
+                self._sql(f"DROP DATABASE IF EXISTS {quote_name(record.name)};")
 
     def _delete_if_present(self, statement: str, label: str) -> None:
         try:

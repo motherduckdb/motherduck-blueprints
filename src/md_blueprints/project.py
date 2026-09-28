@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import heapq
 import os
 import re
@@ -18,6 +19,18 @@ from .template import Template
 DIVE_STATUSES = {"draft", "ready", "endorsed", "archived"}
 GUIDE_ACCESS = {"user", "organization"}
 ROLE_MODES = {"additive", "authoritative"}
+SHARE_ACCESS = {"ORGANIZATION", "UNRESTRICTED", "RESTRICTED"}
+SHARE_VISIBILITY = {"DISCOVERABLE", "HIDDEN"}
+BRANCH_SLUG_MAX_LENGTH = 48
+# Resource group -> schema definition in blueprint.schema.json.
+RESOURCE_DEFINITIONS = {
+    "shares": "share",
+    "flights": "flight",
+    "dives": "dive",
+    "context": "context",
+    "guides": "guide",
+    "roles": "role",
+}
 
 
 class CommandError(Exception):
@@ -40,8 +53,35 @@ def included_manifest_paths(root: Path, include: object) -> list[Path]:
 
 def branch_slug(branch: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", branch.lower())
-    slug = re.sub(r"_+", "_", slug).strip("_")[:48]
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    if len(slug) >= BRANCH_SLUG_MAX_LENGTH:
+        # Plain truncation made long branches that differ only after the cut share
+        # preview names. Hashing at exactly the limit too keeps every current slug
+        # distinct from every legacy (truncated) slug that cleanup still reads.
+        # Shorter slugs stay byte-for-byte unchanged for open previews.
+        digest = hashlib.sha1(branch.encode("utf-8")).hexdigest()[:8]
+        slug = slug[: BRANCH_SLUG_MAX_LENGTH - len(digest) - 1].rstrip("_") + "_" + digest
     return slug or "preview"
+
+
+def legacy_branch_slug(branch: str) -> str:
+    """Slug used before long slugs were hashed; only preview cleanup still reads it."""
+    slug = re.sub(r"[^a-z0-9]+", "_", branch.lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")[:BRANCH_SLUG_MAX_LENGTH]
+    return slug or "preview"
+
+
+def contains_branch_marker(value: str, marker: str) -> bool:
+    """Return whether ``marker`` appears in ``value`` as a whole delimited token.
+
+    The marker must be the whole value or be bounded by non-alphanumeric characters
+    (for example ``_``, ``-``, ``:``, ``/`` or spaces), so ``main`` does not match
+    ``domain_data``.
+    """
+    if not marker:
+        return False
+    pattern = rf"(?<![A-Za-z0-9]){re.escape(marker)}(?![A-Za-z0-9])"
+    return re.search(pattern, value) is not None
 
 
 def deep_merge(left: object, right: object) -> object:
@@ -172,7 +212,9 @@ class Project:
         *,
         branch: str | None = None,
         names: list[str] | None = None,
+        slug_override: str | None = None,
     ) -> list[RenderedBlueprint]:
+        """Render blueprints. ``slug_override`` replaces ``target.branch_slug`` (legacy cleanup only)."""
         selected = {blueprint.name for blueprint in self._select_blueprints(names)}
         rendered: dict[str, RenderedBlueprint] = {}
         for name in self._topological_names:
@@ -182,6 +224,7 @@ class Project:
                 target,
                 branch=branch,
                 rendered_blueprints=rendered,
+                slug_override=slug_override,
             )
         return [rendered[name] for name in self._topological_names if name in selected]
 
@@ -287,7 +330,8 @@ class Project:
         target_config = targets.get(target) if isinstance(targets, dict) else None
         if isinstance(target_config, dict):
             return cast(dict[str, object], target_config)
-        raise ValidationError(f"Unknown target {target}")
+        known = ", ".join(self.target_names()) or "none"
+        raise ValidationError(f"Unknown target {target}; motherduck.yml declares: {known}")
 
     def _validate_deployment_topology(self) -> None:
         if not self.has_target("preview") or not self.has_target("prod"):
@@ -506,7 +550,10 @@ class Project:
         selected = [blueprint for blueprint in self.blueprints if blueprint.name in wanted]
         missing = wanted - {blueprint.name for blueprint in selected}
         if missing:
-            raise ValidationError(f"Unknown blueprint(s): {', '.join(sorted(missing))}")
+            known = ", ".join(sorted(blueprint.name for blueprint in self.blueprints)) or "none"
+            raise ValidationError(
+                f"Unknown blueprint(s): {', '.join(sorted(missing))}; known blueprints: {known}"
+            )
         return selected
 
     def _render_blueprint(
@@ -516,6 +563,7 @@ class Project:
         *,
         branch: str | None = None,
         rendered_blueprints: dict[str, RenderedBlueprint],
+        slug_override: str | None = None,
     ) -> RenderedBlueprint:
         target_settings = self.target_config(target)
         if target == "preview" and not branch:
@@ -540,7 +588,7 @@ class Project:
             "target": {
                 "name": target,
                 "branch": branch or "",
-                "branch_slug": branch_slug(branch or ""),
+                "branch_slug": slug_override if slug_override is not None else branch_slug(branch or ""),
             },
             "var": {},
             "resources": {"shares": {}, "roles": {}},
@@ -556,13 +604,20 @@ class Project:
                 nested_dict(blueprint.raw, "targets", target, "variables") or {}
             )
         )
-        context["var"] = self._render_variables(raw_variables, context)
+        try:
+            context["var"] = self._render_variables(raw_variables, context)
+        except ValidationError as exc:
+            raise ValidationError(
+                f"{blueprint.path}: variables for target {target!r}: {exc}"
+            ) from exc
 
         resources_node = blueprint.raw["resources"]
         if not isinstance(resources_node, dict):
             raise ValidationError(f"{blueprint.path}.resources must be an object")
 
-        roles = self._render_resources(resources_node.get("roles", {}), target, context)
+        roles = self._render_resources(
+            resources_node.get("roles", {}), target, context, blueprint=blueprint, group="roles"
+        )
         for role in roles.values():
             role.setdefault("includedRoles", [])
             role.setdefault("members", [])
@@ -576,7 +631,9 @@ class Project:
         assert isinstance(context_roles, dict)
         context_roles.update(roles)
 
-        shares = self._render_resources(resources_node.get("shares", {}), target, context)
+        shares = self._render_resources(
+            resources_node.get("shares", {}), target, context, blueprint=blueprint, group="shares"
+        )
         for share in shares.values():
             share.setdefault("access", "ORGANIZATION")
             share.setdefault("visibility", "DISCOVERABLE")
@@ -590,7 +647,9 @@ class Project:
         for key, value in shares.items():
             context_shares[key] = value
 
-        flights = self._render_resources(resources_node.get("flights", {}), target, context)
+        flights = self._render_resources(
+            resources_node.get("flights", {}), target, context, blueprint=blueprint, group="flights"
+        )
         for flight in flights.values():
             flight["sourcePath"] = str(
                 require_within(
@@ -615,11 +674,13 @@ class Project:
             flight.setdefault("accessTokenName", "")
             flight.setdefault("scheduleCron", "")
             if "maxRuntimeSec" in flight:
-                flight["maxRuntimeSec"] = int(str(flight["maxRuntimeSec"]))
+                flight["maxRuntimeSec"] = int(str(flight["maxRuntimeSec"]))  # validated by _render_resources
             flight["runOnDeploy"] = flight.get("runOnDeploy", False)
             flight["waitForRun"] = flight.get("waitForRun", False)
 
-        dives = self._render_resources(resources_node.get("dives", {}), target, context)
+        dives = self._render_resources(
+            resources_node.get("dives", {}), target, context, blueprint=blueprint, group="dives"
+        )
         for dive in dives.values():
             dive["sourcePath"] = str(
                 require_within(
@@ -632,7 +693,9 @@ class Project:
             if target == "preview":
                 dive.setdefault("status", "draft")
 
-        contexts = self._render_resources(resources_node.get("context", {}), target, context)
+        contexts = self._render_resources(
+            resources_node.get("context", {}), target, context, blueprint=blueprint, group="context"
+        )
         for ctx in contexts.values():
             ctx["sourcePath"] = str(
                 require_within(
@@ -643,7 +706,9 @@ class Project:
             )
             ctx["deploy"] = ctx.get("deploy", False)
 
-        guides = self._render_resources(resources_node.get("guides", {}), target, context)
+        guides = self._render_resources(
+            resources_node.get("guides", {}), target, context, blueprint=blueprint, group="guides"
+        )
         for guide in guides.values():
             guide["sourcePath"] = str(
                 require_within(
@@ -667,10 +732,16 @@ class Project:
                 share_key = str(output_value["share"])
                 outputs[str(output_name)] = {"share": share_key, **shares[share_key]}
 
+        try:
+            rendered_title = str(Template.render(blueprint.title, context))
+            rendered_description = str(Template.render(blueprint.raw.get("description", ""), context))
+        except ValidationError as exc:
+            raise ValidationError(f"{blueprint.path}: title/description for target {target!r}: {exc}") from exc
+
         return RenderedBlueprint(
             name=blueprint.name,
-            title=str(Template.render(blueprint.title, context)),
-            description=str(Template.render(blueprint.raw.get("description", ""), context)),
+            title=rendered_title,
+            description=rendered_description,
             shares=shares,
             flights=flights,
             dives=dives,
@@ -681,24 +752,71 @@ class Project:
             outputs=outputs,
         )
 
-    def _render_resources(self, resources: object, target: str, context: dict[str, object]) -> dict[str, dict[str, object]]:
+    def _render_resources(
+        self,
+        resources: object,
+        target: str,
+        context: dict[str, object],
+        *,
+        blueprint: Blueprint | None = None,
+        group: str | None = None,
+    ) -> dict[str, dict[str, object]]:
         if not resources:
             return {}
+        location = f"{blueprint.path}: " if blueprint is not None else ""
         if not isinstance(resources, dict):
-            raise ValidationError("resources entries must be objects")
+            raise ValidationError(f"{location}resources.{group or '<group>'} entries must be objects")
 
         rendered: dict[str, dict[str, object]] = {}
         for key, raw_value in resources.items():
+            label = f"resources.{group}.{key}" if group else f"resources.{key}"
             if not isinstance(raw_value, dict):
-                raise ValidationError(f"resources.{key} must be an object")
+                raise ValidationError(f"{location}{label} must be an object")
             base = {field: value for field, value in raw_value.items() if field != "targets"}
             target_value = nested_dict(raw_value, "targets", target) or {}
             merged = deep_merge(base, target_value)
-            rendered_value = Template.render(merged, context)
+            try:
+                rendered_value = Template.render(merged, context)
+            except ValidationError as exc:
+                raise ValidationError(f"{location}{label} for target {target!r}: {exc}") from exc
             if not isinstance(rendered_value, dict):
-                raise ValidationError(f"resources.{key} must render to an object")
+                raise ValidationError(f"{location}{label} must render to an object")
+            definition = RESOURCE_DEFINITIONS.get(group or "")
+            if definition is not None:
+                self._validate_rendered_resource(rendered_value, definition, label, location, target)
             rendered[str(key)] = rendered_value
         return rendered
+
+    def _validate_rendered_resource(
+        self,
+        resource: dict[str, object],
+        definition: str,
+        label: str,
+        location: str,
+        target: str,
+    ) -> None:
+        """Check the merged and rendered resource, including ``targets.<target>`` overrides.
+
+        Overrides are free-form in the raw schema, so without this check a typo or
+        a wrong type in a target override would reach deployment unnoticed.
+        """
+        runtime = resource.get("maxRuntimeSec")
+        if isinstance(runtime, str) and runtime.strip().isdecimal():
+            # Templated values render as strings; keep accepting whole numbers.
+            resource["maxRuntimeSec"] = int(runtime.strip())
+        for name, spec in self.schema.definition_properties("blueprint.schema.json", definition).items():
+            value = resource.get(name)
+            if isinstance(spec, dict) and spec.get("type") == "boolean" and isinstance(value, str):
+                # Templated booleans render as strings; convert only exact true/false.
+                if value.strip().lower() in {"true", "false"}:
+                    resource[name] = value.strip().lower() == "true"
+        try:
+            self.schema.validate_definition(resource, "blueprint.schema.json", definition, path=label)
+        except ValidationError as exc:
+            raise ValidationError(
+                f"{location}{label} is invalid for target {target!r} after applying targets.{target} "
+                f"overrides and templates: {exc}"
+            ) from exc
 
     def _extract_variable_values(self, variables: object) -> dict[str, object]:
         if not isinstance(variables, dict):
@@ -715,7 +833,9 @@ class Project:
         rendered: dict[str, object] = dict(variables)
         for _ in range(5):
             context["var"] = rendered
-            candidate = Template.render(rendered, context)
+            # Keep escaped \${...} literals escaped between passes; the final resource
+            # render unescapes them once, so they are never resolved as references.
+            candidate = Template.render(rendered, context, unescape=False)
             if not isinstance(candidate, dict):
                 raise ValidationError("variables must render to an object")
             rendered = candidate
@@ -805,7 +925,19 @@ class Project:
         for key, share in blueprint.shares.items():
             for required_field in ["name", "database"]:
                 require_nonempty(share.get(required_field), f"shares.{key}.{required_field}")
-            if share.get("visibility", "DISCOVERABLE") == "HIDDEN" and share.get("access", "ORGANIZATION") != "RESTRICTED":
+            access = str(share.get("access", "ORGANIZATION")).upper()
+            visibility = str(share.get("visibility", "DISCOVERABLE")).upper()
+            if access not in SHARE_ACCESS:
+                raise ValidationError(
+                    f"shares.{key}.access must be one of {', '.join(sorted(SHARE_ACCESS))}; "
+                    f"got {share.get('access')!r}"
+                )
+            if visibility not in SHARE_VISIBILITY:
+                raise ValidationError(
+                    f"shares.{key}.visibility must be one of {', '.join(sorted(SHARE_VISIBILITY))}; "
+                    f"got {share.get('visibility')!r}"
+                )
+            if visibility == "HIDDEN" and access != "RESTRICTED":
                 raise ValidationError(f"hidden share {blueprint.name}.{key} must use RESTRICTED access")
             include_pattern = share.get("includePattern")
             if include_pattern is not None and not isinstance(include_pattern, list):
@@ -816,13 +948,17 @@ class Project:
                 and isinstance(target_policies, dict)
                 and target_policies.get("requireBranchSlugInDataResources")
             ):
-                if rendered_branch_slug not in str(share["name"]):
+                if not contains_branch_marker(str(share["name"]), rendered_branch_slug):
                     raise ValidationError(
-                        f"preview share {blueprint.name}.{key} must include branch slug {rendered_branch_slug}"
+                        f"preview share {blueprint.name}.{key} must include branch slug {rendered_branch_slug} "
+                        "as a whole token delimited by _ or another non-alphanumeric character"
                     )
-                if share.get("dropDatabase", False) and rendered_branch_slug not in str(share["database"]):
+                if share.get("dropDatabase", False) and not contains_branch_marker(
+                    str(share["database"]), rendered_branch_slug
+                ):
                     raise ValidationError(
-                        f"preview database {blueprint.name}.{key} must include branch slug {rendered_branch_slug}"
+                        f"preview database {blueprint.name}.{key} must include branch slug {rendered_branch_slug} "
+                        "as a whole token delimited by _ or another non-alphanumeric character"
                     )
 
         for key, flight in blueprint.flights.items():
@@ -904,7 +1040,8 @@ class Project:
             require_file(Path(str(ctx["sourcePath"])))
             if ctx.get("deploy"):
                 raise ValidationError(
-                    f"context resource {blueprint.name}.{key} cannot deploy until MotherDuck exposes the context API"
+                    f"context resource {blueprint.name}.{key} cannot deploy: resources.context is deprecated and "
+                    "validation-only. Next: move it to resources.guides and set deploy: true there"
                 )
 
         for key, guide in blueprint.guides.items():
@@ -1128,7 +1265,7 @@ def stringify_map(values: dict[str, object]) -> dict[str, str]:
 def includes_branch_scope(value: str, branch: str | None) -> bool:
     if not branch:
         return False
-    return branch in value or branch_slug(branch) in value
+    return contains_branch_marker(value, branch) or contains_branch_marker(value, branch_slug(branch))
 
 
 def require_nonempty(value: object, label: str) -> None:

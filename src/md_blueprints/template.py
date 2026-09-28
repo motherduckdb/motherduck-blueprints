@@ -9,14 +9,22 @@ class Template:
     _REFERENCE = re.compile(r"(?<!\\)\$\{([^}]+)\}")
 
     @classmethod
-    def render(cls, value: object, context: dict[str, object]) -> object:
+    def render(cls, value: object, context: dict[str, object], *, unescape: bool = True) -> object:
+        """Resolve ``${path}`` references. ``\\${`` stays literal.
+
+        ``unescape=False`` keeps escaped references escaped so a value can be
+        rendered again (for example variables that reference other variables).
+        """
         if isinstance(value, str):
             rendered = cls._REFERENCE.sub(lambda match: str(cls.lookup(match.group(1), context)), value)
-            return rendered.replace(r"\${", "${")
+            return rendered.replace(r"\${", "${") if unescape else rendered
         if isinstance(value, list):
-            return [cls.render(item, context) for item in value]
+            return [cls.render(item, context, unescape=unescape) for item in value]
         if isinstance(value, dict):
-            return {str(cls.render(key, context)): cls.render(item, context) for key, item in value.items()}
+            return {
+                str(cls.render(key, context, unescape=unescape)): cls.render(item, context, unescape=unescape)
+                for key, item in value.items()
+            }
         return value
 
     @staticmethod

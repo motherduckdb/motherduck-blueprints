@@ -369,7 +369,11 @@ def test_flight_run_uses_named_motherduck_arguments(
         return "42" if "MD_RUN_FLIGHT" in statement else ""
 
     monkeypatch.setattr(deployer, "_sql", fake_sql)
-    monkeypatch.setattr(deployer, "_wait_for_flight_run_success", lambda fid, number: waited.append((fid, number)))
+    monkeypatch.setattr(
+        deployer,
+        "_wait_for_flight_run_success",
+        lambda fid, number, **kwargs: waited.append((fid, number)),
+    )
 
     deployer._deploy_flight(
         {
@@ -1074,3 +1078,394 @@ def test_log_read_failure_does_not_hide_failed_run(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(deployer, '_query_rows', rows)
     with pytest.raises(CommandError, match='Flight run 42 ended with FAILED.*Logs unavailable'):
         deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)
+
+
+def test_single_line_required_databases_strip_matches_legacy_regex() -> None:
+    import re
+
+    from md_blueprints.deploy import strip_required_databases_export
+
+    sources = [
+        'export const REQUIRED_DATABASES = [{ alias: "a", path: "md:a" }];\nexport default 1;\n',
+        'export const REQUIRED_DATABASES = [] // local\nexport default 1;\n',
+        'export default 1;\nexport const REQUIRED_DATABASES = [];',
+        '  export const REQUIRED_DATABASES = [];\nexport default 1;\n',
+    ]
+    for source in sources:
+        legacy = re.sub(r"export const REQUIRED_DATABASES[^\n]*\n", "", source)
+        assert strip_required_databases_export(source) == legacy
+
+
+def test_multi_line_required_databases_export_is_removed_whole() -> None:
+    from md_blueprints.deploy import strip_required_databases_export
+
+    component = "export default function Dive() { return null; }\n"
+    source = (
+        "import { useSQLQuery } from '@motherduck/react-sql-query';\n"
+        "export const REQUIRED_DATABASES = [\n"
+        "  // mounted for local preview\n"
+        "  { type: 'share', path: 'md:_share/a/1', alias: 'a' },\n"
+        "] as const;\n" + component
+    )
+
+    assert strip_required_databases_export(source) == (
+        "import { useSQLQuery } from '@motherduck/react-sql-query';\n" + component
+    )
+
+
+def test_dive_content_sql_keeps_server_side_strip_for_single_line(tmp_path: Path) -> None:
+    single = tmp_path / "single.tsx"
+    single.write_text('export const REQUIRED_DATABASES = [];\nexport default 1;\n', encoding="utf-8")
+    multi = tmp_path / "multi.tsx"
+    multi.write_text('export const REQUIRED_DATABASES = [\n  { alias: "a" },\n];\nexport default 1;\n', encoding="utf-8")
+
+    assert "regexp_replace" in Deployer._dive_content_sql(str(single))
+    assert "regexp_replace" in Deployer._dive_content_sql(str(tmp_path / "missing.tsx"))
+    assert Deployer._dive_content_sql(str(multi)) == "('export default 1;\n')"
+
+
+def test_flight_wait_follows_max_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FLIGHT_RUN_POLL_ATTEMPTS", raising=False)
+
+    assert Deployer._flight_run_poll_attempts(10, None) == 60
+    assert Deployer._flight_run_poll_attempts(10, 60) == 60
+    assert Deployer._flight_run_poll_attempts(10, 3600) == 372
+    monkeypatch.setenv("FLIGHT_RUN_POLL_ATTEMPTS", "3")
+    assert Deployer._flight_run_poll_attempts(10, 3600) == 3
+
+
+def test_flight_wait_timeout_explains_state_and_next_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setenv("FLIGHT_RUN_POLL_ATTEMPTS", "2")
+    monkeypatch.setenv("FLIGHT_RUN_POLL_SLEEP_SECONDS", "0")
+    monkeypatch.setattr(deployer, "_flight_run_status", lambda *args: "RUNNING")
+
+    with pytest.raises(CommandError) as exc:
+        deployer._wait_for_flight_run_success(
+            "00000000-0000-0000-0000-000000000001", 7, max_runtime_sec=30, name="loader",
+        )
+
+    message = str(exc.value)
+    assert "Flight 'loader'" in message
+    assert "Already applied:" in message
+    assert "was not cancelled" in message
+    assert "Next:" in message
+    assert "maxRuntimeSec" in message
+
+
+def test_flight_deploy_passes_max_runtime_to_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    waited: list[dict[str, object]] = []
+    monkeypatch.setattr(deployer, "_sql", lambda statement: "5" if "MD_RUN_FLIGHT" in statement else "")
+    monkeypatch.setattr(
+        deployer, "_wait_for_flight_run_success", lambda fid, number, **kwargs: waited.append(kwargs),
+    )
+
+    deployer._deploy_flight(
+        {
+            "name": "loader",
+            "sourcePath": "src/flight.py",
+            "requirementsPath": "src/requirements.txt",
+            "maxRuntimeSec": 1800,
+            "runOnDeploy": True,
+            "waitForRun": "success",
+        },
+        "prod",
+        PlanRecord("ops", "flight", "loader", "loader", "update", True, "flight-id"),
+    )
+
+    assert waited == [{"max_runtime_sec": 1800, "name": "loader"}]
+
+
+def test_cleanup_drops_database_names_that_need_quoting(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    deployer._apply_cleanup_plan(
+        [PlanRecord("ops", "database", "data", 'my-db_feature_x "v2"', "drop_database", True, None)]
+    )
+
+    assert calls == ['DROP DATABASE IF EXISTS "my-db_feature_x ""v2""";']
+
+
+def test_cleanup_requires_branch_slug_as_whole_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: pytest.fail("unsafe share lookup"))
+    blueprint = RenderedBlueprint(
+        name="ops", title="Ops", description="",
+        shares={"data": {"name": "domain_data", "database": "domain_data"}},
+        flights={}, dives={}, contexts={},
+    )
+
+    records = deployer._build_cleanup_plan([blueprint], "main", branch="main")
+
+    assert [(record.type, record.action) for record in records] == [("share", "error")]
+    assert "without branch slug main" in records[0].notes
+
+
+def test_cleanup_compares_against_every_stable_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: pytest.fail("unsafe share lookup"))
+
+    def shares(name: str) -> RenderedBlueprint:
+        return RenderedBlueprint(
+            name="ops", title="Ops", description="",
+            shares={"data": {"name": name, "database": name}},
+            flights={}, dives={}, contexts={},
+        )
+
+    records = deployer._build_cleanup_plan(
+        [shares("data_feature_x")],
+        "feature_x",
+        branch="feature/x",
+        production={"ops": shares("data_staging")},
+        stable_target="staging",
+        stable_renders={"staging": {"ops": shares("data_staging")}, "prod": {"ops": shares("data_feature_x")}},
+    )
+
+    assert records[0].action == "error"
+    assert "matches production: data_feature_x" in records[0].notes
+
+
+def test_cleanup_plan_renders_all_stable_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    project = Project(FIXTURES / "simple")
+    targets = project.manifest["targets"]
+    assert isinstance(targets, dict)
+    targets["staging"] = copy.deepcopy(targets["prod"])
+    deployer = Deployer(project)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+    monkeypatch.setattr(
+        deployer, "_build_cleanup_plan", lambda rendered, slug, **kwargs: captured.update(kwargs) or [],
+    )
+
+    deployer.cleanup_plan(target="preview", branch="feature/test", names=None)
+
+    stable_renders = captured["stable_renders"]
+    assert isinstance(stable_renders, dict)
+    assert set(stable_renders) == {"staging", "prod"}
+
+
+def test_name_matched_resources_get_binding_note_outside_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+    project = Project(FIXTURES / "complex")
+    deployer = Deployer(project)
+    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: [f"{name}-id"])
+    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [(f"{title}-id", "ready")])
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: f"md:_share/{name}/123")
+
+    deployer.target = "prod"
+    records = deployer._build_deploy_plan(project.render_all("prod"))
+    matched = [record for record in records if record.type in {"flight", "dive"}]
+    assert matched and all("by name; bind it with `id`" in record.notes for record in matched)
+
+    deployer.target = "preview"
+    preview = deployer._build_deploy_plan(project.render_all("preview", branch="feature/x"))
+    assert not any("bind it with `id`" in record.notes for record in preview)
+
+
+def test_guide_name_match_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.target = "prod"
+    monkeypatch.setattr(deployer, "_list_guide_ids", lambda title, topic: ["guide-id"])
+    blueprint = RenderedBlueprint(
+        name="docs", title="Docs", description="", shares={}, flights={}, dives={}, contexts={},
+        guides={"runbook": {"title": "Runbook", "sourcePath": "runbook.md", "deploy": True}},
+    )
+
+    record = deployer._guide_plan_record(blueprint, "runbook", blueprint.guides["runbook"])
+
+    assert (record.action, record.id) == ("update", "guide-id")
+    assert "matched existing Guide 'Runbook' by name" in record.notes
+
+
+def test_authoritative_share_grants_list_revocations_at_plan_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    blueprint = RenderedBlueprint(
+        name="data", title="Data", description="",
+        shares={
+            "finance": {
+                "name": "finance",
+                "database": "finance",
+                "grants": {"roles": ["analyst"], "users": [], "mode": "authoritative"},
+            }
+        },
+        flights={}, dives={}, contexts={},
+    )
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"analyst"})
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/finance/1")
+    monkeypatch.setattr(
+        deployer,
+        "_query_rows",
+        lambda statement: [("analyst", "role"), ("terraform-role", "role"), ("ops@example.com", "user")],
+    )
+
+    record = deployer._build_deploy_plan([blueprint])[0]
+
+    assert record.action == "update"
+    assert "including grants created outside Blueprints (for example by Terraform" in record.notes
+    assert "will revoke: role terraform-role, user ops@example.com" in record.notes
+
+
+def test_authoritative_role_lists_revocations_and_tolerates_read_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    role: dict[str, object] = {
+        "name": "team", "includedRoles": ["explorer"], "members": ["a@example.com"], "mode": "authoritative",
+    }
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        if "SHOW ROLES" in statement:
+            return [("explorer", "preset", True, None), ("legacy", "custom", True, None)]
+        return [("a@example.com",), ("b@example.com",)]
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    assert "will revoke: role legacy, user b@example.com" in deployer._authoritative_role_note(role, True)
+    assert "nothing to revoke today (new role)" in deployer._authoritative_role_note(role, False)
+
+    def failing(statement: str) -> list[tuple[object, ...]]:
+        raise CommandError("permission denied")
+
+    monkeypatch.setattr(deployer, "_query_rows", failing)
+    assert "could not be read at plan time" in deployer._authoritative_role_note(role, True)
+
+
+def test_context_plan_note_is_a_deprecation() -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    blueprint = RenderedBlueprint(
+        name="notes", title="Notes", description="", shares={}, flights={}, dives={},
+        contexts={"notes": {"sourcePath": "notes.md", "deploy": False}},
+    )
+
+    record = deployer._build_deploy_plan([blueprint])[0]
+
+    assert record.action == "validated_only"
+    assert "deprecated" in record.notes and "resources.guides" in record.notes
+    assert "not available yet" not in record.notes
+
+
+def write_slug_cleanup_project(root: Path) -> Project:
+    package = root / "flights" / "loader"
+    (package / "src").mkdir(parents=True)
+    (package / "src" / "flight.py").write_text("print('ok')\n", encoding="utf-8")
+    (package / "src" / "requirements.txt").write_text("", encoding="utf-8")
+    (root / "motherduck.yml").write_text(
+        """
+schemaVersion: 1
+repository:
+  name: slugs
+include:
+  - flights/*/blueprint.yml
+targets:
+  preview:
+    mode: preview
+    policies:
+      cleanup: true
+      requireBranchSlugInDataResources: true
+  prod:
+    mode: production
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (package / "blueprint.yml").write_text(
+        """
+schemaVersion: 1
+name: loader
+title: Loader
+resources:
+  shares:
+    data:
+      name: data
+      database: data_db
+      targets:
+        preview:
+          name: data_${target.branch_slug}
+          database: data_db_${target.branch_slug}
+          dropDatabase: true
+  flights:
+    loader:
+      name: loader
+      source: src/flight.py
+      requirements: src/requirements.txt
+      targets:
+        preview:
+          name: loader_${target.branch_slug}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return Project(root)
+
+
+def slug_cleanup_deployer(project: Project, monkeypatch: pytest.MonkeyPatch, existing: set[str]) -> tuple[Deployer, list[str]]:
+    deployer = Deployer(project)
+    reads: list[str] = []
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+
+    def flights(name: str) -> list[str]:
+        reads.append(name)
+        return [f"{name}-id"] if name in existing else []
+
+    def share(name: str) -> str:
+        reads.append(name)
+        return f"md:_share/{name}/1" if name in existing else ""
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        assert statement.startswith("SELECT alias FROM MD_ALL_DATABASES()")
+        return [("db",)] if any(f"'{name}'" in statement for name in existing) else []
+
+    monkeypatch.setattr(deployer, "_list_flight_ids", flights)
+    monkeypatch.setattr(deployer, "_find_share_url", share)
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    return deployer, reads
+
+
+def test_cleanup_also_removes_resources_named_with_legacy_truncated_slug(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from md_blueprints.project import branch_slug, legacy_branch_slug
+
+    branch = "feature/" + "long-branch-name-" * 4
+    new, legacy = branch_slug(branch), legacy_branch_slug(branch)
+    assert new != legacy
+    project = write_slug_cleanup_project(tmp_path)
+    deployer, _ = slug_cleanup_deployer(
+        project, monkeypatch, {f"loader_{new}", f"loader_{legacy}", f"data_{legacy}", f"data_db_{legacy}"},
+    )
+
+    records = deployer.cleanup_plan(target="preview", branch=branch, names=None)
+    deployer.ensure_plan_succeeds(records)
+
+    actions = {(record.type, record.action, record.name) for record in records}
+    assert ("flight", "delete", f"loader_{new}") in actions
+    assert ("flight", "delete", f"loader_{legacy}") in actions
+    assert ("share", "drop_share", f"data_{legacy}") in actions
+    assert ("database", "drop_database", f"data_db_{legacy}") in actions
+    # Missing legacy resources add nothing; the current pass still reports its own state.
+    assert ("share", "missing", f"data_{new}") in actions
+    assert not any(record.name.endswith(legacy) and record.action == "missing" for record in records)
+    assert project.render_all("preview", branch=branch)[0].flights["loader"]["name"] == f"loader_{new}"
+
+
+def test_cleanup_skips_legacy_pass_for_short_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = write_slug_cleanup_project(tmp_path)
+    deployer, reads = slug_cleanup_deployer(project, monkeypatch, set())
+
+    records = deployer.cleanup_plan(target="preview", branch="feature/short", names=None)
+
+    assert reads == ["loader_feature_short", "data_feature_short"]
+    assert len(records) == 3
+
+
+def test_legacy_cleanup_pass_drops_unsafe_and_missing_records() -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    current = [PlanRecord("ops", "flight", "loader", "loader_new", "delete", True, "a")]
+    legacy = [
+        PlanRecord("ops", "flight", "loader", "loader_new", "delete", True, "a"),
+        PlanRecord("ops", "share", "data", "data_legacy", "error", None, None, "matches production"),
+        PlanRecord("ops", "share", "data", "data_legacy", "missing", False, None),
+    ]
+
+    assert deployer._legacy_cleanup_records(current, legacy) == []

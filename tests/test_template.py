@@ -15,3 +15,10 @@ def test_template_can_escape_literal_reference_syntax() -> None:
     rendered = Template.render(r"\${var.name} deploys ${var.name}", {"var": {"name": "analytics"}})
 
     assert rendered == "${var.name} deploys analytics"
+
+
+def test_template_can_keep_escapes_for_a_later_render() -> None:
+    once = Template.render(r"\${var.name}", {"var": {}}, unescape=False)
+
+    assert once == r"\${var.name}"
+    assert Template.render(once, {"var": {}}) == "${var.name}"

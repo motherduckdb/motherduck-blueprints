@@ -100,8 +100,8 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "database": { "type": "string", "minLength": 1 },
-        "access": { "type": "string" },
-        "visibility": { "type": "string" },
+        "access": { "$ref": "#/$defs/shareAccess" },
+        "visibility": { "$ref": "#/$defs/shareVisibility" },
         "includePattern": {
           "oneOf": [
             { "type": "null" },
@@ -120,6 +120,16 @@
           "additionalProperties": { "$ref": "#/$defs/targetOverride" }
         }
       }
+    },
+    "shareAccess": {
+      "type": "string",
+      "description": "one of ORGANIZATION, UNRESTRICTED, or RESTRICTED (case-insensitive)",
+      "pattern": "^(?:[Oo][Rr][Gg][Aa][Nn][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Uu][Nn][Rr][Ee][Ss][Tt][Rr][Ii][Cc][Tt][Ee][Dd]|[Rr][Ee][Ss][Tt][Rr][Ii][Cc][Tt][Ee][Dd]|.*\\$\\{.*)$"
+    },
+    "shareVisibility": {
+      "type": "string",
+      "description": "one of DISCOVERABLE or HIDDEN (case-insensitive)",
+      "pattern": "^(?:[Dd][Ii][Ss][Cc][Oo][Vv][Ee][Rr][Aa][Bb][Ll][Ee]|[Hh][Ii][Dd][Dd][Ee][Nn]|.*\\$\\{.*)$"
     },
     "flight": {
       "type": "object",

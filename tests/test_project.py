@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -253,7 +254,7 @@ title: Shared Name
 resources:
   dives:
     dashboard:
-      title: production dashboard
+      title: prod dashboard
       source: src/dive.tsx
       requiredResources:
         - url: md:_share/example/00000000-0000-0000-0000-000000000000
@@ -427,3 +428,257 @@ resources:
 
     with pytest.raises(ValidationError, match="must be one of"):
         Project(tmp_path)
+
+
+def test_branch_slug_keeps_short_slugs_unchanged() -> None:
+    assert project_module.branch_slug("feature/Fix-Login") == "feature_fix_login"
+    below_limit = "a" * 47
+    assert project_module.branch_slug(below_limit) == below_limit
+    assert project_module.branch_slug("///") == "preview"
+
+
+def test_current_slugs_never_equal_another_branchs_legacy_slug() -> None:
+    # A 48-character slug equals the legacy truncation of every longer branch with
+    # that prefix, so legacy cleanup for the long branch would match it. Hash it.
+    short = "feature/very-long-descriptive-branch-name-for-ti"
+    long = short + "cket-1234-v2"
+    assert project_module.legacy_branch_slug(long) == project_module.legacy_branch_slug(short)
+    assert project_module.branch_slug(short) != project_module.legacy_branch_slug(long)
+    assert re.fullmatch(r"[a-z0-9_]+_[0-9a-f]{8}", project_module.branch_slug(short))
+
+
+def test_long_branch_slugs_do_not_collide_after_truncation() -> None:
+    prefix = "feature/" + "x" * 45
+    first = project_module.branch_slug(prefix + "-alpha")
+    second = project_module.branch_slug(prefix + "-beta")
+
+    assert first != second
+    assert len(first) <= 48 and len(second) <= 48
+    assert first == project_module.branch_slug(prefix + "-alpha")
+    assert first.startswith("feature_xxx")
+    assert re.fullmatch(r"[a-z0-9_]+_[0-9a-f]{8}", first)
+
+
+@pytest.mark.parametrize(
+    ("value", "marker", "expected"),
+    [
+        ("wikipedia_preview_main", "main", True),
+        ("main", "main", True),
+        ("domain_data", "main", False),
+        ("mainline_data", "main", False),
+        ("loader:feature/x (Preview)", "feature/x", True),
+        ("loader:feature/x2 (Preview)", "feature/x", False),
+    ],
+)
+def test_branch_marker_must_be_a_whole_token(value: str, marker: str, expected: bool) -> None:
+    assert project_module.contains_branch_marker(value, marker) is expected
+
+
+def write_override_project(tmp_path: Path, flight_override: str, *, extra_flight: str = "") -> Path:
+    blueprint_dir = tmp_path / "blueprints" / "loader"
+    (blueprint_dir / "src").mkdir(parents=True)
+    (blueprint_dir / "src" / "flight.py").write_text("print('ok')\n", encoding="utf-8")
+    (blueprint_dir / "src" / "requirements.txt").write_text("", encoding="utf-8")
+    write_root_manifest(tmp_path)
+    (blueprint_dir / "blueprint.yml").write_text(
+        f"""
+schemaVersion: 1
+name: loader
+title: Loader
+variables:
+  runtime: "900"
+resources:
+  flights:
+    loader:
+      name: loader
+      source: src/flight.py
+      requirements: src/requirements.txt
+{extra_flight}      targets:
+        preview:
+          name: loader:${{target.branch}} (Preview)
+        prod:
+{flight_override}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return blueprint_dir / "blueprint.yml"
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ("          secrets: API_KEY", r"secrets must be array"),
+        ("          waitForRun: true", r"waitForRun must be one of"),
+        ("          scheduelCron: 0 6 * * *", r"Unknown field 'scheduelCron'"),
+        ('          maxRuntimeSec: "abc"', r"maxRuntimeSec must be integer"),
+        ("          maxRuntimeSec: -5", r"maxRuntimeSec must be (integer|>= 0)"),
+        ("          id: not-a-uuid", r"id must be a UUID"),
+    ],
+)
+def test_target_overrides_are_validated_against_the_resource_schema(
+    tmp_path: Path, override: str, expected: str,
+) -> None:
+    path = write_override_project(tmp_path, override)
+
+    with pytest.raises(ValidationError, match=expected) as exc:
+        Project(tmp_path).validate(targets=["prod"])
+
+    message = str(exc.value)
+    assert str(path) in message
+    assert "resources.flights.loader" in message
+    assert "target 'prod'" in message
+
+
+def test_templated_runtime_override_still_renders_as_integer(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          maxRuntimeSec: ${var.runtime}")
+
+    project = Project(tmp_path)
+    project.validate(targets=["prod"])
+
+    assert project.render_all("prod")[0].flights["loader"]["maxRuntimeSec"] == 900
+
+
+@pytest.mark.parametrize(("value", "expected"), [("true", True), ("False", False)])
+def test_templated_boolean_override_renders_as_boolean(tmp_path: Path, value: str, expected: bool) -> None:
+    path = write_override_project(tmp_path, "          runOnDeploy: ${var.run_on_deploy}")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace('  runtime: "900"\n', f'  runtime: "900"\n  run_on_deploy: "{value}"\n'),
+        encoding="utf-8",
+    )
+
+    project = Project(tmp_path)
+    project.validate(targets=["prod"])
+
+    assert project.render_all("prod")[0].flights["loader"]["runOnDeploy"] is expected
+
+
+def test_templated_boolean_override_rejects_non_boolean_text(tmp_path: Path) -> None:
+    path = write_override_project(tmp_path, "          runOnDeploy: ${var.runtime}")
+
+    with pytest.raises(ValidationError, match="runOnDeploy must be boolean"):
+        Project(tmp_path).validate(targets=["prod"])
+    assert path.is_file()
+
+
+def write_share_project(tmp_path: Path, share_fields: str, *, prod_override: str = "") -> None:
+    blueprint_dir = tmp_path / "blueprints" / "data"
+    blueprint_dir.mkdir(parents=True)
+    write_root_manifest(tmp_path)
+    prod_block = f"        prod:\n{prod_override}\n" if prod_override else ""
+    (blueprint_dir / "blueprint.yml").write_text(
+        f"""
+schemaVersion: 1
+name: data
+title: Data
+resources:
+  shares:
+    data:
+      name: data_share
+      database: data_db
+{share_fields}
+      targets:
+{prod_block}        preview:
+          name: data_share_${{target.branch_slug}}
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        "      access: RESTRICTED\n      visibility: HIDDEN",
+        "      access: restricted\n      visibility: hidden",
+        "      access: Organization\n      visibility: Discoverable",
+    ],
+)
+def test_share_access_and_visibility_accept_documented_values_case_insensitively(
+    tmp_path: Path, fields: str,
+) -> None:
+    write_share_project(tmp_path, fields)
+
+    assert Project(tmp_path).validate(targets=["prod"])
+
+
+def test_share_access_rejects_typos(tmp_path: Path) -> None:
+    write_share_project(tmp_path, "      access: organisation")
+
+    with pytest.raises(ValidationError, match="access must be one of ORGANIZATION, UNRESTRICTED, or RESTRICTED"):
+        Project(tmp_path)
+
+
+def test_share_visibility_typo_in_target_override_is_rejected(tmp_path: Path) -> None:
+    write_share_project(tmp_path, "", prod_override="          visibility: hiden")
+
+    with pytest.raises(ValidationError, match="visibility must be one of DISCOVERABLE or HIDDEN"):
+        Project(tmp_path).validate(targets=["prod"])
+
+
+def test_hidden_share_check_is_case_insensitive(tmp_path: Path) -> None:
+    write_share_project(tmp_path, "      visibility: hidden")
+
+    with pytest.raises(ValidationError, match="must use RESTRICTED access"):
+        Project(tmp_path).validate(targets=["prod"])
+
+
+def test_unknown_target_and_blueprint_errors_list_valid_names() -> None:
+    project = Project(FIXTURES / "simple")
+
+    with pytest.raises(ValidationError, match="Unknown target qa; motherduck.yml declares: preview, prod"):
+        project.target_config("qa")
+    with pytest.raises(ValidationError, match="Unknown blueprint\\(s\\): nope; known blueprints: simple-dive"):
+        project.render_all("prod", names=["nope"])
+
+
+def test_template_errors_name_the_blueprint_file_and_resource(tmp_path: Path) -> None:
+    path = write_override_project(tmp_path, "          accessTokenName: ${var.missing}")
+
+    with pytest.raises(ValidationError) as exc:
+        Project(tmp_path).validate(targets=["prod"])
+
+    message = str(exc.value)
+    assert str(path) in message
+    assert "resources.flights.loader" in message
+    assert "Unknown template reference ${var.missing}" in message
+
+
+def test_escaped_reference_in_variable_value_stays_literal(tmp_path: Path) -> None:
+    write_override_project(
+        tmp_path,
+        "          config:\n            pattern: ${var.literal}\n            nested: ${var.wrapper}",
+    )
+    blueprint = tmp_path / "blueprints" / "loader" / "blueprint.yml"
+    blueprint.write_text(
+        blueprint.read_text(encoding="utf-8").replace(
+            'variables:\n  runtime: "900"\n',
+            'variables:\n  runtime: "900"\n  literal: "\\\\${not_a_reference}"\n  wrapper: "x-${var.literal}"\n',
+        ),
+        encoding="utf-8",
+    )
+
+    config = Project(tmp_path).render_all("prod")[0].flights["loader"]["config"]
+
+    assert config == {"pattern": "${not_a_reference}", "nested": "x-${not_a_reference}"}
+
+
+def test_context_deploy_error_points_to_guides(tmp_path: Path) -> None:
+    blueprint_dir = tmp_path / "blueprints" / "notes"
+    blueprint_dir.mkdir(parents=True)
+    (blueprint_dir / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    write_root_manifest(tmp_path)
+    (blueprint_dir / "blueprint.yml").write_text(
+        """
+schemaVersion: 1
+name: notes
+title: Notes
+resources:
+  context:
+    notes:
+      source: notes.md
+      deploy: true
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="resources.context is deprecated.*resources.guides"):
+        Project(tmp_path).validate(targets=["prod"])
