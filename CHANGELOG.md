@@ -6,59 +6,16 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
-### Safety fixes
+## v0.7.0 - 2026-09-28
 
-- Give long preview branches distinct slugs. Slugs of 48 characters or more now end in an 8-character hash of the full branch name, so two long branches can no longer share, and then clean up, each other's preview data. Shorter slugs are unchanged. Cleanup also removes previews created under the previous truncated slug.
-- Validate every resource again after `targets.<target>` overrides are merged. Wrong types, unknown fields, and typos inside target overrides now fail validation instead of being ignored at deploy time. Templated `true` and `false` values for boolean fields render as real booleans.
-- Enforce the remaining schema keywords (`maxLength`, `format: uuid`, `minimum`, `maximum`, `uniqueItems`, `maxItems`) and restrict share `access` and `visibility` to MotherDuck's values, case-insensitively.
-- Require the branch slug as a whole `_`-separated part of cleanup-sensitive preview names, and compare cleanup targets against every stable target. Quote preview database names consistently so cleanup cannot fail half-way.
-- Reject flags a command does not support. `deploy --dry-run` previously deployed for real and now fails with a pointer to `plan`. `--blueprints` names are checked on every project command.
-- Stop `init --force` from overwriting existing files. It now writes only missing template files and lists the files it kept.
-- Fail manual `staging` and `prod` workflow runs that do not start from the default branch.
-- Stop `make` from accepting typos and splitting names: unknown targets fail, names with spaces fail, and a name that is also a target is rejected.
+Pre-1.0 minor release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.0`. Workflows on the floating `@v0` tag receive it automatically. See the [v0.7.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.0) for upgrade steps.
 
-### Usability
-
-- Add per-command `--help`, list valid names in unknown target and blueprint errors, and name the file, field, and target in template errors.
-- Note name-matched Flights, Dives, and Guides in `plan`, and list the grants that `mode: authoritative` will revoke. `doctor` warns about authoritative mode because it also revokes grants created by other tools such as Terraform.
-- Wait for `waitForRun: success` Flight runs for at least `maxRuntimeSec` plus two minutes, and explain what was already applied when a wait times out.
-- Accept multi-line `REQUIRED_DATABASES` exports in Dive source.
-- Keep escaped `\${...}` placeholders literal inside variables.
-- Stream action output to the job log while commands run, except for `guides`.
-- Install the action into an isolated environment under the runner's temporary directory. Only `md-blueprints` is added to `PATH`, and the new `python` output points to the environment's interpreter.
-- Add optional `runs-on` and `python-version` inputs to all reusable workflows, and `timeout-minutes` to Prepare Guide context, for self-hosted runners and custom Python versions.
-- Share one concurrency group between preview deploy and cleanup for a branch, so cleanup waits for a running deploy. Skip preview deploy and cleanup for Dependabot pull requests.
-- Page through existing PR comments and Doctor issues, and keep their bodies under GitHub's size limit.
-- Accept `NAME=` for Makefile targets that take a name. `make guides > brief.md` now contains only the brief. An exported `NAME` shell variable is ignored. Use `npm ci` when a lockfile exists.
-- Refuse `new` destinations that `include` in `motherduck.yml` would not discover, and warn in `validate` and `doctor` about unmatched `blueprint.yml` files.
-- Make `upgrade --offline` work without network access.
-- Scaffold roles with `deploy: false`. Roles only deploy to production and need an admin identity.
-- Stop the starter Flight when its JSON config is invalid instead of silently using the production defaults.
-
-### Documentation
-
-- Add [use with Terraform](docs/use-with-terraform.md) with an ownership split, a Terraform example that writes the deployment token into the GitHub Environment, and rules that keep the two tools from overwriting each other.
-- Add prerequisites (GitHub plan, service account), removing the example, adapting environment names, branches, and prefixes, the existing-repository path, and more troubleshooting rows to the setup docs and READMEs.
-- Move release engineering and the maintenance map into `MAINTAINING.md`, which is not shipped to customer repositories. Replace tooling-only commands such as `make mock-test` in shipped example docs.
-- Align documented action pins with the package version. `tests/test_docs.py` checks the pins and that shipped docs do not link to tooling-only paths.
-
-### Deprecations and compatibility
-
-- Deprecate `resources.context`. It stays validation-only, and `validate`, `plan`, and `doctor` now point to `resources.guides`.
-- Deprecate `make new-blueprint` in favor of `make new-project`. It still works and prints a notice.
-- Deprecate the `tools/md_blueprints` wrapper in favor of `make` targets or `.venv/bin/md-blueprints`. It now prefers the repository's `.venv` and prints a notice.
-- CLI usage errors now exit with status 2.
-- Custom workflow steps that imported `md_blueprints` or PyYAML from the job's Python after the action ran must use the action's `python` output.
-- Preview names that attached the branch slug without a separator now fail validation. Duplicate role members, included roles, grants, or include patterns now fail validation.
-- `check-release-version.sh` requires the `**Full diff:**` line in `RELEASE_NOTES.md` to end in the tagged version.
-
-- Add a reusable customer CI workflow that prepares Guide context as an artifact. The action accepts a named dbt path and exposes `stdout-file`; Guide context stays out of CI logs and job-output limits. Customers can hand the file to their existing agent runner, then validate its changes without automatic publication.
-
-- Improve Guide initialization with topic and description discovery, a small authoring scaffold, dbt accepted-value domains, and an agent workflow that keeps essential rules in a root Guide and loads detailed SQL context on demand. Incorporate representative-question checks without adding a model runner or benchmark framework.
-
-- Make Guide authoring an agent workflow: `make guides` gathers read-only repository context and accepts `DBT=/path/to/project` for dbt YAML descriptions, columns, tests, and relationship hints. Agents read the source and write ordinary Markdown, with optional native CLI enrichment.
-- Simplify `init-guides` and `update-guides` into read-only agent briefs. Existing Guide files remain intact, and generated markers and `.guide-state.json` are no longer managed. Document the behavior change from v0.6.0.
-- Update React and React DOM together to 19.2.8 and group future dependency updates. Remove the unused direct Arrow dependency so the MotherDuck WASM client selects its supported Arrow 17 peer without a conflicting top-level pin.
+- Add agent-driven Guide authoring with read-only repository and dbt discovery, and a **Prepare Guide context** CI workflow. `init-guides` and `update-guides` now print briefs instead of writing Guides. (#82, #92)
+- Fix preview slug collisions for long branch names, validate target overrides, reject unsupported CLI flags such as `deploy --dry-run`, stop `init --force` from overwriting files, and make Makefile typos fail. (#92)
+- Add `runs-on` and `python-version` inputs to the reusable workflows, isolate the action's Python environment, require the default branch for manual stable deploys, and skip Dependabot previews. (#92)
+- Add the Terraform coexistence guide and onboarding docs, plan notes for name matches and authoritative revocations, and `doctor` warnings. (#92)
+- Deprecate `resources.context`, `make new-blueprint`, and `tools/md_blueprints`. All still work and print a notice. (#92)
+- Update React and React DOM to 19.2.8 in the local preview. (#82)
 
 ## v0.6.0 - 2026-09-11
 
