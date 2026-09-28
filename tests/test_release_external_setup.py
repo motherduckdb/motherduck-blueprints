@@ -18,7 +18,7 @@ def test_release_gates_github_publication_on_verified_template() -> None:
     assert '- "v*.*.*"' in workflow_text
     assert jobs["release-preflight"]["needs"] == "build"
     assert set(jobs["publish-template"]["needs"]) == {"build", "release-preflight"}
-    assert set(jobs["finalize-release"]["needs"]) == {"build", "publish-template"}
+    assert set(jobs["finalize-release"]["needs"]) == {"build", "release-preflight", "publish-template"}
     assert "publish-pypi" not in jobs
     assert "pypa/gh-action-pypi-publish" not in workflow_text
     build_steps = {step.get("name") for step in jobs["build"]["steps"]}
@@ -32,6 +32,43 @@ def test_release_gates_github_publication_on_verified_template() -> None:
     assert jobs["publish-template"]["environment"] == "motherduck-release"
     assert "release-artifacts/dist/*" in workflow_text
     assert "git merge-base --is-ancestor" in workflow_text
+    assert "md-blueprints validate" in generate["run"]
+    assert generate["run"].index("md-blueprints init") < generate["run"].index("md-blueprints validate")
+
+
+@pytest.mark.parametrize("tag, latest, latest_in_major", [
+    ("v1.1.0", "true", "true"),
+    ("v0.8.0", "false", "true"),
+    ("v0.6.1", "false", "false"),
+])
+def test_older_release_lines_do_not_move_template_main_or_floating_tag(
+    tmp_path: Path, tag: str, latest: str, latest_in_major: str,
+) -> None:
+    jobs = yaml.safe_load((REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8"))["jobs"]
+    order = next(step for step in jobs["release-preflight"]["steps"] if step.get("id") == "order")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    for existing in ("v0", "v0.6.0", "v0.7.0", "v0.7.0-rc1", "v1", "v1.0.0", tag):
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", existing],
+            cwd=tmp_path, check=True,
+        )
+        subprocess.run(["git", "tag", existing], cwd=tmp_path, check=True)
+    output = tmp_path / "outputs"
+    subprocess.run(
+        ["bash", "-c", order["run"]], cwd=tmp_path, check=True, capture_output=True,
+        env={**os.environ, "GITHUB_REF_NAME": tag, "GITHUB_OUTPUT": str(output)},
+    )
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert values == {"latest": latest, "latest-in-major": latest_in_major}
+    assert jobs["release-preflight"]["outputs"]["latest"] == "${{ steps.order.outputs.latest }}"
+
+    template = next(step for step in jobs["publish-template"]["steps"] if step.get("id") == "template")
+    assert 'if [ "$LATEST" = "true" ]; then\n  git push origin HEAD:main' in template["run"]
+    verify = next(step for step in jobs["publish-template"]["steps"] if step.get("name") == "Verify generated template workflow")
+    assert verify["if"] == "needs.release-preflight.outputs.latest == 'true'"
+    floating = next(step for step in jobs["finalize-release"]["steps"] if step.get("name") == "Update floating major tag")
+    assert floating["if"] == "needs.release-preflight.outputs.latest-in-major == 'true'"
+    assert '--latest="$LATEST"' in (REPO_ROOT / ".github/workflows/release.yaml").read_text(encoding="utf-8")
 
 
 def test_release_external_check_accepts_writable_template_repository(tmp_path: Path) -> None:

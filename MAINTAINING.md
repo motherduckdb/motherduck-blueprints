@@ -16,9 +16,11 @@ Stable `vMAJOR.MINOR.PATCH` tag pushes run the release workflow. The workflow tr
 4. Smoke test the local action wrapper.
 5. Generate a reproducible CycloneDX SBOM and attest every release artifact.
 6. Verify the generated-template repository and protected release environments.
-7. Install the built wheel, generate the customer template with an exact action tag, and push it to `motherduckdb/blueprints-template`.
+7. Install the built wheel, generate the customer template with an exact action tag, and validate it before pushing to `motherduckdb/blueprints-template`.
 8. Require the generated repository's triggered workflow to pass against that exact action tag.
 9. Attach the distributions and SBOM to the GitHub Release, then update the compatibility-only floating major alias.
+
+A patch for an older release line publishes its tags and releases but leaves the template's `main`, the floating major tag, and the "Latest" release on the highest version. Step 8 runs only when the template's `main` moves.
 
 The action installs the tagged checkout directly, generated repositories install local tooling from the matching Git tag, and built Python distributions are attached to the GitHub Release. The floating major tag remains available for compatibility but generated repositories do not depend on it.
 

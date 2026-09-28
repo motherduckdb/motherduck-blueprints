@@ -252,6 +252,19 @@ def test_cleanup_skips_dependabot_branches(
 
 
 @pytest.mark.parametrize("prefix", ["", "reusable_"])
+def test_cleanup_skips_dependabot_before_checkout_and_supports_older_base_actions(prefix: str) -> None:
+    job = yaml.safe_load((ROOT / f".github/workflows/{prefix}cleanup_preview_blueprints.yaml").read_text())["jobs"][
+        "resolve-environment"
+    ]
+    # PRs opened before a release run the job logic from their merge ref, so the guard must not need a checkout.
+    assert job["if"].startswith("github.actor != 'dependabot[bot]' && (")
+    assert "github.event.pull_request.user.login != 'dependabot[bot]'" in job["if"]
+    step = next(step for step in job["steps"] if step.get("id") == "preview-target")
+    # The base commit's action may predate the python output and install into the job Python instead.
+    assert '"${MD_BLUEPRINTS_PYTHON:-python}" - <<\'PY\'' in step["run"]
+
+
+@pytest.mark.parametrize("prefix", ["", "reusable_"])
 def test_preview_deploy_and_cleanup_share_one_branch_concurrency_group(prefix: str) -> None:
     deploy = yaml.safe_load((ROOT / f".github/workflows/{prefix}deploy_blueprints.yaml").read_text())
     cleanup = yaml.safe_load((ROOT / f".github/workflows/{prefix}cleanup_preview_blueprints.yaml").read_text())
@@ -295,7 +308,10 @@ def test_python_helpers_use_the_action_environment() -> None:
         steps = reusable(name)["jobs"][job]["steps"]
         step = next(step for step in steps if step.get("id") == step_id)
         assert step["env"]["MD_BLUEPRINTS_PYTHON"] == "${{ steps.validate.outputs.python }}"
-        assert "\"$MD_BLUEPRINTS_PYTHON\" - <<'PY'" in step["run"]
+        assert any(line in step["run"] for line in (
+            "\"$MD_BLUEPRINTS_PYTHON\" - <<'PY'",
+            "\"${MD_BLUEPRINTS_PYTHON:-python}\" - <<'PY'",
+        ))
         assert any(step.get("id") == "validate" and "motherduck-blueprints@" in step["uses"] for step in steps)
 
 

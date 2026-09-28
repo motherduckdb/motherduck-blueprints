@@ -85,6 +85,9 @@ jobs:
     if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      latest: ${{ steps.order.outputs.latest }}
+      latest-in-major: ${{ steps.order.outputs.latest-in-major }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -104,6 +107,23 @@ jobs:
           TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
         run: ./scripts/check-release-external-setup.sh
+
+      - name: Compare with published releases
+        id: order
+        run: |
+          set -euo pipefail
+          # A patch for an older line must not move the template default branch or the floating major tag back.
+          stable="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)"
+          major="$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1)"
+          highest="$(printf '%s\n' "$stable" | tail -n 1)"
+          highest_in_major="$(printf '%s\n' "$stable" | grep -E "^v${major}\." | tail -n 1)"
+          latest=false
+          latest_in_major=false
+          [ "$highest" = "$GITHUB_REF_NAME" ] && latest=true
+          [ "$highest_in_major" = "$GITHUB_REF_NAME" ] && latest_in_major=true
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "latest-in-major=${latest_in_major}" >> "$GITHUB_OUTPUT"
+          echo "Highest release: ${highest}. Highest v${major} release: ${highest_in_major}."
 
   publish-template:
     name: Publish and Verify Generated Template
@@ -131,12 +151,17 @@ jobs:
           set -euo pipefail
           python -m pip install release-artifacts/dist/md_blueprints-*.whl
           md-blueprints init generated-template
+          # Catch a broken template before customers can create repositories from it.
+          cd generated-template
+          md-blueprints validate
+          md-blueprints changed --all --json
 
       - name: Publish generated template repository
         id: template
         env:
           TEMPLATE_PUSH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+          LATEST: ${{ needs.release-preflight.outputs.latest }}
         run: |
           set -euo pipefail
           # Pass the token as a step-scoped HTTP header so it is not stored in
@@ -163,11 +188,17 @@ jobs:
             exit 1
           fi
           git tag "${GITHUB_REF_NAME}" 2>/dev/null || true
-          git push origin HEAD:main
+          if [ "$LATEST" = "true" ]; then
+            git push origin HEAD:main
+          else
+            echo "::notice title=Template main unchanged::${GITHUB_REF_NAME} is older than the highest release, so only its tag is published."
+          fi
           git push origin "refs/tags/${GITHUB_REF_NAME}"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify generated template workflow
+        # Only a push to the template default branch starts its workflow.
+        if: needs.release-preflight.outputs.latest == 'true'
         env:
           GH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
@@ -190,19 +221,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BLUEPRINTS_TEMPLATE_PUSH_TOKEN }}
           TEMPLATE_REPOSITORY: motherduckdb/blueprints-template
+          LATEST: ${{ needs.release-preflight.outputs.latest }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" -R "$TEMPLATE_REPOSITORY" >/dev/null 2>&1; then
             echo "Immutable template release ${tag} already exists."
           else
-            gh release create "$tag" -R "$TEMPLATE_REPOSITORY" --verify-tag --title "$tag" --notes-file release-artifacts/RELEASE_NOTES.md
+            gh release create "$tag" -R "$TEMPLATE_REPOSITORY" --verify-tag --title "$tag" \
+              --latest="$LATEST" --notes-file release-artifacts/RELEASE_NOTES.md
           fi
 
   finalize-release:
     name: Publish GitHub Release and Action Alias
     needs:
       - build
+      - release-preflight
       - publish-template
     if: github.repository == 'motherduckdb/motherduck-blueprints' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -222,6 +256,7 @@ jobs:
       - name: Publish GitHub Release with artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ needs.release-preflight.outputs.latest }}
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
@@ -231,10 +266,12 @@ jobs:
             gh release create "$tag" release-artifacts/dist/* release-artifacts/md-blueprints.cdx.json \
               --verify-tag \
               --title "$tag" \
+              --latest="$LATEST" \
               --notes-file release-artifacts/RELEASE_NOTES.md
           fi
 
       - name: Update floating major tag
+        if: needs.release-preflight.outputs.latest-in-major == 'true'
         run: |
           set -euo pipefail
           major="v$(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1)"

@@ -19,9 +19,13 @@ on:
 jobs:
   resolve-environment:
     name: Resolve Preview Environment
+    # Dependabot branches never deploy previews, so skip them before any checkout or environment.
     if: >-
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'delete' && github.event.ref_type == 'branch')
+      github.actor != 'dependabot[bot]' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]') ||
+        (github.event_name == 'delete' && github.event.ref_type == 'branch')
+      )
     runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
     outputs:
       environment: ${{ steps.preview-target.outputs.environment }}
@@ -49,7 +53,8 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          "$MD_BLUEPRINTS_PYTHON" - <<'PY'
+          # Base commits from before the action's python output installed md-blueprints into the job Python.
+          "${MD_BLUEPRINTS_PYTHON:-python}" - <<'PY'
           import os
           from pathlib import Path
 

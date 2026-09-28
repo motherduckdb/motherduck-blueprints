@@ -6,6 +6,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Preview cleanup skips Dependabot branches before checking anything out, so pull requests opened before an upgrade no longer wait for environment approval or fail on a missing token. It also works when the pull request's base commit uses an older action.
+- Releases validate the generated template before publishing it. A patch for an older release line no longer moves the template's default branch, the floating major tag, or the GitHub "Latest" release back.
+
 ## v0.7.0 - 2026-09-28
 
 Pre-1.0 minor release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.0`. Workflows on the floating `@v0` tag receive it automatically. See the [v0.7.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.0) for upgrade steps.
