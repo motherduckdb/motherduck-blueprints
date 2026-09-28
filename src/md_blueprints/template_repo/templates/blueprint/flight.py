@@ -10,10 +10,13 @@ import datetime as dt
 import json
 import os
 import re
+import sys
 
 import duckdb
 
 
+# Local-run defaults only. Deployments pass config from blueprint.yml, which
+# MotherDuck exposes to the Flight as environment variables named after each key.
 DEFAULT_CONFIG = {
     "database": "__DATABASE_NAME__",
     "schema": "main",
@@ -23,35 +26,37 @@ DEFAULT_CONFIG = {
 }
 
 SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CONFIG_JSON_VARIABLES = ("MOTHERDUCK_FLIGHT_CONFIG", "FLIGHT_CONFIG", "CONFIG")
 
 
 def load_runtime_config() -> dict[str, str]:
-    raw = (
-        os.getenv("MOTHERDUCK_FLIGHT_CONFIG")
-        or os.getenv("FLIGHT_CONFIG")
-        or os.getenv("CONFIG")
-    )
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    return {str(key): str(value) for key, value in parsed.items()}
+    """Read optional JSON config. Present but invalid config fails the run."""
+    for variable in CONFIG_JSON_VARIABLES:
+        raw = os.getenv(variable)
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"{variable} is not valid JSON ({exc.msg}); refusing to fall back to defaults") from exc
+        if not isinstance(parsed, dict):
+            raise SystemExit(f"{variable} must be a JSON object; refusing to fall back to defaults")
+        return {str(key): str(value) for key, value in parsed.items()}
+    return {}
 
 
 RUNTIME_CONFIG = load_runtime_config()
 
 
 def setting(name: str) -> str:
+    # Flight config keys arrive as environment variables, so check them first.
     for key in (name.upper(), name):
         if os.getenv(key):
             return os.environ[key]
     for key in (name, name.lower(), name.upper()):
         if key in RUNTIME_CONFIG and RUNTIME_CONFIG[key]:
             return RUNTIME_CONFIG[key]
+    print(f"Config {name!r} is not set; using the local default {DEFAULT_CONFIG[name]!r}", file=sys.stderr)
     return DEFAULT_CONFIG[name]
 
 

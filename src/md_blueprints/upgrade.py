@@ -57,9 +57,19 @@ def update_action_pins(text: str, version: str) -> tuple[str, int]:
     return text, len(edits)
 
 
-def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False) -> None:
+def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, offline: bool = False) -> None:
     root = root.expanduser().resolve()
-    version = fetch_latest_version(offline=False) if to_version == "latest" else to_version.removeprefix("v")
+    if to_version == "latest":
+        version = fetch_latest_version(
+            offline=offline, offline_hint="Pass --to X.Y.Z to choose a release without contacting GitHub.",
+        )
+        if version is None:
+            raise ValidationError(
+                "Cannot determine the latest release offline. Pass --to X.Y.Z, or set "
+                "MD_BLUEPRINTS_LATEST_VERSION=X.Y.Z, to upgrade without contacting GitHub."
+            )
+    else:
+        version = to_version.removeprefix("v")
     if not version or not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValidationError("Choose a stable release with --to X.Y.Z, or use --to latest.")
     makefile = require_within(root / "Makefile", root, "Makefile")

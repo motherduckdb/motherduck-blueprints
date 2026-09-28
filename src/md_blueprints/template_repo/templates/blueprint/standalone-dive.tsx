@@ -49,7 +49,7 @@ export default function StandaloneDive() {
       <header style={styles.header}>
         <div>
           <p style={styles.eyebrow}>MotherDuck Dive</p>
-          <h1 style={styles.title}>__BLUEPRINT_NAME__</h1>
+          <h1 style={styles.title}>__BLUEPRINT_TITLE__</h1>
           <p style={styles.subtitle}>
             The declared share is connected. Replace this catalog view with queries and visualizations for your data.
           </p>

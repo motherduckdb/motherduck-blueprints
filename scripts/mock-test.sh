@@ -201,7 +201,8 @@ PY
 
 echo "==> Checking package entrypoints"
 md-blueprints --version
-./tools/md_blueprints --version
+./tools/md_blueprints --version 2> "${TMP_DIR}/wrapper.err"
+grep -q "Deprecation: tools/md_blueprints" "${TMP_DIR}/wrapper.err"
 
 echo "==> Validating root and fixture manifests"
 make validate
@@ -246,9 +247,9 @@ rsync -a \
   --exclude .venv \
   --exclude .dive-preview/node_modules \
   "$REPO_ROOT/" "$SCAFFOLD_ROOT/"
-make -C "$SCAFFOLD_ROOT" new-blueprint smoke-template
+make -C "$SCAFFOLD_ROOT" new-project NAME=smoke-template
 make -C "$SCAFFOLD_ROOT" validate
-"$SCAFFOLD_ROOT/tools/md_blueprints" render --root "$SCAFFOLD_ROOT" --target preview --branch feature/template --blueprints smoke-template > "${TMP_DIR}/scaffold-render.out"
+md-blueprints render --root "$SCAFFOLD_ROOT" --target preview --branch feature/template --blueprints smoke-template > "${TMP_DIR}/scaffold-render.out"
 grep -q "smoke_template_preview_feature_template" "${TMP_DIR}/scaffold-render.out"
 grep -q '"scheduleCron": ""' "${TMP_DIR}/scaffold-render.out"
 

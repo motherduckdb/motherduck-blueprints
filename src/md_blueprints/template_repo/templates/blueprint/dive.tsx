@@ -110,7 +110,7 @@ export default function BlueprintDive() {
       <header style={styles.header}>
         <div>
           <p style={styles.eyebrow}>MotherDuck blueprint starter</p>
-          <h1 style={styles.title}>__BLUEPRINT_NAME__</h1>
+          <h1 style={styles.title}>__BLUEPRINT_TITLE__</h1>
           <p style={styles.subtitle}>
             Daily starter metrics loaded by the project Flight and published through the project share.
           </p>

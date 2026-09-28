@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
+# Deprecated compatibility wrapper. Prefer make targets or .venv/bin/md-blueprints.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if command -v md-blueprints >/dev/null 2>&1; then
-  exec md-blueprints "$@"
-fi
+echo "Deprecation: tools/md_blueprints will be removed in a future release; use make targets or .venv/bin/md-blueprints." >&2
 
+# Prefer this repository's pinned CLI over any global install.
 if [ -x "${REPO_ROOT}/.venv/bin/md-blueprints" ]; then
   exec "${REPO_ROOT}/.venv/bin/md-blueprints" "$@"
+fi
+
+if command -v md-blueprints >/dev/null 2>&1; then
+  exec md-blueprints "$@"
 fi
 
 export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"

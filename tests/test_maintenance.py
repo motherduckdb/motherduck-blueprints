@@ -148,3 +148,50 @@ def test_doctor_warns_about_staging_workflow_routing(
     output = capsys.readouterr().out
     assert "default-branch workflow does not select staging" in output
     assert "production is not deployed from a published GitHub Release" in output
+
+
+def test_doctor_warns_about_authoritative_roles_and_share_grants(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from md_blueprints.scaffold import run_new
+
+    run_init(tmp_path)
+    role = run_new(tmp_path, "role", "analysts") / "blueprint.yml"
+    role.write_text(role.read_text().replace("mode: additive", "mode: authoritative"))
+    producer = tmp_path / "flights/wikipedia-pageviews-ingest/blueprint.yml"
+    producer.write_text(producer.read_text().replace(
+        "      cleanup: true\n",
+        "      cleanup: true\n      grants:\n        roles: [analysts]\n        mode: authoritative\n", 1,
+    ))
+
+    run_doctor(tmp_path)
+
+    output = capsys.readouterr().out
+    assert "motherduck_role_grant or motherduck_share_grant" in output
+    assert "wikipedia-pageviews-ingest shares." in output
+    # The scaffolded role is disabled, so it cannot revoke anything yet.
+    assert "analysts roles.role" not in output
+    role.write_text(role.read_text().replace("deploy: false", "deploy: true"))
+    run_doctor(tmp_path)
+    assert "analysts roles.role" in capsys.readouterr().out
+
+
+def test_doctor_points_existing_repositories_to_guide_context_workflow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    run_doctor(tmp_path)
+    assert "prepare_guide_context.yaml is not present" not in capsys.readouterr().out
+    (tmp_path / ".github/workflows/prepare_guide_context.yaml").unlink()
+    run_doctor(tmp_path)
+    assert "info: .github/workflows/prepare_guide_context.yaml is not present" in capsys.readouterr().out
+
+
+def test_offline_update_checks_never_open_a_connection(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import urllib.request
+
+    monkeypatch.delenv("MD_BLUEPRINTS_LATEST_VERSION", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: pytest.fail("network used offline"))
+    run_check_updates(offline=True)
+    run_doctor(FIXTURES / "simple", check_updates=True, offline=True)
+    assert "latest md-blueprints: unknown (offline mode)" in capsys.readouterr().out

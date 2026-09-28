@@ -1,4 +1,4 @@
-# __BLUEPRINT_NAME__ Blueprint
+# __BLUEPRINT_TITLE__
 
 This generated blueprint is a complete `projects/` starter. It deploys a Flight that writes sample daily metrics, exports the database share as the `data` output, and deploys a Dive that reads it through the `__DATABASE_NAME__` alias.
 
@@ -22,7 +22,7 @@ The production target writes to the stable `__DATABASE_NAME__` database and shar
 
 ```bash
 make validate
-make render-preview __BLUEPRINT_NAME__
-make preview-smoke __BLUEPRINT_NAME__
-md-blueprints doctor
+make render-preview NAME=__BLUEPRINT_NAME__
+make preview-smoke NAME=__BLUEPRINT_NAME__
+make doctor
 ```

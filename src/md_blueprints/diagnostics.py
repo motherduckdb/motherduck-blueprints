@@ -5,6 +5,59 @@ import os
 import sys
 from pathlib import Path
 
+from .project import Project
+
+PACKAGE_ROOTS = ("flights", "dives", "guides", "roles", "projects", "blueprints")
+SKIP_DIRS = {"node_modules", "__pycache__", "dist", "build"}
+
+
+def legacy_context_blueprints(project: Project) -> list[str]:
+    names = []
+    for blueprint in project.blueprints:
+        resources_node = blueprint.raw.get("resources")
+        if isinstance(resources_node, dict) and resources_node.get("context"):
+            names.append(blueprint.name)
+    return names
+
+
+def undiscovered_manifests(project: Project) -> list[str]:
+    """blueprint.yml files below package roots that motherduck.yml include globs do not match."""
+    include = project.manifest.get("include")
+    roots = set(PACKAGE_ROOTS)
+    for pattern in include if isinstance(include, list) else []:
+        parts = Path(str(pattern)).parts
+        if len(parts) > 1 and not any(char in parts[0] for char in "*?["):
+            roots.add(parts[0])
+    discovered = {blueprint.path.resolve() for blueprint in project.blueprints}
+    found: list[str] = []
+    for name in sorted(roots):
+        base = project.root / name
+        if not base.is_dir() or base.is_symlink():
+            continue
+        for directory, dirs, files in os.walk(base):
+            dirs[:] = sorted(item for item in dirs if not item.startswith(".") and item not in SKIP_DIRS)
+            path = Path(directory) / "blueprint.yml"
+            if "blueprint.yml" in files and not path.is_symlink() and path.resolve() not in discovered:
+                found.append(path.relative_to(project.root).as_posix())
+    return sorted(found)
+
+
+def validation_warnings(project: Project) -> list[str]:
+    """Non-fatal findings shared by validate and doctor."""
+    warnings: list[str] = []
+    legacy = legacy_context_blueprints(project)
+    if legacy:
+        warnings.append(
+            "resources.context is supported for compatibility; prefer resources.guides in: " + ", ".join(legacy)
+        )
+    for relative in undiscovered_manifests(project):
+        top = relative.split("/", 1)[0]
+        warnings.append(
+            f"{relative} is not matched by the include patterns in motherduck.yml, so it is not validated or "
+            f'deployed; add "{top}/**/blueprint.yml" to include'
+        )
+    return warnings
+
 
 def report_error(error: Exception) -> None:
     message = str(error)

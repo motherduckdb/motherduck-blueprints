@@ -141,3 +141,17 @@ def test_cleanup_upgrade_preserves_adopted_resources_and_legacy_files(tmp_path: 
             assert after[name] == expected.encode()
         elif name != Path('Makefile'):
             assert after[name] == content
+
+
+def test_offline_upgrade_never_contacts_github(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import urllib.request
+
+    from md_blueprints.cli import main
+
+    run_init(tmp_path)
+    monkeypatch.delenv("MD_BLUEPRINTS_LATEST_VERSION", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: pytest.fail("network used offline"))
+    with pytest.raises(ValidationError, match="Cannot determine the latest release offline. Pass --to X.Y.Z"):
+        run_upgrade(tmp_path, offline=True)
+    assert main(["upgrade", "--root", str(tmp_path), "--offline", "--to", "1.2.3", "--write"]) == 0
+    assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()

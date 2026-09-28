@@ -55,6 +55,8 @@ def dump_yaml(data: dict[str, object]) -> str:
 
 
 def run_migrate(root: Path, *, from_version: int | None, to_version: str, write: bool) -> None:
+    if to_version != "latest" and not to_version.isdigit():
+        raise ValidationError(f"--to must be a schemaVersion number or latest, not {to_version!r}")
     target_version = LATEST_SCHEMA_VERSION if to_version == "latest" else int(to_version)
     if target_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValidationError(f"schemaVersion {target_version} is not supported by this md-blueprints release")

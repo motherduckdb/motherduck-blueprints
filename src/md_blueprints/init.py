@@ -46,14 +46,27 @@ def iter_resources(root: _Traversable, prefix: str = "") -> Iterator[tuple[_Trav
             yield from iter_resources(child, relative)
 
 
+SKIPPED_FILE_GUIDANCE = {
+    ".gitignore": "merge the template's ignore entries into yours manually",
+    "README.md": "keep your README and link to docs/ for Blueprints usage",
+    "AGENTS.md": "merge the Blueprints agent guidance into your AGENTS.md manually",
+    "Makefile": "merge the Blueprints targets and CLI_VERSION pin into your Makefile manually",
+    "motherduck.yml": "compare include globs and targets with the template",
+}
+
+
 def run_init(target: Path, *, force: bool = False) -> None:
     target = target.expanduser().resolve()
     if target.exists() and any(target.iterdir()) and not force:
-        raise ValidationError(f"{target} is not empty; pass --force to overwrite template files")
+        raise ValidationError(
+            f"{target} is not empty. Pass --force to add only missing template files; existing files are "
+            "never overwritten. To review the full template first, run init in an empty directory."
+        )
     target.mkdir(parents=True, exist_ok=True)
 
     template_root = resources.files("md_blueprints").joinpath("template_repo")
     written = 0
+    skipped: list[str] = []
     assets = {relative: resource for resource, relative in iter_resources(template_root) if not resource.is_dir()}
     assets.update({
         name.removeprefix("template_repo/"): path
@@ -65,6 +78,9 @@ def run_init(target: Path, *, force: bool = False) -> None:
         if relative.split("/", 1)[0] == "templates":
             continue
         destination = safe_destination(target, relative)
+        if destination.exists() or destination.is_symlink():
+            skipped.append(relative)
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         if is_text_file(relative):
             destination.write_text(render_template_text(resource.read_text(encoding="utf-8")), encoding="utf-8")
@@ -75,6 +91,14 @@ def run_init(target: Path, *, force: bool = False) -> None:
     print(f"Initialized MotherDuck Blueprints template in {target} ({written} files).")
     print(f"CLI version pinned in Makefile: {__version__}")
     print(f"Action tag pinned in workflows: {action_tag()}")
+    if skipped:
+        print(f"Kept {len(skipped)} existing file(s) unchanged:")
+        for relative in skipped:
+            guidance = SKIPPED_FILE_GUIDANCE.get(relative)
+            print(f"  {relative}" + (f" ({guidance})" if guidance else ""))
+        print(
+            "Compare them with a fresh `md-blueprints init` in an empty directory and merge what you need."
+        )
 
 
 def safe_destination(target: Path, relative: str) -> Path:

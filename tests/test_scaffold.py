@@ -261,3 +261,88 @@ def test_new_external_dive_preserves_share_url_for_local_preview(tmp_path: Path)
     assert required[0]["url"] == "md:_share/example/id"
     assert '"path": "md:_share/example/id"' in source
     assert '"alias": "external_data"' in source
+
+
+def test_new_refuses_destinations_that_include_globs_would_not_discover(tmp_path: Path) -> None:
+    write_root(tmp_path)
+    manifest = tmp_path / "motherduck.yml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace("  - guides/**/blueprint.yml\n", ""), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match=r'Add "guides/\*\*/blueprint.yml" to include'):
+        run_new(tmp_path, "guide", "metrics")
+    assert not (tmp_path / "guides").exists()
+
+
+@pytest.mark.parametrize("pattern,relative,expected", [
+    ("flights/**/blueprint.yml", "flights/a/blueprint.yml", True),
+    ("flights/**/blueprint.yml", "flights/team/a/blueprint.yml", True),
+    ("flights/*/blueprint.yml", "flights/team/a/blueprint.yml", False),
+    ("**/blueprint.yml", "roles/a/blueprint.yml", True),
+    ("dives/**/blueprint.yml", "flights/a/blueprint.yml", False),
+])
+def test_include_matching_follows_path_glob_semantics(pattern: str, relative: str, expected: bool) -> None:
+    from md_blueprints.scaffold import included_by
+
+    assert included_by([pattern], relative) is expected
+
+
+def test_new_role_is_disabled_until_reviewed(tmp_path: Path) -> None:
+    write_root(tmp_path)
+    manifest = (run_new(tmp_path, "role", "analysts") / "blueprint.yml").read_text(encoding="utf-8")
+    assert "deploy: false" in manifest
+    assert "admin deployment identity" in manifest
+    rendered = Project(tmp_path).render_all("prod")[0]
+    assert rendered.roles["role"]["deploy"] is False
+
+
+def test_new_dive_description_matches_its_data_source(tmp_path: Path) -> None:
+    write_root(tmp_path)
+    write_producer(tmp_path)
+    by_url = load_yaml(run_new(tmp_path, "dive", "by-url", share_url="md:_share/example/id") / "blueprint.yml")
+    by_input = load_yaml(run_new(tmp_path, "dive", "by-input", input_ref="producer.data") / "blueprint.yml")
+    assert isinstance(by_url, dict) and isinstance(by_input, dict)
+    assert by_url["description"] == "Dive package that reads an existing MotherDuck share by URL."
+    assert by_input["description"] == "Dive package that reads a declared input from another package."
+
+
+def test_starter_headings_use_titles(tmp_path: Path) -> None:
+    write_root(tmp_path)
+    project = run_new(tmp_path, "project", "daily-metrics")
+    assert (project / "README.md").read_text(encoding="utf-8").startswith("# Daily Metrics\n")
+    assert ">Daily Metrics</h1>" in (project / "src/dive.tsx").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("variable,value,message", [
+    ("MOTHERDUCK_FLIGHT_CONFIG", "{not json", "is not valid JSON"),
+    ("FLIGHT_CONFIG", "[1, 2]", "must be a JSON object"),
+])
+def test_starter_flight_fails_on_invalid_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str, message: str,
+) -> None:
+    import runpy
+    import sys
+    import types
+
+    write_root(tmp_path)
+    source = run_new(tmp_path, "flight", "loader") / "src/flight.py"
+    monkeypatch.setitem(sys.modules, "duckdb", types.ModuleType("duckdb"))
+    monkeypatch.setenv(variable, value)
+    with pytest.raises(SystemExit, match=message):
+        runpy.run_path(str(source))
+
+
+def test_starter_flight_reads_config_from_environment_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import runpy
+    import sys
+    import types
+
+    write_root(tmp_path)
+    source = run_new(tmp_path, "flight", "loader") / "src/flight.py"
+    monkeypatch.setitem(sys.modules, "duckdb", types.ModuleType("duckdb"))
+    for variable in ("MOTHERDUCK_FLIGHT_CONFIG", "FLIGHT_CONFIG", "CONFIG", "DATABASE"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("database", "loader_preview_feature_x")
+    namespace = runpy.run_path(str(source))
+    assert namespace["setting"]("database") == "loader_preview_feature_x"

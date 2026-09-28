@@ -12,6 +12,7 @@ from packaging.version import InvalidVersion, Version
 
 from . import __version__
 from .assets import schema_root
+from .diagnostics import validation_warnings
 from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
 
@@ -43,7 +44,11 @@ def newer_release_available(latest_version: str) -> bool:
     return latest > installed
 
 
-def fetch_latest_version(*, offline: bool) -> str | None:
+def fetch_latest_version(*, offline: bool, offline_hint: str = "Use --offline to skip.") -> str | None:
+    """Return the latest release, or None when offline and MD_BLUEPRINTS_LATEST_VERSION is unset.
+
+    Offline mode never opens a network connection.
+    """
     configured_latest = os.environ.get("MD_BLUEPRINTS_LATEST_VERSION", "").strip()
     if configured_latest:
         return normalize_version(configured_latest)
@@ -61,7 +66,7 @@ def fetch_latest_version(*, offline: bool) -> str | None:
         with urllib.request.urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"Could not check latest md-blueprints release: {exc}. Use --offline to skip.") from exc
+        raise ValidationError(f"Could not check latest md-blueprints release: {exc}. {offline_hint}") from exc
 
     tag_name = payload.get("tag_name")
     if not isinstance(tag_name, str) or not tag_name.strip():
@@ -113,19 +118,30 @@ def run_doctor(
             "validation: passed",
         ]
     )
-    legacy_context_blueprints = []
-    for blueprint in project.blueprints:
-        resources_node = blueprint.raw.get("resources")
-        if isinstance(resources_node, dict) and resources_node.get("context"):
-            legacy_context_blueprints.append(blueprint.name)
-    if legacy_context_blueprints:
-        lines.append(
-            "warning: resources.context is supported for compatibility; prefer resources.guides in: "
-            + ", ".join(legacy_context_blueprints)
-        )
+    for warning in validation_warnings(project):
+        lines.append(f"warning: {warning}")
 
     for warning in project.deployment_warnings():
         lines.append(f"warning: {warning}")
+
+    authoritative = authoritative_resources(project)
+    if authoritative:
+        lines.append(
+            "warning: mode: authoritative revokes role members, included roles, or share grants that are not "
+            "declared in Blueprints, including grants managed elsewhere such as the MotherDuck Terraform "
+            "provider's motherduck_role_grant or motherduck_share_grant. Use mode: additive unless Blueprints "
+            "is the only owner: " + ", ".join(authoritative)
+        )
+
+    workflow_root = root / ".github" / "workflows"
+    if (workflow_root / "deploy_blueprints.yaml").is_file() and not any(
+        (workflow_root / name).is_file() for name in ("prepare_guide_context.yaml", "prepare_guide_context.yml")
+    ):
+        lines.append(
+            "info: .github/workflows/prepare_guide_context.yaml is not present. Generated templates include it from "
+            "v0.7.0 to prepare Guide context in CI as an artifact for an agent runner. To adopt it, copy it from a "
+            "template generated with md-blueprints init in an empty directory"
+        )
 
     workflow = root / ".github" / "workflows" / "deploy_blueprints.yaml"
     if workflow.is_file():
@@ -190,6 +206,22 @@ def run_doctor(
         raise ValidationError("Generated repository action and CLI pins are not aligned; update both to the same release")
     if stale_schema and check_updates:
         raise ValidationError("Project schema is supported but not latest; run md-blueprints migrate --to latest")
+
+
+def authoritative_resources(project: Project) -> list[str]:
+    """Roles and share grants rendered with mode: authoritative for any target."""
+    found: set[str] = set()
+    for target in project.target_names():
+        branch = "feature/doctor" if target == "preview" else None
+        for blueprint in project.render_all(target, branch=branch):
+            for key, role in blueprint.roles.items():
+                if role.get("mode") == "authoritative" and role.get("deploy", True):
+                    found.add(f"{blueprint.name} roles.{key}")
+            for key, share in blueprint.shares.items():
+                grants = share.get("grants")
+                if isinstance(grants, dict) and grants.get("mode") == "authoritative":
+                    found.add(f"{blueprint.name} shares.{key}.grants")
+    return sorted(found)
 
 
 def run_check_updates(*, offline: bool = False, output_format: str = "text") -> None:

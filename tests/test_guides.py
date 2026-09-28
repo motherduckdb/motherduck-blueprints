@@ -206,6 +206,11 @@ def test_dbt_symlinks_are_not_followed_and_invalid_yaml_is_reported_without_sour
     assert snapshot(repo) == before
 
 
-@pytest.mark.parametrize("args", [["guides", "delete"], ["guides", "init", "unexpected"], ["guides", "--dbt", "/missing-dbt-project"], ["guides", "--dbt", ""], ["validate", "--dbt", "."]])
-def test_invalid_requests_fail(args: list[str], tmp_path: Path) -> None:
-    assert main([*args, "--root", str(tmp_path)]) == 1
+@pytest.mark.parametrize("args,code", [
+    (["guides", "delete"], 1), (["guides", "init", "unexpected"], 2), (["guides", "--dbt", "/missing-dbt-project"], 1),
+    (["guides", "--dbt", ""], 1), (["validate", "--dbt", "."], 2), (["guides", "--target", "prod"], 2),
+])
+def test_invalid_requests_fail(args: list[str], code: int, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main([*args, "--root", str(tmp_path)]) == code
+    if args[0] == "validate":
+        assert "--dbt is only supported by guides" in capsys.readouterr().err

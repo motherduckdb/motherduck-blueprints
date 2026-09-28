@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .project import Project, require_within
 from .schema import ValidationError
@@ -35,6 +36,23 @@ def _render(text: str, *, name: str, alias: str, required_database: str | None =
     if required_database is not None:
         rendered = rendered.replace("__REQUIRED_DATABASE__", required_database)
     return rendered
+
+
+def _glob_match(pattern: tuple[str, ...], path: tuple[str, ...]) -> bool:
+    """Match like Path.glob: `**` spans zero or more directories, other parts one component."""
+    if not pattern:
+        return not path
+    head, rest = pattern[0], pattern[1:]
+    if head == "**":
+        return any(_glob_match(rest, path[index:]) for index in range(len(path) + 1))
+    return bool(path) and fnmatch.fnmatchcase(path[0], head) and _glob_match(rest, path[1:])
+
+
+def included_by(patterns: object, relative: str) -> bool:
+    path = PurePosixPath(relative).parts
+    return isinstance(patterns, list) and any(
+        isinstance(pattern, str) and _glob_match(PurePosixPath(pattern).parts, path) for pattern in patterns
+    )
 
 
 def _write(path: Path, content: str) -> None:
@@ -79,7 +97,14 @@ def run_new(
     if share_url is not None:
         share_url = share_url.strip()
 
-    if name in Project(root).all_blueprint_names():
+    project = Project(root)
+    manifest_path = f"{KINDS[kind]}/{name}/blueprint.yml"
+    if not included_by(project.manifest.get("include"), manifest_path):
+        raise ValidationError(
+            f"{manifest_path} would not be discovered by the include patterns in motherduck.yml. "
+            f'Add "{KINDS[kind]}/**/blueprint.yml" to include, then rerun this command. Nothing was written.'
+        )
+    if name in project.all_blueprint_names():
         raise ValidationError(f"Blueprint name already exists: {name}")
 
     resource_alias = alias or _default_alias(name)
@@ -217,10 +242,14 @@ def _dive_manifest(name: str, alias: str, *, input_ref: str | None, share_url: s
             raise ValidationError("--url must not be empty")
         contract = ""
         required = f"url: {json.dumps(share_url)}"
+    description = (
+        "Dive package that reads a declared input from another package."
+        if input_ref else "Dive package that reads an existing MotherDuck share by URL."
+    )
     return f"""schemaVersion: 1
 name: {_yaml_string(name)}
 title: {_yaml_string(_title(name))}
-description: Dive package backed by a declared data input.
+description: {description}
 
 {contract}resources:
   dives:
@@ -299,5 +328,7 @@ resources:
       includedRoles: []
       members: []
       mode: additive
-      deploy: true
+      # Roles deploy only to production and need an admin deployment identity.
+      # Set deploy: true after reviewing the members and the production identity.
+      deploy: false
 """

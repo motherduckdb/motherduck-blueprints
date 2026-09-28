@@ -92,3 +92,97 @@ targets:
     )
 
     assert cli.main(["new", "dive", "dashboard", "--root", str(tmp_path)]) == 1
+
+
+def test_deploy_rejects_dry_run_before_contacting_motherduck(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("md_blueprints.deploy.Deployer.deploy", lambda *a, **kw: pytest.fail("deploy must not run"))
+    assert cli.main(["deploy", "--root", str(FIXTURES / "simple"), "--dry-run"]) == 2
+    assert "deploy does not support --dry-run; use `plan` to preview changes" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("args,message", [
+    (["init", "DIR", "--write"], "init does not support --write"),
+    (["init", "DIR", "--json"], "init does not support --json"),
+    (["validate", "--dry-run"], "validate does not support --dry-run"),
+    (["changed", "--target", "prod"], "changed does not support --target. Run md-blueprints changed --help"),
+    (["validate", "unexpected"], "unexpected argument 'unexpected' for validate"),
+    (["cleanup", "--json"], "cleanup --json requires --dry-run"),
+    (["import", "--blueprints", "x"], "import selects remote UUIDs: use --resource KIND:UUID"),
+])
+def test_commands_reject_flags_they_do_not_support(
+    args: list[str], message: str, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = [str(tmp_path / "init-target") if arg == "DIR" else arg for arg in args]
+    root = [] if args[0] == "init" else ["--root", str(FIXTURES / "simple")]
+    assert cli.main([*args, *root]) == 2
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "init-target").exists()
+
+
+def test_new_rejects_dry_run_without_writing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "motherduck.yml").write_text(
+        'schemaVersion: 1\nrepository: {name: cli-new}\ninclude: ["flights/**/blueprint.yml"]\n'
+        "targets:\n  preview: {mode: preview}\n  prod: {mode: production}\n",
+        encoding="utf-8",
+    )
+    assert cli.main(["new", "flight", "events", "--root", str(tmp_path), "--dry-run"]) == 2
+    assert "new does not support --dry-run" in capsys.readouterr().err
+    assert not (tmp_path / "flights").exists()
+
+
+def test_validate_rejects_unknown_blueprint_selection(capsys: pytest.CaptureFixture[str]) -> None:
+    root = str(FIXTURES / "simple")
+    assert cli.main(["validate", "--root", root, "--blueprints", "does-not-exist"]) == 1
+    assert "Unknown blueprint(s): does-not-exist. Valid names: simple-dive" in capsys.readouterr().err
+    assert cli.main(["validate", "--root", root, "--blueprints", "simple-dive"]) == 0
+
+
+def test_command_help_lists_only_that_commands_options(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["deploy", "--help"]) == 0
+    output = capsys.readouterr().out
+    assert "--skip-verification" in output and "--blueprints" in output
+    assert "--dry-run" not in output and "--dbt" not in output
+
+
+def test_unknown_command_is_reported_before_project_lookup(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["valdiate", "--root", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert "unknown command 'valdiate'" in err
+    assert "motherduck.yml" not in err
+
+
+def test_options_before_the_command_remain_supported() -> None:
+    assert cli.main(["--root", str(FIXTURES / "simple"), "validate"]) == 0
+
+
+def test_key_errors_explain_the_missing_value(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def missing(options: object) -> None:
+        raise KeyError("database")
+
+    monkeypatch.setitem(cli.HANDLERS, "validate", missing)
+    assert cli.main(["validate"]) == 1
+    err = capsys.readouterr().err
+    assert "Missing required value 'database'" in err
+    assert "Error: 'database'" not in err
+
+
+def test_validate_warns_about_legacy_context_and_undiscovered_packages(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    stray = tmp_path / "blueprints/team/nested-dive"
+    shutil.copytree(tmp_path / "blueprints/simple-dive", stray)
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    assert "Validation passed" in captured.out
+    assert (
+        "warning: blueprints/team/nested-dive/blueprint.yml is not matched by the include patterns in "
+        'motherduck.yml, so it is not validated or deployed; add "blueprints/**/blueprint.yml" to include'
+    ) in captured.err
+
+    assert cli.main(["validate", "--root", str(FIXTURES / "complex")]) == 0
+    assert "warning: resources.context is supported for compatibility" in capsys.readouterr().err
