@@ -57,7 +57,9 @@ Available template roots are:
 - `resources.roles`
 - `inputs`
 
-Variables render with this precedence: root variables, root target variables, blueprint variables, blueprint target variables. Resource target overrides are deep-merged over the base resource.
+Variables render with this precedence: root variables, root target variables, blueprint variables, blueprint target variables. Resource target overrides are deep-merged over the base resource. The merged, rendered resource is validated again for every target, so a wrong type or unknown field inside `targets.<target>` fails validation with the file, resource, and target named.
+
+`target.branch_slug` is the branch name lowercased, with every run of characters other than `a-z` and `0-9` replaced by `_`. Slugs of 48 characters or more are cut to at most 39 characters plus `_` and an 8-character hash of the full branch name, so two long branches never share preview resources.
 
 An input exposes:
 
@@ -126,11 +128,11 @@ resources:
           dropDatabase: true
 ```
 
-Required fields are `name` and `database`. Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
+Required fields are `name` and `database`. `access` is `ORGANIZATION`, `RESTRICTED`, or `UNRESTRICTED`, and `visibility` is `DISCOVERABLE` or `HIDDEN` (case-insensitive). Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
 
-A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
+A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug` as a whole `_`-separated part, such as `events_preview_feature_x`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
 
-`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` preserves undeclared grantees, while `mode: authoritative` revokes them.
+`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations.
 
 ## Flights
 
@@ -154,7 +156,7 @@ resources:
           scheduleCron: ""
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 
@@ -180,7 +182,7 @@ Each item requires `alias` and exactly one of:
 
 A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
-The deployer strips the one-line `export const REQUIRED_DATABASES = ...` declaration from local-preview source and passes the rendered mounts to MotherDuck.
+The deployer strips the `export const REQUIRED_DATABASES = ...` declaration (single-line or multi-line) from local-preview source and passes the rendered mounts to MotherDuck.
 
 ## Guides
 
@@ -208,7 +210,7 @@ A validation-only Guide requires `source`; a deployed Guide also requires `title
 
 Catalog references require exactly one of `url`, `share`, or `input`, and may narrow to a schema plus one table, view, or macro. Dive, Flight, and Guide references require either `uuid` or a repository `resource`; set `blueprint` for a resource in another package. These references participate in dependency ordering and are resolved during planning before any mutation. A referenced validation-only Guide must declare its stable `id`; set `deploy: true` instead when this repository owns its lifecycle. Set a stable `id` on a deployed Guide when topic and title are not sufficient to identify an existing Guide. Preview Guides cannot use a production ID and their title or topic must be branch-scoped.
 
-`resources.context` retains its validation-only compatibility behavior; `md-blueprints doctor` recommends `resources.guides`.
+`resources.context` is deprecated. It remains validation-only for compatibility. Rename it to `resources.guides`.
 
 For a complete scaffold-to-deployment workflow, see [Manage Guides as code](guides-as-code.md).
 
@@ -226,7 +228,7 @@ resources:
       deploy: true
 ```
 
-Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships. Blueprints never delete roles automatically.
+Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them. Blueprints never delete roles automatically.
 
 ## Adopting existing resources (0.4.3+)
 

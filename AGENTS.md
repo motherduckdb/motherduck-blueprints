@@ -28,7 +28,9 @@ Nested organizational directories are allowed, but the package's immediate paren
 
 Use top-level `inputs` and `outputs` to connect independently deployed packages. Outputs name package-local shares; inputs reference `blueprint.output` contracts in the same repository. Use literal share URLs for external repositories.
 
-Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `make new-project`. `make new-blueprint` remains an alias for a complete project scaffold.
+Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `make new-project` with a positional name or `NAME=`. `make new-blueprint` is a deprecated alias for `make new-project`. Role scaffolds default to `deploy: false`.
+
+Customers often manage accounts, tokens, roles, and shares with the MotherDuck Terraform provider. Keep `docs/use-with-terraform.md` accurate when changing resource ownership, grant modes, name-based matching, or cleanup behavior.
 
 For agent-authored Guides, follow `docs/guides-as-code.md`. `make guides` gathers read-only context, optionally with `DBT=/path/to/dbt-project`. Read the discovered SQL, Flight, Dive, dbt YAML, and existing Markdown sources before writing useful Guides. `init-guides` and `update-guides` also print task briefs. The CLI does not write Guides or manage generated sections. Preserve existing knowledge and resource identities, keep new Guides private and disabled, and use native CLI enrichment only when useful and available.
 
@@ -53,9 +55,9 @@ Declare resources in `blueprint.yml`:
 - `resources.dives` deploys Dives and required resources.
 - `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.
 - `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled.
-- `resources.context` remains compatible, but `doctor` recommends `resources.guides`.
+- `resources.context` is deprecated and validation-only; plan, validate, and `doctor` point to `resources.guides`.
 
-For Dives, keep `export const REQUIRED_DATABASES = ...` on one line in source when using local preview. The deploy engine strips that export and passes rendered `requiredResources` from `blueprint.yml`.
+For Dives, the deploy engine strips `export const REQUIRED_DATABASES = ...` (single- or multi-line, parsed as a static JSON5 array) and passes rendered `requiredResources` from `blueprint.yml`.
 
 ## Targets
 
@@ -91,7 +93,7 @@ make preview-smoke <blueprint-name>
 make render-preview <blueprint-name>
 ```
 
-CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/staging/prod deployment, and preview cleanup. `tools/md_blueprints` remains as a compatibility wrapper for existing local commands.
+CI installs the local `md-blueprints` package and calls the package command for change detection, validation, preview/staging/prod deployment, and preview cleanup. `tools/md_blueprints` is a deprecated compatibility wrapper; it prefers `.venv/bin/md-blueprints` and prints a notice.
 
 The GitHub Action defaults to validation. Prefer named `target`, `branch`, `blueprints`, and `root` inputs in workflows; reserve `args` for advanced flags. Keep customer READMEs focused on the first deployment and put detailed options in `docs/`.
 
@@ -103,6 +105,6 @@ Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep e
 
 ## Source ownership
 
-Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map. Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.
+Root docs, examples, schemas, and preview files are assembled into distributions using `src/md_blueprints/asset-map.json` and `src/build_support.py`. Add new shared assets to the map. `MAINTAINING.md` holds release engineering and the maintenance map; it is deliberately not in the map, and shipped docs must not link to it or to `src/`, `tests/`, or `scripts/` (`tests/test_docs.py` checks this and that documented action pins match the package version). Customer-only overrides and scaffolds live in `src/md_blueprints/template_repo/`. Do not restore mirrored copies.
 
 Edit job logic in `.github/workflows/reusable_*.yaml`, then run `make sync-workflows`. Repository event headers stay local. Generated repository jobs use the checkout action while customer jobs use the release pin. CI checks generated jobs for drift.

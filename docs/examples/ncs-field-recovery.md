@@ -51,8 +51,7 @@ Run the repository checks without contacting MotherDuck:
 
 ```bash
 make validate
-make mock-test
-make example-smoke
+make render-preview ncs-field-recovery
 ```
 
 Build the local Dive preview without starting a development server:

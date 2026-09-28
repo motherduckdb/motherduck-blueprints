@@ -8,6 +8,22 @@ Use `make upgrade` to update the CLI and workflow references together. The refer
 
 The reusable deployment workflow accepts `target`, `branch`, and `blueprints` for manual runs. It expects `motherduck.yml` at the repository root. For a different working directory or custom job steps, use the action directly.
 
+## Customize the reusable workflows
+
+Every reusable workflow accepts these optional inputs. Set them under `with:` in your caller workflow. The template callers list them as comments.
+
+| Input | Default | Purpose |
+| --- | --- | --- |
+| `runs-on` | `ubuntu-latest` | Runner label, or a JSON array of labels such as `'["self-hosted", "linux"]'`. Self-hosted runners need `bash`, `git`, and `jq`. |
+| `python-version` | `3.11` | Python used to install Blueprints. |
+| `timeout-minutes` | `10` | Job timeout. Prepare Guide context only. |
+
+The workflows also enforce a few rules:
+
+- Manual `staging` or `prod` runs must start from the default branch. Run them from another branch and they fail before deploying.
+- Dependabot pull requests are validated but do not deploy previews, because Dependabot runs receive no environment secrets.
+- Preview deploys and preview cleanup for the same branch share one concurrency group, so cleanup waits for a running deploy. A new preview deploy for the same branch, for example after reopening a PR, can still cancel a running cleanup. The next close cleans up again.
+
 Use the action directly when adding Blueprints to an existing repository with a `motherduck.yml` manifest.
 
 ## Validate pull requests
@@ -24,10 +40,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.6.0
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
 ```
 
-The action installs its own Python dependencies. Validation is the default command and needs no token. For import, it installs the tested MotherDuck CLI and uses `motherduck query --file ... --output json` with the job's environment token. Deployment, planning, verification, and cleanup install the Python deploy dependencies and execute SQL in process. Both paths require the job's environment token. CLI state is isolated under the runner's temporary directory, and SQL is passed through temporary files rather than shell arguments. The adapter handles multiple result arrays and empty DDL output. Flight waits track the submitted run number and fail deployment on a failed or cancelled run.
+The action installs its own Python dependencies. Validation is the default command and needs no token. Import, planning, verification, deployment, and cleanup read the job's environment token. Import also installs the tested MotherDuck CLI. See [CI and compatibility](motherduck-cli.md#ci-and-compatibility) for how commands reach MotherDuck.
 
 ## Deploy manually
 
@@ -47,7 +63,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.6.0
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -55,7 +71,7 @@ jobs:
           target: prod
 ```
 
-Run it from **Actions → Deploy Blueprints → Run workflow**. It deploys all packages and checks the deployment plan before applying changes. To deploy a subset, add `blueprints: revenue`.
+Run it from **Actions → Deploy Blueprints → Run workflow**. It deploys all enabled packages and checks the deployment plan before applying changes. To deploy a subset, add `blueprints: revenue`.
 
 This minimal workflow runs only when you request it. For automatic PR previews, comments, and cleanup, use the template's existing workflows.
 
@@ -63,7 +79,7 @@ This minimal workflow runs only when you request it. For automatic PR previews, 
 
 | Input | Default | Purpose |
 | --- | --- | --- |
-| `command` | `validate` | CLI command, such as `guides`, `plan`, `deploy`, `cleanup`, or `doctor`. |
+| `command` | `validate` | CLI command: `validate`, `plan`, `deploy`, `verify`, `cleanup`, `import`, `guides`, `doctor`, or `upgrade`. |
 | `target` | Command default | `prod` for deploy/plan; `preview` for cleanup; validation checks every target. |
 | `branch` | Empty | Required for preview deployment and cleanup. Pass the branch name directly; no extra quotes are needed. |
 | `blueprints` | All packages | Comma-separated package names, such as `orders,revenue`. Dependencies expand according to the target. |
@@ -71,13 +87,15 @@ This minimal workflow runs only when you request it. For automatic PR previews, 
 | `dbt` | Empty | dbt project directory or `dbt_project.yml`, relative to the checkout. Only for `command: guides`. |
 | `args` | Empty | Advanced CLI flags, such as `--json`, `--offline`, or `--dry-run`. |
 | `verify-after-deploy` | `true` | Read back live identities, declared shares/inputs, and Dive status after deploy. Set `"false"` only to opt out of the postcheck. |
-| `python-version` | `3.11` | Python runtime installed by the action. |
+| `python-version` | `3.11` | Python used to create the action's isolated environment. |
 
 Named inputs override matching flags in `args`. Existing workflows using only `args` continue to work. The action passes named inputs as literal argument values, including spaces and quotes.
 
 Live commands read `MOTHERDUCK_TOKEN` from the step environment. Select the GitHub Environment on the **job**; the action's `target` input does not select a GitHub Environment for you.
 
-The `stdout` output contains the command's text or JSON result, except for `guides`. Assign an `id` to the step to read `steps.<id>.outputs.stdout`. Every command also returns `stdout-file`, an absolute file path on the current runner. Guide context is file-only so its contents do not appear in logs or exceed GitHub job-output limits. Command failures fail the step.
+Output streams to the job log while the command runs, except for `guides`. The `stdout` output contains the command's text or JSON result, except for `guides`. Assign an `id` to the step to read `steps.<id>.outputs.stdout`. Every command also returns `stdout-file`, an absolute file path on the current runner. Guide context is file-only so its contents do not appear in logs or exceed GitHub job-output limits. Command failures fail the step.
+
+The action installs Blueprints into its own virtual environment under the runner's temporary directory and puts only `md-blueprints` on `PATH`. It does not change the job's Python. If a later step needs to import `md_blueprints` or PyYAML, run it with the `python` output, for example `"${{ steps.blueprints.outputs.python }}" script.py`.
 
 Pin the action and your local CLI to the same release. See [upgrades](tooling-and-schema-versioning.md).
 
@@ -215,7 +233,7 @@ By default, deployment then reads back resource identities and checks declared s
 For a separate read-only check of existing resources, including disabled imported bindings, use:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.6.0
+- uses: motherduckdb/motherduck-blueprints@v0.7.0
   env:
     MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   with:

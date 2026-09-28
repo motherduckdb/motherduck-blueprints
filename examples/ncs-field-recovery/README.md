@@ -50,8 +50,7 @@ Neither metric should be described as OREC's “Final OE Recovery.” SODIR's pu
 
 ```bash
 make validate
-make mock-test
-make example-smoke
+make render-preview ncs-field-recovery
 make preview-smoke ncs-field-recovery
 ```
 

@@ -8,6 +8,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 - Repository Guides: follow [Guides as code](docs/guides-as-code.md). Run `make guides`, optionally with `DBT=/path/to/dbt-project`, to gather a read-only task brief. Read the source and write useful Markdown yourself. Preserve existing context and resource identities. The `init-guides` and `update-guides` aliases also print briefs and never rewrite files.
 - Guides in CI: run **Prepare Guide context** or use the action's `command: guides` with an optional `dbt` path. Consume `stdout-file` or the `guide-context` artifact in an existing agent runner. See [CI integration](docs/github-action.md#prepare-guides-in-ci) for an optional Codex draft-patch example. Discovery requires no credentials and does not publish Guides.
 - Existing MotherDuck assets: follow [adopt existing resources](docs/adopt-existing-resources.md) before creating manifests.
+- Terraform-managed MotherDuck accounts, tokens, roles, or shares: follow [use with Terraform](docs/use-with-terraform.md). Give each object one owner and avoid `mode: authoritative` on grants Terraform also manages.
 - Package layout and command reference: [repository reference](docs/repository-reference.md).
 - Field definitions and target overrides: [manifest reference](docs/blueprint-yml-reference.md).
 - Product runtime APIs and limits: read the current `motherduck flight guide` or `motherduck dive guide`. Product guides do not override this repository's deployment policy.
@@ -16,7 +17,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 
 `motherduck.yml` selects packages using include globs. Each package has one `blueprint.yml` and its source files. Optional roots are created when needed: `flights/`, `dives/`, `guides/`, `roles/`, and `projects/`. A package directory must match its lowercase manifest slug. Source files must stay inside their package; do not move executable source into `shared/`.
 
-`motherduck` is the product CLI: it can list and pull remote resources into files. `md-blueprints` validates and deploys this repository's manifests. CLI metadata JSON is not a Blueprints manifest and its IDs are not automatically adopted.
+`motherduck` is the product CLI: it can list and pull remote resources into files. `md-blueprints` validates and deploys this repository's manifests. Any `make` target installs the pinned `md-blueprints` into `.venv/`; run it as `.venv/bin/md-blueprints` when no `make` target exists. CLI metadata JSON is not a Blueprints manifest and its IDs are not automatically adopted.
 
 The GitHub workflows are short callers into versioned Blueprints workflows. Keep deployment implementation upstream and use `make upgrade` to update workflow and CLI pins together. The workflows, `schemas/`, and `.dive-preview/` are support files. Do not edit them to add a package. Starter templates live in the installed CLI; there is no customer `templates/` directory to maintain. `examples/` is optional and does not deploy.
 

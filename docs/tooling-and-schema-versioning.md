@@ -24,7 +24,7 @@ Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints wo
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.6.0
+- uses: motherduckdb/motherduck-blueprints@v0.7.0
   with:
     command: validate
 ```
@@ -38,9 +38,9 @@ Blueprints maintains third-party actions inside its reusable workflows. The temp
 For local checks around a bump:
 
 ```bash
-md-blueprints doctor --check-updates
-md-blueprints migrate --to latest
-md-blueprints validate
+.venv/bin/md-blueprints doctor --check-updates
+.venv/bin/md-blueprints migrate --to latest
+make validate
 make preview-smoke <blueprint-name>
 ```
 
@@ -52,13 +52,13 @@ Doctor also reports deployment-model drift. Repository-level `MOTHERDUCK_TOKEN` 
 
 Existing expanded workflows and direct action calls continue to work. `make upgrade` updates their pins but does not replace customer-authored jobs.
 
-To adopt the shorter callers after a release includes them, generate a fresh template in a separate empty directory with that release's CLI. Compare its three `.github/workflows/` files with yours. Copy the callers while preserving any custom event filters, branch names, and permissions. Keep customized jobs as direct action workflows if they need extra steps. Review the migration in a pull request, confirm the preview and plan, then merge.
+To adopt the shorter callers after a release includes them, generate a fresh template in a separate empty directory with that release's CLI. Compare its `.github/workflows/` files with yours. `make upgrade` does not add workflows that are new in a release, such as `prepare_guide_context.yaml`. `make doctor` lists any that are missing. Copy the callers while preserving any custom event filters, branch names, and permissions. Keep customized jobs as direct action workflows if they need extra steps. Review the migration in a pull request, confirm the preview and plan, then merge.
 
 Reusable workflow definitions are released from this tooling repository's `.github/workflows/reusable_*.yaml` files. Their internal action references must match the package release. New reusable definitions are available to customer callers only after that release is published.
 
 ## Schema Source of Truth
 
-Packaged schemas live under `src/md_blueprints/schemas/v*/`. Repo-local schemas under `schemas/v*/` mirror those files for editors, docs, and agents, but runtime validation uses the packaged schemas.
+Runtime validation uses the schemas packaged with the installed `md-blueprints` release. The `schemas/v*/` files in your repository are copies of the same schemas for editors, docs, and agents.
 
 Current constants:
 
@@ -77,7 +77,7 @@ Root manifests may declare a minimum CLI requirement:
 
 ```yaml
 schemaVersion: 1
-requiredCliVersion: ">=1.3"
+requiredCliVersion: ">=0.4.3"
 ```
 
 Validation checks this before schema details and fails with a direct pin-bump message when the installed CLI is too old. Use this for behavioral requirements that cannot be expressed as schema shape alone.
@@ -107,76 +107,6 @@ MIGRATIONS: dict[tuple[int, int], Callable[[dict[str, object]], dict[str, object
 Each migration is a pure document transform. The command loads `motherduck.yml` and included `blueprint.yml` files, applies the migration path, validates every migrated document against the target schema, and emits a unified diff. With `--write`, files are written only after every document passes validation. Includes stay within the repository, overlapping matches are deduplicated, and every document must declare an integer `schemaVersion`. File writes are sequential; an operating-system write failure can still leave a partial migration.
 
 For `schemaVersion: 1`, `md-blueprints migrate --to latest` prints that no migration is needed.
-
-## Release Engineering
-
-Stable `vMAJOR.MINOR.PATCH` tag pushes run the release workflow. The workflow trigger excludes floating tags such as `v0`, requires the tagged commit to be on `main`, and rejects other release-tag shapes:
-
-1. Verify tag, `pyproject.toml`, and `src/md_blueprints/__init__.py` versions match.
-2. Build the wheel and source distribution.
-3. Smoke test the installed wheel as an internal packaging check.
-4. Smoke test the local action wrapper.
-5. Generate a reproducible CycloneDX SBOM and attest every release artifact.
-6. Verify the generated-template repository and protected release environments.
-7. Install the built wheel, generate the customer template with an exact action tag, and push it to `motherduckdb/blueprints-template`.
-8. Require the generated repository's triggered workflow to pass against that exact action tag.
-9. Attach the distributions and SBOM to the GitHub Release, then update the compatibility-only floating major alias.
-
-The action installs the tagged checkout directly, generated repositories install local tooling from the matching Git tag, and built Python distributions are attached to the GitHub Release. The floating major tag remains available for compatibility but generated repositories do not depend on it.
-
-Marketplace listing is configured through GitHub's release UI. Any required GitHub Marketplace agreement must be accepted by an authorized organization maintainer. The automated release workflow publishes the repository release and action tags without relying on PyPI.
-
-One-time template setup: create `motherduckdb/blueprints-template`, mark it as a GitHub template repository, and add a `BLUEPRINTS_TEMPLATE_PUSH_TOKEN` secret that can push to that repository. Tagged releases fail before publishing when this setup is missing; the template push is part of the release contract, not an optional best-effort step.
-
-Before creating a release tag:
-
-```bash
-make release-check TAG=v0.6.0
-make release-external-check
-make validate
-make mock-test
-make package-smoke
-make example-smoke
-make preview-smoke wikipedia-pageviews
-```
-
-## Repository Boundary
-
-This repository now carries the customer template as package data and exposes it through:
-
-```bash
-md-blueprints init <dir>
-```
-
-That command writes the customer file set and stamps the same exact release into the generated `Makefile` and workflows.
-
-Before the first stable customer handoff, split the generated customer template from tooling:
-
-- Tooling repo: `src/md_blueprints/`, `pyproject.toml`, action wrapper, tests, scripts, CI, release workflow, and changelog.
-- Template repo: `motherduck.yml`, the active Flight/Dive starter, optional examples, `AGENTS.md`, customer docs, thin Makefile, customer workflows, schemas, preview support, Dependabot, CODEOWNERS, and `.gitignore`. Optional roots are created by scaffolding; internal scaffolds stay in the tooling package.
-
-The release workflow generates `motherduckdb/blueprints-template` from the built wheel's `md-blueprints init` package data so the stamped action tag, docs, examples, and CLI behavior cannot drift. The tooling repository's own deploy and doctor workflows use the local action checkout; generated customer workflows use the stamped immutable release tag.
-
-## Agent Maintenance Map
-
-| Task | Files |
-| --- | --- |
-| CLI parsing and exit codes | `src/md_blueprints/cli.py` |
-| Customer template generation | `src/md_blueprints/init.py`, `src/md_blueprints/template_repo/` |
-| Schema loading and validation | `src/md_blueprints/schema.py`, `schemas/v*/` |
-| Template rendering | `src/md_blueprints/template.py` |
-| Project manifest and changed detection | `src/md_blueprints/project.py` |
-| Plan/deploy/cleanup behavior | `src/md_blueprints/deploy.py` |
-| Migration behavior | `src/md_blueprints/migrations.py` |
-| Doctor/update checks | `src/md_blueprints/maintenance.py` |
-| Distribution asset assembly | `src/md_blueprints/asset-map.json`, `src/build_support.py` |
-| Local compatibility wrapper | `tools/md_blueprints` |
-| GitHub Action wrapper | `action.yml` |
-| Internal CI | `.github/workflows/ci.yaml` |
-| Release automation | `.github/workflows/release.yaml`, `scripts/package-smoke-test.sh`, `scripts/check-release-version.sh` |
-| Customer setup docs | `README.md`, `docs/setup-your-repository.md` |
-| Field reference | `docs/blueprint-yml-reference.md` |
-| Change record | `CHANGELOG.md` |
 
 ## Update tooling together
 

@@ -10,7 +10,7 @@ Deploy MotherDuck data pipelines and dashboards from a GitHub repository.
 
 ## Already using MotherDuck?
 
-With Python 3.10+ and Git installed, export your existing Flights, Dives, and Guides into code before enabling deployment:
+In your repository created from the template, with Python 3.10+ and Git installed, export your existing Flights, Dives, and Guides into code before enabling deployment:
 
 ```bash
 make install-deploy
@@ -20,7 +20,7 @@ make export
 make validate
 ```
 
-`make install-deploy` installs the supported MotherDuck CLI. Open a new terminal if `motherduck` is not yet on your PATH. Use the account that owns the resources, or provide its `MOTHERDUCK_TOKEN` through your secret manager instead of logging in.
+`make install-deploy` installs the supported MotherDuck CLI. Open a new terminal if `motherduck` is not yet on your PATH. Use the account that owns the resources, or provide its `MOTHERDUCK_TOKEN` through your secret manager instead of logging in. Only a Flight's creator can update it, so check [ownership](docs/adopt-existing-resources.md#1-use-the-current-tooling-and-intended-identity) before letting CI deploy exported Flights.
 
 `make export` writes all visible resources of these three types as disabled, UUID-bound packages. It preserves source and settings and makes no remote changes. Review the files and remove any unwanted starter packages before opening a deployment PR. Follow [adopt existing resources](docs/adopt-existing-resources.md) to check ownership, schedules, and dependencies before enabling them.
 
@@ -28,12 +28,19 @@ Agents: read [the operating guide](src/md_blueprints/template_repo/AGENTS.md) fo
 
 ## Deploy the example
 
-You need a MotherDuck service-account token and permission to configure your GitHub repository. No local installation is required.
+You need:
+
+- A [MotherDuck service account](https://motherduck.com/docs/key-tasks/service-accounts-guide/create-and-configure-service-accounts/) with a read/write token.
+- Admin access to your GitHub repository. Private repositories need GitHub Pro, Team, or Enterprise for Environments.
+
+No local installation is required.
 
 1. In GitHub, open **Settings → Environments**, create `motherduck-production`, and add your token as an environment secret named `MOTHERDUCK_TOKEN`.
 2. Open [`flights/wikipedia-pageviews-ingest/blueprint.yml`](flights/wikipedia-pageviews-ingest/blueprint.yml), change its `description`, and commit the change to a **new branch**. Open a pull request.
 3. Wait for **Deploy Blueprints** to finish. Its PR comment links to your preview dashboard, backed by public Wikipedia pageview data.
 4. Merge the PR to deploy production. Closing the PR removes its preview resources.
+
+The Wikipedia Flight then refreshes daily in production. To remove the starter later, see [remove the example](docs/setup-your-repository.md#remove-the-example).
 
 If the environment requires approval, approve the deployment in GitHub Actions. Fork pull requests validate but do not deploy.
 
@@ -76,20 +83,30 @@ Edit the generated files in `projects/revenue/`, then open a pull request.
 
 Ask your Claude, ChatGPT, or Codex agent: **"Initialize or update this repository's MotherDuck Guides. Follow `docs/guides-as-code.md`."** The agent reads the source and writes Markdown that explains the data and workflows. `make guides` gathers context, and `make guides DBT="/path/to/dbt-project"` adds dbt YAML documentation and relationship hints. See [the agent workflow](docs/guides-as-code.md).
 
-Customers can prepare the same context in CI using **Prepare Guide context**, then pass its artifact to their existing agent runner. See [Guide CI integration](docs/github-action.md#prepare-guides-in-ci).
+Run **Actions → Prepare Guide context** to collect context in CI, with an optional dbt path. Download the `guide-context` artifact or pass it to your existing agent runner. See [Guide CI integration](docs/github-action.md#prepare-guides-in-ci).
 
 ## More help
 
 - [Setup and troubleshooting](docs/setup-your-repository.md)
 - [Blueprint fields and options](docs/blueprint-yml-reference.md)
 - [GitHub Action inputs](docs/github-action.md)
+- [Adapt names, environments, and branches](docs/repository-reference.md#adapt-the-defaults-to-your-organization)
+- [Use with the MotherDuck Terraform provider](docs/use-with-terraform.md)
 - [Guides as code](docs/guides-as-code.md) · [Repository reference](docs/repository-reference.md) · [Upgrades](docs/tooling-and-schema-versioning.md)
 
 ## Using the action in an existing repository
 
 Use the versioned action directly from GitHub. It installs Blueprints and its dependencies automatically, so no separate Blueprints package installation or Marketplace setup is needed.
 
-Your repository must already contain `motherduck.yml` and its blueprint packages. For a new project, use the [template](https://github.com/motherduckdb/blueprints-template/generate) above.
+Your repository must contain `motherduck.yml` and its blueprint packages. For a new project, use the [template](https://github.com/motherduckdb/blueprints-template/generate) above. To add Blueprints to an existing repository, generate the support files in a separate directory and copy what you need:
+
+```bash
+python3 -m venv /tmp/blueprints-cli
+/tmp/blueprints-cli/bin/pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0.7.0"
+/tmp/blueprints-cli/bin/md-blueprints init /tmp/blueprints-starter
+```
+
+Copy `motherduck.yml` and `schemas/` into your repository, plus `Makefile`, `.github/workflows/`, and `.dive-preview/` if you want the local commands, PR previews, and dashboard builds. Keep your own `README.md`, `.gitignore`, and `LICENSE`. PR previews expect `motherduck.yml` at the repository root. Then run `make validate`.
 
 ### Validate pull requests
 
@@ -105,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.6.0
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
 ```
 
 ### Deploy to production manually
@@ -126,7 +143,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.6.0
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

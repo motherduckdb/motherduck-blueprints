@@ -32,10 +32,11 @@ A few repository rules, enforced by review and tests:
 - Shared assets have one source: root docs, examples, schemas, and preview files are mapped by `src/md_blueprints/asset-map.json` into built distributions. Update the map when adding assets. Customer-specific overrides and internal scaffolds live under `src/md_blueprints/template_repo/`.
 - Edit reusable workflow jobs, then run `make sync-workflows`. Generated repository jobs test the current checkout. Customer workflows keep versioned references.
 - Run `make package-smoke` after changing packaging or asset ownership. It builds a wheel from the source distribution and tests installed scaffolding.
+- Customer-facing docs ship to generated repositories. Keep maintainer-only material, such as release engineering, in [MAINTAINING.md](MAINTAINING.md), which is not shipped.
 - When changing layout, commands, target behavior, or resource semantics, update the matching public docs in the same pull request.
 
 ## Reporting issues
 
 Use [GitHub issues](https://github.com/motherduckdb/motherduck-blueprints/issues) for bugs and feature requests. For product questions about MotherDuck itself, use the [MotherDuck Community Slack](https://slack.motherduck.com/) or [MotherDuck support](https://motherduck.com/docs/getting-started).
 
-For security issues, see [SECURITY.md](SECURITY.md) — please do not report vulnerabilities through public issues.
+For security issues, see [SECURITY.md](SECURITY.md). Please do not report vulnerabilities through public issues.

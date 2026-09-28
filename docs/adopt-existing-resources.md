@@ -4,9 +4,11 @@ The importer reads existing Flights, Dives, and Guides, creates UUID-bound packa
 
 ## 1. Use the current tooling and intended identity
 
-Import and UUID-bound Flight/Dive updates require Blueprints 0.4.3 or newer. Keep your Makefile and action pins aligned; use `make upgrade VERSION=0.6.0` when upgrading an existing generated repository.
+Import and UUID-bound Flight/Dive updates require Blueprints 0.4.3 or newer. Keep your Makefile and action pins aligned; use `make upgrade VERSION=X.Y.Z` when upgrading an existing generated repository.
 
 Run `make install-deploy` to install the supported MotherDuck CLI, which bundles its DuckDB runtime. Open a new terminal if `motherduck` is not on your PATH. Run `motherduck login` and `motherduck status` for local read-only export, or provide the selected target's token through your secret manager. For example, `--target prod` reads the token configured by `targets.prod.deployment.tokenEnvVar`, normally `MOTHERDUCK_TOKEN`. Import from the account where the existing resources live; a new service account is not an ownership transfer.
+
+**Check who owns each Flight before you plan CI deployment.** MotherDuck only lets a Flight's creator update it. A Flight created under a personal login cannot be updated later by the CI service account. Either deploy those Flights with the owner's token, or recreate them under the service account and bind the new IDs.
 
 If adding Blueprints to an existing code repository, generate support files in a separate directory and integrate them deliberately. Do not use `init --force` over customer work.
 

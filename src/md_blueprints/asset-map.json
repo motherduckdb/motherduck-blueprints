@@ -24,6 +24,7 @@
   "template_repo/docs/repository-reference.md": "docs/repository-reference.md",
   "template_repo/docs/setup-your-repository.md": "docs/setup-your-repository.md",
   "template_repo/docs/tooling-and-schema-versioning.md": "docs/tooling-and-schema-versioning.md",
+  "template_repo/docs/use-with-terraform.md": "docs/use-with-terraform.md",
   "template_repo/examples/ncs-field-recovery/README.md": "examples/ncs-field-recovery/README.md",
   "template_repo/examples/ncs-field-recovery/blueprint.yml": "examples/ncs-field-recovery/blueprint.yml",
   "template_repo/examples/ncs-field-recovery/src/dive.tsx": "examples/ncs-field-recovery/src/dive.tsx",

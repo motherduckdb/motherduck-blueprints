@@ -4,9 +4,9 @@ Use this page for the repository layout, dependency behavior, targets, and local
 
 ## What a customer needs
 
-A fresh repository contains the Wikipedia Flight and Dive, optional examples, documentation, and the workflow/preview support files. You edit `motherduck.yml`, each package's `blueprint.yml`, and its source. Other resource roots are created on demand. There is no need to create empty folders. The three files in `.github/workflows/` declare when to run versioned Blueprints workflows. Their deployment jobs and third-party action dependencies live in the tooling repository and are updated with `make upgrade`.
+A fresh repository contains the Wikipedia Flight and Dive, optional examples, documentation, and the workflow/preview support files. You edit `motherduck.yml`, each package's `blueprint.yml`, and its source. Other resource roots are created on demand. There is no need to create empty folders. The files in `.github/workflows/` declare when to run versioned Blueprints workflows. Their deployment jobs and third-party action dependencies live in the tooling repository and are updated with `make upgrade`.
 
-The tooling repository also contains Python source, tests, release tooling, and internal scaffolds. Those are not copied into customer repositories. Local source filenames are flexible: `main.py` or `index.tsx` pulled by the MotherDuck CLI can be referenced directly without adding a `src/` layer.
+Local source filenames are flexible: `main.py` or `index.tsx` pulled by the MotherDuck CLI can be referenced directly without adding a `src/` layer.
 
 For existing account resources, use `make install-deploy` and `make export`, then follow [adoption](adopt-existing-resources.md). Files from native `pull` commands alone do not include Blueprints deployment manifests.
 
@@ -35,7 +35,7 @@ projects/
 schemas/v1/
 ```
 
-`motherduck.yml` is the repository catalog and policy file. The v0.4 template discovers manifests recursively:
+`motherduck.yml` is the repository catalog and policy file. The template discovers manifests recursively:
 
 ```yaml
 include:
@@ -112,7 +112,7 @@ The required targets are:
 
 `staging` is the one optional conventional target. Its presence changes CI/CD from direct production deployment to release promotion: previews and `main` use the staging service account, while published releases use production.
 
-Cleanup-sensitive preview shares and databases must contain `${target.branch_slug}`. Preview Flight names and Dive titles must contain the branch or branch slug. Cleanup refuses identifiers that are not branch-scoped or that match production.
+Cleanup-sensitive preview shares and databases must contain `${target.branch_slug}` as a whole `_`-separated part. Preview Flight names and Dive titles must contain the branch or branch slug. Cleanup refuses identifiers that are not branch-scoped or that match production.
 
 A target declares the GitHub Environment that holds its service-account token and documents that identity:
 
@@ -120,6 +120,7 @@ A target declares the GitHub Environment that holds its service-account token an
 targets:
   prod:
     mode: production
+    environment: motherduck-production
     deployment:
       tokenEnvVar: MOTHERDUCK_TOKEN
       identity: GitHub Actions production service account
@@ -130,6 +131,17 @@ Tokens are passed to the DuckDB connection and are never printed.
 The default `preview + prod` topology points both targets at `motherduck-production` and deploys `main` directly to production. To isolate production, add `staging`, point both `preview` and `staging` at `motherduck-staging`, and keep `prod` on `motherduck-production`. Each GitHub Environment contains its own secret named `MOTHERDUCK_TOKEN`.
 
 Staging and production may render the same database names because the databases belong to different service accounts. Their share names must differ; Blueprints validates this across every rendered share when staging is configured. A `_staging` suffix is the default scaffold convention. Use a customer-specific logical prefix to reduce the chance of a collision outside the repository.
+
+### Adapt the defaults to your organization
+
+The template's names are conventions, not requirements:
+
+- **GitHub Environments.** The workflows read each target's `environment` from `motherduck.yml`. Rename `motherduck-production` or `motherduck-staging` to match your naming policy, then create environments with the same names in GitHub. Each environment needs its own `MOTHERDUCK_TOKEN` secret.
+- **Default branch.** The deploy workflow triggers on pushes to `main`. If your default branch has another name, change both `branches: [main]` entries in `.github/workflows/deploy_blueprints.yaml`.
+- **Repository name.** `repository.name` in `motherduck.yml` is available to templates as `${repository.name}`. Set it to your repository name.
+- **Resource names.** Put a team or product prefix into share, database, and Flight names (for example `acme_events`). Blueprints can detect collisions between its own targets but not with objects created elsewhere in your organization.
+- **Organization and region.** The service-account token selects the MotherDuck organization and its region. Blueprints has no separate region setting.
+- **Other tools.** If you manage accounts, tokens, roles, or shares with Terraform, give each object one owner. See [use with Terraform](use-with-terraform.md).
 
 ## Local Commands
 
@@ -148,14 +160,14 @@ make preview wikipedia-pageviews
 make preview-smoke wikipedia-pageviews
 make render-preview wikipedia-pageviews
 
-md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
-md-blueprints cleanup --dry-run --target preview --branch feature/local
-md-blueprints doctor
+.venv/bin/md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
+.venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/local
+make doctor
 ```
 
 Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
 
-`make new-blueprint NAME` remains a compatibility alias for `make new-project NAME`. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
+Commands that take a name accept it as the second word or as `NAME=`, for example `make new-flight NAME=events-ingest`. Names are lowercase slugs without spaces. `make new-blueprint NAME` is deprecated: it still works as an alias for `make new-project NAME` and prints a notice. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 
 `make guides` prints a read-only context brief for an agent to author Markdown Guides. Pass `DBT="/path/to/project"` to add dbt YAML documentation and relationship hints. `make init-guides` and `make update-guides` select the corresponding agent task, with the same discovery and no file writes. See [Guides as code](guides-as-code.md).
 
@@ -169,7 +181,7 @@ Preview Dives always use `draft`. Production manifests can declare `draft`, `rea
 
 ## Guides
 
-Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` remains accepted for validation-only compatibility; `md-blueprints doctor` recommends the new name.
+Declare Guide assets with `resources.guides`. They remain source-validation-only by default; `deploy: true` enables create, version, metadata, access, reference, and preview-cleanup lifecycle management. Organization-wide Guides require an admin deployment identity. `resources.context` is deprecated. It is still accepted for validation only. Rename it to `resources.guides`.
 
 See [Manage Guides as code](guides-as-code.md) for the end-to-end workflow, including branch-scoped previews and repository resource references.
 
@@ -185,7 +197,3 @@ Pull requests compute directly changed packages, expand the preview dependency g
 
 - [Wikipedia Pageviews](examples/wikipedia-pageviews.md) uses independent Flight and Dive packages connected through a named output and input.
 - [NCS Field Recovery Explorer](examples/ncs-field-recovery.md) keeps its Flight, share, and Dive in one project because they deploy and roll back together.
-
-## Tooling source layout
-
-In the tooling repository, `src/md_blueprints/asset-map.json` maps authoritative docs, examples, schemas, and preview files into the installed package. Customer-specific template files remain under `src/md_blueprints/template_repo/`. Generated repositories still receive ordinary files and need no build-time assembly. Optional resource directories appear when packages are created.
