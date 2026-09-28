@@ -114,7 +114,12 @@ def run_new(
         _write(destination / "src/requirements.txt", _starter_source("requirements.txt"))
     elif kind == "guide":
         _write(destination / "blueprint.yml", _guide_manifest(name))
-        _write(destination / "guide.md", f"# {_title(name)}\n\nAdd trusted context for agents here.\n")
+        _write(destination / "guide.md", (
+            f"# {_title(name)}\n\n"
+            "## When to use\n\nDescribe the questions this Guide answers.\n\n"
+            "## Rules and examples\n\nAdd source-backed definitions, query patterns, and pitfalls.\n\n"
+            "## Sources and checks\n\nCite source paths and record what was checked or remains unknown.\n"
+        ))
     elif kind == "role":
         _write(destination / "blueprint.yml", _role_manifest(name))
     else:
@@ -275,6 +280,7 @@ resources:
     guide:
       title: {_yaml_string(_title(name))}
       topic: {_yaml_string(name)}
+      description: Replace with a one-sentence summary of when to read this Guide.
       source: guide.md
       deploy: false
 """

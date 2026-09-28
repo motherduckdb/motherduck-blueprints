@@ -1,0 +1,43 @@
+name: Prepare Guide context
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      root:
+        description: Repository directory to inspect
+        type: string
+        default: .
+      dbt:
+        description: Optional dbt project path relative to the checkout
+        type: string
+        default: ""
+# Generated jobs: edit reusable workflows, then run make sync-workflows.
+
+jobs:
+  context:
+    name: Prepare Guide context
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Gather repository and dbt context
+        id: context
+        uses: ./
+        with:
+          command: guides
+          root: ${{ inputs.root }}
+          dbt: ${{ inputs.dbt }}
+
+      - name: Save agent context
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: guide-context
+          path: ${{ steps.context.outputs.stdout-file }}
+          if-no-files-found: error
+          retention-days: 7

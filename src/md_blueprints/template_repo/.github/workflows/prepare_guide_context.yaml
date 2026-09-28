@@ -1,0 +1,23 @@
+name: Prepare Guide context
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      root:
+        description: Repository directory to inspect
+        type: string
+        default: .
+      dbt:
+        description: Optional dbt project path relative to the checkout
+        type: string
+        default: ""
+
+jobs:
+  context:
+    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@__MD_BLUEPRINTS_ACTION_TAG__
+    with:
+      root: ${{ inputs.root }}
+      dbt: ${{ inputs.dbt }}

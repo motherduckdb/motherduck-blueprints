@@ -32,6 +32,8 @@ Use `make new-flight`, `make new-dive`, `make new-guide`, `make new-role`, or `m
 
 For agent-authored Guides, follow `docs/guides-as-code.md`. `make guides` gathers read-only context, optionally with `DBT=/path/to/dbt-project`. Read the discovered SQL, Flight, Dive, dbt YAML, and existing Markdown sources before writing useful Guides. `init-guides` and `update-guides` also print task briefs. The CLI does not write Guides or manage generated sections. Preserve existing knowledge and resource identities, keep new Guides private and disabled, and use native CLI enrichment only when useful and available.
 
+Customer CI uses the reusable `prepare_guide_context` workflow or the action's `guides` command with an optional `dbt` input. Guide context is returned through `stdout-file`, not logs or the `stdout` output. An existing agent runner can consume the file; discovery does not run a model. Keep model credentials on trusted authoring jobs and validate drafts before the normal publication workflow.
+
 When changing layout, commands, target behavior, or resource semantics, update the relevant public docs in the same PR. Check at least `README.md`, `docs/`, package READMEs, `.github/pull_request_template.md`, and this guide for drift.
 
 ## MotherDuck CLI

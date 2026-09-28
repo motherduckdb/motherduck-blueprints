@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Add a reusable customer CI workflow that prepares Guide context as an artifact. The action accepts a named dbt path and exposes `stdout-file`; Guide context stays out of CI logs and job-output limits. Customers can hand the file to their existing agent runner, then validate its changes without automatic publication.
+
+- Improve Guide initialization with topic and description discovery, a small authoring scaffold, dbt accepted-value domains, and an agent workflow that keeps essential rules in a root Guide and loads detailed SQL context on demand. Incorporate representative-question checks without adding a model runner or benchmark framework.
+
 - Make Guide authoring an agent workflow: `make guides` gathers read-only repository context and accepts `DBT=/path/to/project` for dbt YAML descriptions, columns, tests, and relationship hints. Agents read the source and write ordinary Markdown, with optional native CLI enrichment.
 - Simplify `init-guides` and `update-guides` into read-only agent briefs. Existing Guide files remain intact, and generated markers and `.guide-state.json` are no longer managed. Document the behavior change from v0.6.0.
 - Update React and React DOM together to 19.2.8 and group future dependency updates. Remove the unused direct Arrow dependency so the MotherDuck WASM client selects its supported Arrow 17 peer without a conflicting top-level pin.

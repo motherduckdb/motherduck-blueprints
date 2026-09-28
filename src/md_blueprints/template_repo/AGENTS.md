@@ -6,6 +6,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 
 - New pipeline or dashboard: edit the Wikipedia starter or use `make new-project NAME`.
 - Repository Guides: follow [Guides as code](docs/guides-as-code.md). Run `make guides`, optionally with `DBT=/path/to/dbt-project`, to gather a read-only task brief. Read the source and write useful Markdown yourself. Preserve existing context and resource identities. The `init-guides` and `update-guides` aliases also print briefs and never rewrite files.
+- Guides in CI: run **Prepare Guide context** or use the action's `command: guides` with an optional `dbt` path. Consume `stdout-file` or the `guide-context` artifact in an existing agent runner. See [CI integration](docs/github-action.md#prepare-guides-in-ci) for an optional Codex draft-patch example. Discovery requires no credentials and does not publish Guides.
 - Existing MotherDuck assets: follow [adopt existing resources](docs/adopt-existing-resources.md) before creating manifests.
 - Package layout and command reference: [repository reference](docs/repository-reference.md).
 - Field definitions and target overrides: [manifest reference](docs/blueprint-yml-reference.md).

@@ -76,6 +76,8 @@ Edit the generated files in `projects/revenue/`, then open a pull request.
 
 Ask your Claude, ChatGPT, or Codex agent: **"Initialize or update this repository's MotherDuck Guides. Follow `docs/guides-as-code.md`."** The agent reads the source and writes Markdown that explains the data and workflows. `make guides` gathers context, and `make guides DBT="/path/to/dbt-project"` adds dbt YAML documentation and relationship hints. See [the agent workflow](docs/guides-as-code.md).
 
+Customers can prepare the same context in CI using **Prepare Guide context**, then pass its artifact to their existing agent runner. See [Guide CI integration](docs/github-action.md#prepare-guides-in-ci).
+
 ## More help
 
 - [Setup and troubleshooting](docs/setup-your-repository.md)

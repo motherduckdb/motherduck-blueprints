@@ -159,6 +159,8 @@ Omit `--blueprints` to select all packages; an explicitly empty selection is an 
 
 `make guides` prints a read-only context brief for an agent to author Markdown Guides. Pass `DBT="/path/to/project"` to add dbt YAML documentation and relationship hints. `make init-guides` and `make update-guides` select the corresponding agent task, with the same discovery and no file writes. See [Guides as code](guides-as-code.md).
 
+Customer repositories include a manual **Prepare Guide context** workflow. It uploads the same brief as a `guide-context` artifact for an agent to consume. The composite action supports `command: guides`, a named `dbt` input, and a `stdout-file` output. See [Guide CI integration](github-action.md#prepare-guides-in-ci) for custom jobs and optional agent authoring.
+
 `make validate` renders every declared target, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected stable producer must already expose its declared share or planning fails before deployment.
 
 ## Dives

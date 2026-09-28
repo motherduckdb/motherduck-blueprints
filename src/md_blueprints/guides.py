@@ -91,6 +91,10 @@ def _repository(root: Path) -> list[str]:
             for key, resource in objects.items():
                 label = resource.get("title", resource.get("name", key))
                 lines.append(f"- {kind} {_code(key)}: {_code(label)}")
+                if kind == "Guide":
+                    topic = resource.get("topic") or "(root)"
+                    description = resource.get("description") or "Missing description: add a when-to-read summary."
+                    lines.append(f"  Topic: {_code(topic)}. Description: {_code(description)}")
                 if "sourcePath" in resource:
                     lines.append(f"  Source: {_code(Path(str(resource['sourcePath'])).relative_to(root))}")
         lines.extend(["", "Read source and existing context:", *_file_index(_files(package.dir), root), ""])
@@ -134,11 +138,17 @@ def _dbt_node(value: object, depth: int = 0) -> dict[str, object]:
                     if not isinstance(name, str):
                         continue
                     args = options.get("arguments", options) if isinstance(options, dict) else {}
-                    relationship = {
+                    parameters: dict[str, object] = {
                         field: item for field, item in args.items()
                         if field in {"to", "field"} and isinstance(item, str)
                     } if isinstance(args, dict) else {}
-                    hints.append({name: relationship})
+                    if name.rsplit(".", 1)[-1] == "accepted_values" and isinstance(args, dict):
+                        values = args.get("values")
+                        if isinstance(values, list) and all(item is None or isinstance(item, (str, int, float, bool)) for item in values):
+                            parameters["values"] = values
+                        if isinstance(args.get("quote"), bool):
+                            parameters["quote"] = args["quote"]
+                    hints.append({name: parameters})
         result[key] = hints
     return result
 

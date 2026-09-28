@@ -8,7 +8,7 @@ branding:
 
 inputs:
   command:
-    description: CLI command to run, such as validate, verify, import, plan, deploy, cleanup, doctor, or upgrade.
+    description: CLI command to run, such as guides, validate, verify, import, plan, deploy, cleanup, doctor, or upgrade.
     required: false
     default: validate
   target:
@@ -21,7 +21,10 @@ inputs:
     description: Comma-separated package names. Leave empty to select all packages.
     required: false
   root:
-    description: Directory containing motherduck.yml, relative to the checkout.
+    description: Project directory relative to the checkout. Guides also supports plain SQL and dbt repositories.
+    required: false
+  dbt:
+    description: Optional dbt project directory or dbt_project.yml path for command guides, relative to the checkout.
     required: false
   args:
     description: Advanced CLI arguments. Named inputs take precedence over matching flags.
@@ -38,8 +41,11 @@ inputs:
 
 outputs:
   stdout:
-    description: Raw CLI stdout.
+    description: Raw CLI stdout. For guides, use stdout-file instead to avoid logging context or exceeding output limits.
     value: ${{ steps.run.outputs.stdout }}
+  stdout-file:
+    description: Absolute path to the CLI output file on the current runner. Upload or consume it in a later step.
+    value: ${{ steps.run.outputs.stdout-file }}
 
 runs:
   using: composite
@@ -90,23 +96,31 @@ runs:
         MD_BLUEPRINTS_BRANCH: ${{ inputs.branch }}
         MD_BLUEPRINTS_BLUEPRINTS: ${{ inputs.blueprints }}
         MD_BLUEPRINTS_ROOT: ${{ inputs.root }}
+        MD_BLUEPRINTS_DBT: ${{ inputs.dbt }}
         MD_BLUEPRINTS_VERIFY_AFTER_DEPLOY: ${{ inputs.verify-after-deploy }}
       run: |
         set -euo pipefail
-        stdout_file="$(mktemp)"
+        stdout_dir="$(mktemp -d "${RUNNER_TEMP}/md-blueprints.XXXXXX")"
+        stdout_file="$stdout_dir/stdout.txt"
+        if [ "$MD_BLUEPRINTS_COMMAND" = "guides" ]; then
+          stdout_file="$stdout_dir/guide-context.md"
+        fi
+        : > "$stdout_file"
+        export MD_BLUEPRINTS_STDOUT_FILE="$stdout_file"
         set +e
-        python - <<'PY' | tee "$stdout_file"
+        python - <<'PY'
         import os
         import shlex
         import subprocess
         import sys
+        from pathlib import Path
 
         argv = [
             "md-blueprints",
             os.environ["MD_BLUEPRINTS_COMMAND"],
             *shlex.split(os.environ.get("MD_BLUEPRINTS_ARGS", "")),
         ]
-        for name in ("root", "target", "branch", "blueprints"):
+        for name in ("root", "target", "branch", "blueprints", "dbt"):
             value = os.environ.get(f"MD_BLUEPRINTS_{name.upper()}", "")
             if value:
                 argv.append(f"--{name}={value}")
@@ -115,17 +129,23 @@ runs:
             if verify not in {"true", "false"}:
                 raise SystemExit("verify-after-deploy must be true or false")
             argv.append("--verify" if verify == "true" else "--skip-verification")
-        completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, check=False)
-        sys.stdout.write(completed.stdout)
+        output = Path(os.environ["MD_BLUEPRINTS_STDOUT_FILE"])
+        with output.open("w", encoding="utf-8") as stream:
+            completed = subprocess.run(argv, text=True, stdout=stream, check=False)
+        if os.environ["MD_BLUEPRINTS_COMMAND"] != "guides":
+            sys.stdout.write(output.read_text(encoding="utf-8"))
         raise SystemExit(completed.returncode)
         PY
-        status="${PIPESTATUS[0]}"
+        status="$?"
         set -e
         {
-          delimiter="MD_BLUEPRINTS_$(python -c 'import uuid; print(uuid.uuid4().hex)')"
-          echo "stdout<<$delimiter"
-          cat "$stdout_file"
-          echo
-          echo "$delimiter"
+          echo "stdout-file=$stdout_file"
+          if [ "$MD_BLUEPRINTS_COMMAND" != "guides" ]; then
+            delimiter="MD_BLUEPRINTS_$(python -c 'import uuid; print(uuid.uuid4().hex)')"
+            echo "stdout<<$delimiter"
+            cat "$stdout_file"
+            echo
+            echo "$delimiter"
+          fi
         } >> "$GITHUB_OUTPUT"
         exit "$status"

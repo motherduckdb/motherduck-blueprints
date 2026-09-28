@@ -63,11 +63,12 @@ This minimal workflow runs only when you request it. For automatic PR previews, 
 
 | Input | Default | Purpose |
 | --- | --- | --- |
-| `command` | `validate` | CLI command, such as `plan`, `deploy`, `cleanup`, or `doctor`. |
+| `command` | `validate` | CLI command, such as `guides`, `plan`, `deploy`, `cleanup`, or `doctor`. |
 | `target` | Command default | `prod` for deploy/plan; `preview` for cleanup; validation checks every target. |
 | `branch` | Empty | Required for preview deployment and cleanup. Pass the branch name directly; no extra quotes are needed. |
 | `blueprints` | All packages | Comma-separated package names, such as `orders,revenue`. Dependencies expand according to the target. |
-| `root` | Checkout directory | Directory containing `motherduck.yml`, such as `analytics`. |
+| `root` | Checkout directory | Project directory, such as `analytics`. Guides also supports plain SQL and dbt repositories. |
+| `dbt` | Empty | dbt project directory or `dbt_project.yml`, relative to the checkout. Only for `command: guides`. |
 | `args` | Empty | Advanced CLI flags, such as `--json`, `--offline`, or `--dry-run`. |
 | `verify-after-deploy` | `true` | Read back live identities, declared shares/inputs, and Dive status after deploy. Set `"false"` only to opt out of the postcheck. |
 | `python-version` | `3.11` | Python runtime installed by the action. |
@@ -76,9 +77,134 @@ Named inputs override matching flags in `args`. Existing workflows using only `a
 
 Live commands read `MOTHERDUCK_TOKEN` from the step environment. Select the GitHub Environment on the **job**; the action's `target` input does not select a GitHub Environment for you.
 
-The `stdout` output contains the command's text or JSON result. Assign an `id` to the step to read `steps.<id>.outputs.stdout`. Command failures fail the step.
+The `stdout` output contains the command's text or JSON result, except for `guides`. Assign an `id` to the step to read `steps.<id>.outputs.stdout`. Every command also returns `stdout-file`, an absolute file path on the current runner. Guide context is file-only so its contents do not appear in logs or exceed GitHub job-output limits. Command failures fail the step.
 
 Pin the action and your local CLI to the same release. See [upgrades](tooling-and-schema-versioning.md).
+
+## Prepare Guides in CI
+
+Guide CI support requires Blueprints 0.7.0 or newer. New customer templates include **Prepare Guide context** under Actions. Run it manually with an optional dbt path, then download its `guide-context` artifact. It contains `guide-context.md`, with the agent instructions and discovered sources. It needs no MotherDuck token or model credentials and does not write Guide files.
+
+For an existing repository, save this as `.github/workflows/guide-context.yaml`:
+
+```yaml
+name: Prepare Guide context
+on: [pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  context:
+    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@v0.7.0
+    with:
+      root: .
+      # dbt: analytics/dbt # Optional path inside the checkout.
+```
+
+This workflow prepares context. An LLM still needs to read the source and author the Guides. The reusable job uploads an artifact with seven-day retention. Download it in another job or outside CI, alongside a checkout of the same commit. Artifacts inherit repository access. File-only handling applies to the Blueprints preparation step; an agent runner may log prompts or tool results, so configure its logging for your data.
+
+To integrate an existing agent in the same job, use the composite action:
+
+```yaml
+- uses: actions/checkout@v7
+  with:
+    persist-credentials: false
+- uses: motherduckdb/motherduck-blueprints@v0.7.0
+  id: context
+  with:
+    command: guides
+    # dbt: analytics/dbt # Optional, paths with spaces are supported.
+# Your existing agent step goes here. Give it the same checkout and pass
+# steps.context.outputs.stdout-file through an environment variable.
+# Instruct it to read that file and follow the Guide authoring workflow.
+- uses: motherduckdb/motherduck-blueprints@v0.7.0
+  with:
+    command: validate
+```
+
+The agent runner and its authentication belong to the customer. Give a credentialed or write-capable agent only trusted branch runs, not untrusted fork content. Discovery itself can run with read-only permissions. Keep newly authored Guides private and disabled until publishing is explicitly enabled through the normal deployment workflow. `validate` checks manifests and references, not the factual correctness of the Markdown. A standalone dbt repository without `motherduck.yml` can use discovery but should skip Blueprints validation.
+
+For other CI systems, the installed CLI needs no GitHub-specific environment:
+
+```bash
+md-blueprints guides --root . > guide-context.md
+```
+
+Save that file as a CI artifact or hand it to your configured agent. Add `--dbt /path/to/project` when needed. See [the Guide authoring instructions](guides-as-code.md) for the agent's task and evidence checks.
+
+### Let Codex author a draft patch
+
+For customers without an existing agent job, this optional example uses the [Codex GitHub Action](https://learn.chatgpt.com/docs/github-action). Add `OPENAI_API_KEY` as a repository secret. It runs only on manual dispatch, runs Codex last in its job, and checks the draft in a fresh job with no model credentials. No commit, PR, or deployment is created automatically.
+
+Save this as `.github/workflows/draft-guides.yaml` in a Blueprints repository:
+
+```yaml
+name: Draft Guides
+on: [workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  author:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      patch: ${{ steps.agent.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
+        id: context
+        with:
+          command: guides
+          # dbt: analytics/dbt
+      - uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1
+        id: agent
+        env:
+          GUIDE_CONTEXT_FILE: ${{ steps.context.outputs.stdout-file }}
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          prompt: |
+            Read the file named by GUIDE_CONTEXT_FILE and follow its authoring instructions.
+            Use the installed md-blueprints CLI directly. Do not install tools or log in.
+            Create or update concise Markdown Guides under guides/ only, with new Guides
+            private and deploy: false. Preserve existing knowledge and resource identities.
+            Skip live database enrichment. Run md-blueprints validate.
+            Do not commit, push, publish, or change other files.
+            Return a git patch as your entire final message, without Markdown fences.
+            Use git diff --binary -- guides for tracked files. For each new untracked Guide
+            file, append git diff --no-index --binary -- /dev/null FILE (exit 1 means a diff).
+            Do not write Git metadata. Include new files, not just changes to tracked files.
+            If nothing changed, return an empty final message.
+  check-draft:
+    needs: author
+    if: needs.author.outputs.patch != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Apply only Guide changes
+        env:
+          GUIDE_PATCH: ${{ needs.author.outputs.patch }}
+        run: |
+          printf '%s\n' "$GUIDE_PATCH" > "$RUNNER_TEMP/agent.patch"
+          git apply --check --include='guides/**' "$RUNNER_TEMP/agent.patch"
+          git apply --include='guides/**' "$RUNNER_TEMP/agent.patch"
+          git add -N -- guides
+          git diff --binary -- guides > "$RUNNER_TEMP/guide-updates.patch"
+      - uses: motherduckdb/motherduck-blueprints@v0.7.0
+        with:
+          command: validate
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guide-updates
+          path: ${{ runner.temp }}/guide-updates.patch
+          retention-days: 7
+```
+
+The example intentionally scopes edits to `guides/` and suits small draft updates that fit GitHub's job-output limit. A malformed agent patch fails the check job. For larger updates or other package layouts, use your existing agent runner's artifact handoff. Apply the resulting patch through your normal repository workflow. The model-authenticated example requires customer configuration and is not exercised by Blueprints' token-free CI tests.
 
 ## Checks before and after deployment
 

@@ -14,7 +14,7 @@ MARKER = '# Generated jobs: edit reusable workflows, then run make sync-workflow
 
 
 def sync(*, check: bool) -> None:
-    for name in ('deploy_blueprints', 'cleanup_preview_blueprints', 'blueprints_doctor'):
+    for name in ('deploy_blueprints', 'cleanup_preview_blueprints', 'blueprints_doctor', 'prepare_guide_context'):
         directory = ROOT / '.github/workflows'
         target = directory / f'{name}.yaml'
         source = (directory / f'reusable_{name}.yaml').read_text()

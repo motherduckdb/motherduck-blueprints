@@ -101,6 +101,53 @@ def test_external_dbt_yaml_enriches_blueprints_without_copying_credentials(
     assert snapshot(tmp_path) == before
 
 
+def test_guide_catalog_exposes_navigation_metadata_without_reading_bodies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    guide = run_new(tmp_path, "guide", "revenue")
+    path = guide / "blueprint.yml"
+    manifest = yaml.safe_load(path.read_text())
+    manifest["resources"]["guides"]["guide"].update({
+        "topic": "finance/revenue",
+        "description": "Read for recurring revenue, refunds, or net versus gross amounts.",
+    })
+    path.write_text(yaml.safe_dump(manifest))
+    (guide / "guide.md").write_text("# Revenue\n\nBODY_IS_LOADED_ONLY_WHEN_SELECTED\n")
+    before = snapshot(tmp_path)
+    capsys.readouterr()
+    run_guides(tmp_path, "init")
+    output = capsys.readouterr().out
+    assert "finance/revenue" in output
+    assert "Read for recurring revenue, refunds" in output
+    assert "guides/revenue/guide.md" in output
+    assert "BODY_IS_LOADED_ONLY_WHEN_SELECTED" not in output
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_dbt_accepted_values_preserve_declared_domain_but_not_test_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], nested: bool,
+) -> None:
+    (tmp_path / "dbt_project.yml").write_text("name: domain_context\n")
+    values = ["active", "pending", "retired"]
+    arguments = {"values": values, "quote": True}
+    settings = {"arguments": arguments} if nested else dict(arguments)
+    settings["config"] = {"password": "PRIVATE_TEST_CONFIG"}
+    model = {"name": "accounts", "columns": [{"name": "status", "data_tests": [
+        {"accepted_values": settings},
+        {"custom_check": {"values": ["PRIVATE_CUSTOM_ARGUMENT"], "config": {"token": "PRIVATE_TEST_CONFIG"}}},
+    ]}]}
+    (tmp_path / "schema.yaml").write_text(yaml.safe_dump({"models": [model]}))
+    run_guides(tmp_path)
+    output = capsys.readouterr().out
+    excerpt = yaml.safe_load(output.rsplit("```yaml\n", 1)[1].split("```", 1)[0])
+    tests = excerpt["models"][0]["columns"][0]["data_tests"]
+    assert tests[0]["accepted_values"] == {"values": values, "quote": True}
+    assert tests[1]["custom_check"] == {}
+    assert "PRIVATE_" not in output
+
+
 def test_standalone_dbt_and_project_file_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     dbt = tmp_path / "dbt"
     write_dbt(dbt)
