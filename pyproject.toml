@@ -31,11 +31,11 @@ dependencies = [
 
 [project.optional-dependencies]
 deploy = [
-  "duckdb>=1.1,<1.5.5",
+  "duckdb>=1.1,<1.5.7",
   "pytz>=2026.3.post1",
 ]
 dev = [
-  "duckdb>=1.1,<1.5.5",
+  "duckdb>=1.1,<1.5.7",
   "pytz>=2026.3.post1",
   "mypy>=1.10",
   "pip-audit>=2.10",
