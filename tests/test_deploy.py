@@ -1583,3 +1583,42 @@ def test_legacy_cleanup_pass_drops_unsafe_and_missing_records() -> None:
     ]
 
     assert deployer._legacy_cleanup_records(current, legacy) == []
+
+
+def test_name_lookups_read_every_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr("md_blueprints.deploy.LIST_PAGE_SIZE", 2)
+    catalog: dict[str, list[tuple[object, ...]]] = {
+        "MD_LIST_FLIGHTS": [("f1", "other"), ("f2", "other"), ("f3", "loader")],
+        "MD_LIST_DIVES": [("d1", "Other", "draft"), ("d2", "Sales", None), ("d3", "Sales", "ENDORSED")],
+        "MD_LIST_GUIDES": [("g1", "Notes", None), ("g2", "Notes", "finance"), ("g3", "Notes", "")],
+    }
+    statements: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        statements.append(statement)
+        function = statement.split(" FROM ")[1].split("(")[0]
+        offset = int(statement.split('"offset" := ')[1].split("::")[0])
+        return catalog[function][offset:offset + 2]
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+
+    assert deployer._list_flight_ids("loader") == ["f3"]
+    assert deployer._list_dive_ids("Sales") == ["d2", "d3"]
+    assert deployer._list_dive_states("Sales") == [("d2", None), ("d3", "endorsed")]
+    assert deployer._list_guide_ids("Notes", "") == ["g1", "g3"]
+    assert deployer._list_guide_ids("Notes", "finance") == ["g2"]
+    assert statements[:3] == [
+        'SELECT flight_id, flight_name FROM MD_LIST_FLIGHTS("limit" := 2::UINTEGER, "offset" := 0::UINTEGER)',
+        'SELECT flight_id, flight_name FROM MD_LIST_FLIGHTS("limit" := 2::UINTEGER, "offset" := 2::UINTEGER)',
+        'SELECT flight_id, flight_name FROM MD_LIST_FLIGHTS("limit" := 2::UINTEGER, "offset" := 3::UINTEGER)',
+    ]
+
+
+def test_name_lookup_rejects_pages_that_repeat_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    # A server that ignores "offset" would otherwise loop forever.
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [("f1", "loader")])
+
+    with pytest.raises(CommandError, match="repeated an ID"):
+        deployer._list_flight_ids("loader")

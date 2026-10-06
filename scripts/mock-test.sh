@@ -41,7 +41,9 @@ export MD_BLUEPRINTS_SQL_BACKEND=motherduck
 cat > "${FAKE_PYTHON}/duckdb.py" <<'PY'
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 
@@ -63,11 +65,32 @@ class MockConnection:
         if not token:
             raise RuntimeError("motherduck_token is required by fake duckdb")
         self.state_dir = Path(os.environ["MOCK_DUCKDB_STATE_DIR"])
-        self.flight_state = self.state_dir / "flight_id"
+        # Catalogs keyed by ID, like MotherDuck: Flights {id: name}, Dives {id: [title, status]}.
+        self.flights_state = self.state_dir / "flights.json"
         self.run_state = self.state_dir / "run_number"
-        self.dive_state = self.state_dir / "dive_id"
-        self.dive_status_state = self.state_dir / "dive_status"
+        self.dives_state = self.state_dir / "dives.json"
         self.share_url = "md:_share/mock/00000000-0000-0000-0000-000000000003"
+
+    def _load(self, path: Path) -> dict[str, object]:
+        return json.loads(path.read_text()) if path.exists() else {}
+
+    def _save(self, path: Path, catalog: dict[str, object]) -> None:
+        path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    @staticmethod
+    def _page(query: str, rows: list[tuple[str, ...]]) -> MockResult:
+        # MD_LIST_* functions return one page; deploy must follow "offset" to read the rest.
+        limit = re.search(r'"limit" := (\d+)', query)
+        offset = re.search(r'"offset" := (\d+)', query)
+        start = int(offset.group(1)) if offset else 0
+        return MockResult(rows[start:start + int(limit.group(1))] if limit else rows)
+
+    @staticmethod
+    def _argument(query: str, pattern: str) -> str:
+        match = re.search(pattern + r"'((?:[^']|'')*)'", query)
+        if not match:
+            raise Error(f"Missing argument {pattern!r} in {query}")
+        return match.group(1).replace("''", "'")
 
     def execute(self, statement: str) -> MockResult:
         query = statement
@@ -85,21 +108,29 @@ class MockConnection:
                 return MockResult([(self.run_state.read_text().strip(), status)])
             return MockResult([])
         if "MD_LIST_FLIGHTS" in query:
+            flights = self._load(self.flights_state)
+            rows = [(flight_id, str(name)) for flight_id, name in flights.items()]
             if os.environ.get("MOCK_DUPLICATE_FLIGHTS", "false") == "true":
-                return MockResult([
-                    ("00000000-0000-0000-0000-000000000011",),
-                    ("00000000-0000-0000-0000-000000000012",),
-                ])
-            if self.flight_state.exists():
-                return MockResult([(self.flight_state.read_text().strip(),)])
-            return MockResult([])
+                name = "wikipedia-pageviews:feature/mock-test (Preview)"
+                rows = [
+                    ("00000000-0000-0000-0000-000000000011", name),
+                    ("00000000-0000-0000-0000-000000000012", name),
+                ]
+            return self._page(query, rows)
         if "MD_CREATE_FLIGHT" in query:
-            self.flight_state.write_text("00000000-0000-0000-0000-000000000001", encoding="utf-8")
+            flights = self._load(self.flights_state)
+            flights[f"00000000-0000-0000-0000-{len(flights) + 1:012d}"] = self._argument(query, r'"name" => ')
+            self._save(self.flights_state, flights)
             return MockResult([])
         if "MD_UPDATE_FLIGHT" in query:
             if "\"schedule_cron\" => ''" in query:
                 raise Error("Cannot clear schedule: Flight has no schedule")
-            self.flight_state.write_text("00000000-0000-0000-0000-000000000001", encoding="utf-8")
+            flights = self._load(self.flights_state)
+            flight_id = self._argument(query, r'"flight_id" => ')
+            if flight_id not in flights:
+                raise Error(f"Flight {flight_id} not found")
+            flights[flight_id] = self._argument(query, r'"name" => ')
+            self._save(self.flights_state, flights)
             return MockResult([])
         if "MD_RUN_FLIGHT" in query:
             if '"config" =>' not in query or '"flight_id" =>' not in query:
@@ -114,41 +145,44 @@ class MockConnection:
         if "MD_DELETE_FLIGHT" in query:
             if '"flight_id" =>' not in query:
                 raise Error("MD_DELETE_FLIGHT must be called with a named flight_id argument")
-            self.flight_state.unlink(missing_ok=True)
+            flights = self._load(self.flights_state)
+            flights.pop(self._argument(query, r'"flight_id" => '), None)
+            self._save(self.flights_state, flights)
             self.run_state.unlink(missing_ok=True)
             return MockResult([])
         if "MD_DROP_DATABASE_SHARE" in query or "DROP DATABASE IF EXISTS" in query:
             return MockResult([])
         if "MD_LIST_DIVES" in query:
+            dives = self._load(self.dives_state)
+            rows = [(dive_id, str(title), str(status)) for dive_id, (title, status) in dives.items()]
             if os.environ.get("MOCK_DUPLICATE_DIVES", "false") == "true":
-                return MockResult([
-                    ("00000000-0000-0000-0000-000000000021", "draft"),
-                    ("00000000-0000-0000-0000-000000000022", "draft"),
-            ])
-            if self.dive_state.exists():
-                if "SELECT id, status" in query:
-                    return MockResult([(
-                        self.dive_state.read_text().strip(),
-                        self.dive_status_state.read_text().strip(),
-                    )])
-                return MockResult([(self.dive_state.read_text().strip(),)])
-            return MockResult([])
+                title = "Wikipedia Pageviews:feature/mock-test (Preview)"
+                rows = [
+                    ("00000000-0000-0000-0000-000000000021", title, "draft"),
+                    ("00000000-0000-0000-0000-000000000022", title, "draft"),
+                ]
+            return self._page(query, rows)
         if "MD_CREATE_DIVE" in query:
-            self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
-            self.dive_status_state.write_text("draft", encoding="utf-8")
-            return MockResult([(self.dive_state.read_text().strip(),)])
-        if "MD_UPDATE_DIVE_STATUS" in query:
-            for status in ("draft", "ready", "endorsed", "archived"):
-                if f"'{status}'" in query:
-                    self.dive_status_state.write_text(status, encoding="utf-8")
-                    break
-            return MockResult([])
+            dives = self._load(self.dives_state)
+            dive_id = f"00000000-0000-0000-0000-{len(dives) + 101:012d}"
+            dives[dive_id] = [self._argument(query, r"title = "), "draft"]
+            self._save(self.dives_state, dives)
+            return MockResult([(dive_id,)])
         if "MD_UPDATE_DIVE" in query:
-            self.dive_state.write_text("00000000-0000-0000-0000-000000000002", encoding="utf-8")
+            dives = self._load(self.dives_state)
+            dive_id = self._argument(query, r"id = ")
+            if dive_id not in dives:
+                raise Error(f"Dive {dive_id} not found")
+            if "MD_UPDATE_DIVE_STATUS" in query:
+                dives[dive_id][1] = self._argument(query, r"status = ")
+            if "MD_UPDATE_DIVE_METADATA" in query:
+                dives[dive_id][0] = self._argument(query, r"title = ")
+            self._save(self.dives_state, dives)
             return MockResult([])
         if "MD_DELETE_DIVE" in query:
-            self.dive_state.unlink(missing_ok=True)
-            self.dive_status_state.unlink(missing_ok=True)
+            dives = self._load(self.dives_state)
+            dives.pop(self._argument(query, r"id="), None)
+            self._save(self.dives_state, dives)
             return MockResult([])
 
         raise RuntimeError(f"Unexpected fake duckdb query: {query}")

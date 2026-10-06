@@ -63,6 +63,7 @@ def quote_name(value: object) -> str:
 _REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*=\s*", re.MULTILINE)
 _LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*\n")
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
+LIST_PAGE_SIZE = 1000
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 AUTHORITATIVE_NOTE = (
     "mode: authoritative revokes every grant not declared here, including grants created outside "
@@ -2003,40 +2004,47 @@ class Deployer:
                 raise
             print(f"Skipping {label}; it was already removed by another cleanup run")
 
+    def _list_all(self, function: str, columns: str, extra_args: str = "") -> list[tuple[object, ...]]:
+        """Read every page of an MD_LIST_* function; a single call returns only one page."""
+        rows: list[tuple[object, ...]] = []
+        seen: set[str] = set()
+        offset = 0
+        while True:
+            page = self._query_rows(
+                f'SELECT {columns} FROM {function}("limit" := {LIST_PAGE_SIZE}::UINTEGER, '
+                f'"offset" := {offset}::UINTEGER{extra_args})'
+            )
+            if not page:
+                return rows
+            ids = {str(row[0]) for row in page}
+            if len(ids) != len(page) or seen.intersection(ids):
+                raise CommandError(f"{function} repeated an ID while paging; the catalog changed, so retry")
+            seen.update(ids)
+            rows.extend(page)
+            offset += len(page)
+
     def _list_flight_ids(self, name: str) -> list[str]:
         return [
-            line.strip()
-            for line in self._sql(
-                'SELECT flight_id FROM MD_LIST_FLIGHTS("offset" => 0::UINTEGER, "limit" => 1000::UINTEGER) '
-                f"WHERE flight_name = {sql_string(name)}"
-            ).splitlines()
-            if line.strip()
+            str(row[0])
+            for row in self._list_all("MD_LIST_FLIGHTS", "flight_id, flight_name")
+            if row[1] == name
         ]
 
     def _list_dive_ids(self, title: str) -> list[str]:
-        return [
-            line.strip()
-            for line in self._sql(f"SELECT id FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}").splitlines()
-            if line.strip()
-        ]
+        return [dive_id for dive_id, _ in self._list_dive_states(title)]
 
     def _list_dive_states(self, title: str) -> list[tuple[str, str | None]]:
         return [
-            (str(row[0]), str(row[1]).lower() if row[1] is not None else None)
-            for row in self._query_rows(
-                f"SELECT id, status FROM MD_LIST_DIVES() WHERE title = {sql_string(title)}"
-            )
+            (str(row[0]), str(row[2]).lower() if row[2] is not None else None)
+            for row in self._list_all("MD_LIST_DIVES", "id, title, status")
+            if row[1] == title
         ]
 
     def _list_guide_ids(self, title: str, topic: str) -> list[str]:
-        topic_predicate = "topic IS NULL OR topic = ''" if not topic else f"topic = {sql_string(topic)}"
         return [
             str(row[0])
-            for row in self._query_rows(
-                "SELECT id FROM MD_LIST_GUIDES("
-                '"limit" := 1000::UINTEGER, "offset" := 0::UINTEGER) '
-                f"WHERE title = {sql_string(title)} AND ({topic_predicate})"
-            )
+            for row in self._list_all("MD_LIST_GUIDES", "id, title, topic")
+            if row[1] == title and (row[2] or "") == topic
         ]
 
     def _find_share_url(self, name: str) -> str:
