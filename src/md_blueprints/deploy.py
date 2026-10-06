@@ -1607,7 +1607,9 @@ class Deployer:
         if not admin_reasons:
             return
 
-        rows = self._query_rows("SELECT role_name FROM md_list_roles_for_user(current_user)")
+        # SHOW ROLES TO USER needs a literal name and lists inherited roles too.
+        user = self._sql("SELECT current_user").strip()
+        rows = self._query_rows(f"SHOW ROLES TO USER {quote_name(user)}")
         roles = {str(row[0]).lower() for row in rows}
         if "admin" not in roles:
             reasons = "; ".join(admin_reasons)

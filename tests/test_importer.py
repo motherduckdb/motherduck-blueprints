@@ -399,8 +399,8 @@ def test_reviewed_imports_update_all_original_ids_without_creating_replacements(
     statements: list[str] = []
 
     def rows(statement: str) -> list[tuple[object, ...]]:
-        if "md_list_roles_for_user" in statement:
-            return [("admin",)]
+        if statement.startswith("SHOW ROLES TO USER"):
+            return [("admin", "preset", True, None)]
         if statement.startswith("SET VARIABLE desired_guide_references"):
             return [("old content", "", "[]", "[]", "Old title", "finance", "", "organization")]
         for kind in IDS:
@@ -445,11 +445,11 @@ def test_customer_cd_checks_every_bound_id_before_first_write(
 
     def rows(self: Deployer, statement: str) -> list[tuple[object, ...]]:
         calls.append(statement)
-        assert statement.startswith("SELECT "), "CD must not write before all IDs pass"
+        assert statement.startswith(("SELECT ", "SHOW ")), "CD must not write before all IDs pass"
         if statement == "SELECT current_user":
             return [(OWNER,)]
-        if "md_list_roles_for_user" in statement:
-            return [("admin",)]
+        if statement == f'SHOW ROLES TO USER "{OWNER}"':
+            return [("admin", "preset", True, None)]
         for kind in IDS:
             if f"MD_GET_{kind.upper()}(" in statement:
                 if kind == missing:
@@ -463,7 +463,7 @@ def test_customer_cd_checks_every_bound_id_before_first_write(
     monkeypatch.setattr(Deployer, "_query_rows", rows)
     with pytest.raises((ValidationError, CommandError)):
         Deployer(Project(tmp_path)).deploy(target="prod", branch=None, names=names)
-    assert calls and all(statement.startswith("SELECT ") for statement in calls)
+    assert calls and all(statement.startswith(("SELECT ", "SHOW ")) for statement in calls)
 
 
 def test_import_normalizes_native_javascript_mounts_without_evaluating_code() -> None:

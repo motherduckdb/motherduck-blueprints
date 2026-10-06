@@ -6,6 +6,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Fix the admin check that runs before deploying organization Guides or roles. It called `md_list_roles_for_user`, which MotherDuck does not provide, so `plan`, `verify`, and `deploy` failed before any write, even for an organization admin, and stopped every other selected package. The check now reads the deployment identity's roles with `SHOW ROLES TO USER`, which includes roles inherited through custom roles. (#111)
+
 ## v0.7.4 - 2026-10-05
 
 Patch release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.4`. Workflows on the floating `@v0` tag receive it automatically. Also copy `.dive-preview/vite.config.ts` from this release, because upgrades do not change preview files. See the [v0.7.4 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.4).

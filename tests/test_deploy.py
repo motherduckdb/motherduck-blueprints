@@ -717,6 +717,34 @@ def test_rbac_preflight_rejects_admin_only_resources_without_admin(
         deployer._preflight_rbac([blueprint])
 
 
+def test_rbac_preflight_lists_roles_of_the_current_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    statements: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        statements.append(statement)
+        if statement == "SELECT current_user":
+            return [('ci "bot"',)]
+        # The admin role reaches the deployer through a custom role.
+        return [("platform", "custom", True, None), ("admin", "preset", False, None)]
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    blueprint = RenderedBlueprint(
+        name="docs",
+        title="Docs",
+        description="",
+        shares={},
+        flights={},
+        dives={},
+        contexts={},
+        guides={"handbook": {"deploy": True, "access": "organization"}},
+    )
+
+    deployer._preflight_rbac([blueprint])
+
+    assert statements == ["SELECT current_user", 'SHOW ROLES TO USER "ci ""bot"""']
+
+
 def test_guide_deploy_uses_version_metadata_and_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
