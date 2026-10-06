@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.7.5 - 2026-10-06
+
+Patch release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.5`. Workflows on the floating `@v0` tag receive it automatically. Organization Guides and roles deploy again, and name lookups no longer miss resources in large organizations. See the [v0.7.5 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.5).
+
 - Fix the admin check that runs before deploying organization Guides or roles. It called `md_list_roles_for_user`, which MotherDuck does not provide, so `plan`, `verify`, and `deploy` failed before any write, even for an organization admin, and stopped every other selected package. The check now reads the deployment identity's roles with `SHOW ROLES TO USER`, which includes roles inherited through custom roles. (#111)
 - Read every page when finding an existing Flight, Dive, or Guide by name. The lookups read one page of results, either the default page size for Dives or 1000 for Flights and Guides, so a resource past the first page was not found and a deploy could create a duplicate. Lookups now page through the whole list and stop with a retry message if the list changes while paging. (#113)
 - Update `source-map-js` to 1.2.2 in the Dive preview lockfile for a high-severity advisory (GHSA-68fv-2mgg-jv7q). (#112)
