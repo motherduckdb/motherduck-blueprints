@@ -7,6 +7,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ## Unreleased
 
 - Fix the admin check that runs before deploying organization Guides or roles. It called `md_list_roles_for_user`, which MotherDuck does not provide, so `plan`, `verify`, and `deploy` failed before any write, even for an organization admin, and stopped every other selected package. The check now reads the deployment identity's roles with `SHOW ROLES TO USER`, which includes roles inherited through custom roles. (#111)
+- Update `source-map-js` to 1.2.2 in the Dive preview lockfile for a high-severity advisory (GHSA-68fv-2mgg-jv7q). (#112)
+- Bump the package and action pins to 0.7.5. (#112)
 
 ## v0.7.4 - 2026-10-05
 
