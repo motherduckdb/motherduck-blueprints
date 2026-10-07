@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.7.6 - 2026-10-07
+
+Documentation release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.6`. Workflows on the floating `@v0` tag receive it automatically. Deployment behavior is unchanged from v0.7.5. See the [v0.7.6 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.6).
+
 - Add troubleshooting rows to the setup guide for the admin preflight error and for the `md_list_roles_for_user` error from v0.4.0 to v0.7.4, and tell agents in the template guide that the admin check accepts an inherited `admin` role and stops every selected package. (#115)
 - Bump the package and action pins to 0.7.6. (#115)
 
