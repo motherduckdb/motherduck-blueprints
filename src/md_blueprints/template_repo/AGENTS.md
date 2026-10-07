@@ -33,7 +33,7 @@ The GitHub workflows are short callers into versioned Blueprints workflows. Keep
 - Exporting source does not copy databases, secret values, ownership, history, or grants. Do not create missing shares or change permissions without that being part of the requested work.
 - Preview resource names must be branch-scoped. Flight schedules are disabled in preview, but source/config may still point at production data. Audit those references before enabling immediate runs.
 - Do not use a production Guide ID in preview. Put an adopted ID under `targets.prod` only.
-- New Guides are validation-only until `deploy: true`. Roles never deploy in preview. Organization Guides and role administration require an admin identity.
+- New Guides are validation-only until `deploy: true`. Roles never deploy in preview. Organization Guides and role administration require an admin identity. Blueprints checks for the `admin` role, granted directly or through a custom role, before any write; without it, `plan` and `deploy` stop for every selected package.
 - Preview selection deploys the changed packages, their downstream consumers, and the producers those packages read. Other consumers of those producers are not previewed.
 - Flight `instanceType` is `F4`, `F16`, or `F32` and must be allowed by the organization's plan. Omitting it keeps the live size, or the plan default for a new Flight.
 - Production selection expands downstream, not upstream. Deploy missing producers first or include them explicitly.
