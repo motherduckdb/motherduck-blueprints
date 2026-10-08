@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import copy
+import io
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import pytest
 
+from md_blueprints import deploy as deploy_module
 from md_blueprints.deploy import Deployer, PlanRecord, quote_ident
 from md_blueprints.project import CommandError, Project, RenderedBlueprint
 from md_blueprints.schema import ValidationError
@@ -615,6 +621,100 @@ def test_plan_preflights_role_dependencies_and_share_grants(
     assert "missing-parent" in role_record.notes
     assert share_record.action == "error"
     assert "missing-grantee" in share_record.notes
+
+
+def _access_blueprint(members: list[str], grant_users: list[str]) -> RenderedBlueprint:
+    return RenderedBlueprint(
+        name="access",
+        title="Access",
+        description="",
+        shares={"finance": {"name": "finance", "database": "finance", "grants": {"users": grant_users}}},
+        flights={},
+        dives={},
+        contexts={},
+        roles={"team": {"name": "finance-team", "members": members, "deploy": True}},
+    )
+
+
+def test_plan_rejects_members_and_grantees_missing_from_the_organization(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.sql_env = {"motherduck_token": "token"}
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
+    monkeypatch.setattr(deploy_module, "list_org_users", lambda token: {"Alice": False, "bob": True})
+
+    records = deployer._build_deploy_plan([_access_blueprint(["alice", "bob", "alcie"], ["ALICE", "carol"])])
+
+    role_record = next(record for record in records if record.type == "role")
+    share_record = next(record for record in records if record.type == "share")
+    assert role_record.action == "error"
+    assert role_record.notes == "member(s) are not users in this organization: alcie"
+    assert share_record.action == "error"
+    assert share_record.notes == "grant user(s) are not users in this organization: carol"
+    assert "deprovisioned user(s) are still declared as members or share grantees: bob" in capsys.readouterr().err
+
+
+def test_plan_skips_username_check_when_users_cannot_be_listed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.sql_env = {"motherduck_token": "token"}
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
+
+    def forbidden(token: str) -> dict[str, bool]:
+        raise urllib.error.HTTPError("https://api.motherduck.com/v1/users", 403, "Forbidden", {}, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(deploy_module, "list_org_users", forbidden)
+
+    records = deployer._build_deploy_plan([_access_blueprint(["alice"], ["carol"])])
+
+    assert {record.type: record.action for record in records} == {"role": "update", "share": "update"}
+    assert "could not list organization users (HTTP Error 403: Forbidden)" in capsys.readouterr().err
+
+
+def test_plan_lists_users_only_when_usernames_are_declared(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.sql_env = {"motherduck_token": "token"}
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
+
+    def unexpected(token: str) -> dict[str, bool]:
+        raise AssertionError("users were listed without declared usernames")
+
+    monkeypatch.setattr(deploy_module, "list_org_users", unexpected)
+
+    deployer._build_deploy_plan([_access_blueprint([], [])])
+
+
+def test_list_org_users_follows_page_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        None: {"users": [{"username": "alice", "is_deprovisioned": False}], "next_page_token": "p2"},
+        "p2": {"users": [{"username": "bob", "is_deprovisioned": True}], "next_page_token": None},
+    }
+    requests: list[urllib.request.Request] = []
+
+    class Response(io.BytesIO):
+        def __enter__(self) -> "Response":
+            return self
+
+    def fake_urlopen(request: urllib.request.Request, timeout: float) -> Response:
+        requests.append(request)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
+        return Response(json.dumps(pages[query.get("page_token", [None])[0]]).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.delenv("motherduck_host", raising=False)
+    monkeypatch.setenv("MOTHERDUCK_HOST", "api.example-region.motherduck.com")
+
+    assert deploy_module.list_org_users("secret") == {"alice": False, "bob": True}
+    assert [request.full_url for request in requests] == [
+        "https://api.example-region.motherduck.com/v1/users?limit=1000",
+        "https://api.example-region.motherduck.com/v1/users?limit=1000&page_token=p2",
+    ]
+    assert requests[0].get_header("Authorization") == "Bearer secret"
 
 
 def test_existing_managed_share_plan_reports_update(monkeypatch: pytest.MonkeyPatch) -> None:

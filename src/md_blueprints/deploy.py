@@ -8,11 +8,14 @@ import os
 import re
 import sys
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import json5
 
+from . import __version__
 from .project import (
     CommandError,
     Project,
@@ -27,7 +30,40 @@ from .motherduck_cli import query_rows as cli_query_rows, sql_backend
 # MD_CREATE_FLIGHT and MD_UPDATE_FLIGHT accept instance_type from this client release.
 FLIGHT_INSTANCE_TYPE_MIN_DUCKDB = (1, 5, 6)
 
+# GET /v1/users accepts at most 1000 users per page.
+USERS_API_PAGE_SIZE = 1000
+
 DuckDBConfigValue = str | bool | int | float | list[str]
+
+
+def list_org_users(token: str) -> dict[str, bool]:
+    """Map every username in the token's organization to whether it is deprovisioned."""
+    # api.motherduck.com forwards /v1 calls to the token's region. Private regions set the host,
+    # as they do for the MotherDuck CLI.
+    host = os.environ.get("motherduck_host") or os.environ.get("MOTHERDUCK_HOST") or "api.motherduck.com"
+    users: dict[str, bool] = {}
+    query = {"limit": str(USERS_API_PAGE_SIZE)}
+    seen_tokens: set[str] = set()
+    while True:
+        request = urllib.request.Request(
+            f"https://{host}/v1/users?{urllib.parse.urlencode(query)}",
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+                "User-Agent": f"md-blueprints/{__version__}",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        for user in payload["users"]:
+            users[str(user["username"])] = bool(user["is_deprovisioned"])
+        next_token = payload.get("next_page_token")
+        if not next_token:
+            return users
+        if next_token in seen_tokens:
+            raise ValueError("GET /v1/users repeated a page token")
+        seen_tokens.add(str(next_token))
+        query["page_token"] = str(next_token)
 
 
 def sql_string(value: object) -> str:
@@ -556,6 +592,28 @@ class Deployer:
             for share in blueprint.shares.values()
         )
         live_role_names = self._live_role_names() if needs_role_catalog else set()
+        declared_users = {
+            str(value)
+            for blueprint in rendered
+            for role in blueprint.roles.values()
+            if role.get("deploy") and isinstance(members := role.get("members"), list)
+            for value in members
+        } | {
+            str(value)
+            for blueprint in rendered
+            for share in blueprint.shares.values()
+            if isinstance(grants := share.get("grants"), dict)
+            for value in grants.get("users", [])
+        }
+        org_users = self._org_users() if declared_users else None
+        if org_users is not None:
+            deprovisioned = sorted(user for user in declared_users if org_users.get(user.lower()))
+            if deprovisioned:
+                print(
+                    f"warning: deprovisioned user(s) are still declared as members or share grantees: "
+                    f"{', '.join(deprovisioned)}",
+                    file=sys.stderr,
+                )
         can_produce = {
             blueprint.name: any(
                 flight.get("runOnDeploy") is True and flight.get("deploy") is not False
@@ -587,14 +645,22 @@ class Deployer:
                     else set()
                 )
                 missing_roles = sorted(included_roles - live_role_names - managed_role_names)
-                exists = name in live_role_names
-                role_notes = (
-                    "included role(s) do not exist and are not selected for deployment: "
-                    f"{', '.join(missing_roles)}"
-                    if missing_roles
-                    else ""
+                raw_members = role.get("members", [])
+                unknown_members = self._unknown_users(
+                    {str(value) for value in raw_members} if isinstance(raw_members, list) else set(),
+                    org_users,
                 )
-                if not missing_roles and role.get("mode") == "authoritative":
+                exists = name in live_role_names
+                problems = []
+                if missing_roles:
+                    problems.append(
+                        "included role(s) do not exist and are not selected for deployment: "
+                        f"{', '.join(missing_roles)}"
+                    )
+                if unknown_members:
+                    problems.append(f"member(s) are not users in this organization: {', '.join(unknown_members)}")
+                role_notes = "; ".join(problems)
+                if not problems and role.get("mode") == "authoritative":
                     role_notes = self._authoritative_role_note(role, exists)
                 records.append(
                     PlanRecord(
@@ -602,7 +668,7 @@ class Deployer:
                         "role",
                         key,
                         name,
-                        "error" if missing_roles else ("update" if exists else "create"),
+                        "error" if problems else ("update" if exists else "create"),
                         exists,
                         name if exists else None,
                         role_notes,
@@ -642,13 +708,24 @@ class Deployer:
                 missing_grant_roles = sorted(
                     desired_grant_roles - live_role_names - managed_role_names
                 )
+                unknown_grant_users = self._unknown_users(
+                    {str(value) for value in grants.get("users", [])} if isinstance(grants, dict) else set(),
+                    org_users,
+                )
                 manages_share = "includePattern" in share or isinstance(grants, dict)
-                if missing_grant_roles:
+                if missing_grant_roles or unknown_grant_users:
                     action = "error"
-                    notes = (
-                        "grant role(s) do not exist and are not selected for deployment: "
-                        f"{', '.join(missing_grant_roles)}"
-                    )
+                    problems = []
+                    if missing_grant_roles:
+                        problems.append(
+                            "grant role(s) do not exist and are not selected for deployment: "
+                            f"{', '.join(missing_grant_roles)}"
+                        )
+                    if unknown_grant_users:
+                        problems.append(
+                            f"grant user(s) are not users in this organization: {', '.join(unknown_grant_users)}"
+                        )
+                    notes = "; ".join(problems)
                 elif url and manages_share:
                     action = "update"
                     notes = "share is available; filter and/or grants will be reconciled"
@@ -1674,6 +1751,29 @@ class Deployer:
             f"{AUTHORITATIVE_NOTE}; "
             f"{self._revocation_summary(current_roles - desired_roles, current_users - desired_users)}"
         )
+
+    def _org_users(self) -> dict[str, bool] | None:
+        """Lowercased username -> deprovisioned, or None when the organization's users cannot be listed."""
+        token = (self.sql_env or {}).get("motherduck_token")
+        if not token:
+            return None
+        try:
+            users = list_org_users(str(token))
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(
+                f"warning: could not list organization users ({exc}); skipping the username check, "
+                "so an unknown member or grantee fails at its GRANT instead of at plan time.",
+                file=sys.stderr,
+            )
+            return None
+        return {name.lower(): deprovisioned for name, deprovisioned in users.items()}
+
+    @staticmethod
+    def _unknown_users(users: set[str], org_users: dict[str, bool] | None) -> list[str]:
+        # Usernames are matched case-insensitively so the check never blocks a grant MotherDuck accepts.
+        if org_users is None:
+            return []
+        return sorted(user for user in users if user.lower() not in org_users)
 
     def _live_role_names(self) -> set[str]:
         return {

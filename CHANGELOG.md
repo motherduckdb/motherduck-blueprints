@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Check role `members` and share `grants.users` against the organization's users before any write. `plan` and `deploy` read the users with the MotherDuck `GET /v1/users` endpoint, which pages with `next_page_token`, and mark the role or share as an error when a username is not in the organization. Before, a misspelled username failed at its `GRANT` partway through the deploy, after earlier writes. Deprovisioned users print a warning. If the list cannot be read, Blueprints warns and keeps the old behavior. Private regions can set `MOTHERDUCK_HOST` to their regional API host.
+- List `F32` as an allowed Flight `instanceType` on the Free Trial plan in the `blueprint.yml` reference. MotherDuck now offers F32 on Free Trial; Lite still allows `F4` and `F16`.
+- Bump the package and action pins to 0.7.7.
+
 ## v0.7.6 - 2026-10-07
 
 Documentation release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.6`. Workflows on the floating `@v0` tag receive it automatically. Deployment behavior is unchanged from v0.7.5. See the [v0.7.6 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.6).

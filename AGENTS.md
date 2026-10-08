@@ -54,7 +54,7 @@ Declare resources in `blueprint.yml`:
 - `resources.flights` deploys MotherDuck Flights from Python source and requirements files. `instanceType` (`F4`, `F16`, `F32`) needs DuckDB 1.5.6; omitting it keeps the live size, or the plan default for a new Flight.
 - `resources.dives` deploys Dives and required resources.
 - `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.
-- `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled.
+- `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled. Role `members` and share `grants.users` are checked against `GET /v1/users` at plan time; keep that check non-blocking when the user list cannot be read.
 - `resources.context` is deprecated and validation-only; plan, validate, and `doctor` point to `resources.guides`.
 
 For Dives, the deploy engine strips `export const REQUIRED_DATABASES = ...` (single- or multi-line, parsed as a static JSON5 array) and passes rendered `requiredResources` from `blueprint.yml`.

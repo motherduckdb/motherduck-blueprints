@@ -65,6 +65,7 @@ Create a new pipeline and dashboard with `make new-project revenue`. Edit its fi
 | Missing token | Put `MOTHERDUCK_TOKEN` in **Settings → Environments → motherduck-production**, not repository secrets. |
 | Permission error from MotherDuck | Check the service account's privileges. Custom roles and organization-wide Guides require an admin identity. |
 | `RBAC preflight failed: target requires the admin role` | The deployment identity does not have the `admin` role, either directly or through a custom role. The check runs before any write and stops every selected package. Grant `admin` to the service account, or set `deploy: false` on the roles and organization Guides it names. |
+| `member(s) are not users in this organization` or `grant user(s) are not users in this organization` | A role `members` entry or a share `grants.users` entry names a username that is not in the deployment identity's organization. Nothing was written. Fix the spelling or remove the user. |
 | `Table Function with name md_list_roles_for_user does not exist` | Blueprints v0.4.0 to v0.7.4 used this function for the admin check, but MotherDuck does not provide it. Run `make upgrade` to move to v0.7.5 or newer. |
 | Local Python setup fails | Select a working interpreter, for example `make validate PYTHON=python3.13`. |
 | No preview comment on a fork PR | Expected: fork PRs validate only. Use a branch in your own repository to deploy. |

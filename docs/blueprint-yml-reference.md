@@ -132,7 +132,7 @@ Required fields are `name` and `database`. `access` is `ORGANIZATION`, `RESTRICT
 
 A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug` as a whole `_`-separated part, such as `events_preview_feature_x`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
 
-`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations.
+`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations. `grants.users` are MotherDuck usernames in the share owner's organization; see the username check under [roles](#roles).
 
 ## Flights
 
@@ -162,8 +162,8 @@ Required fields are `name`, `source`, and `requirements`. Optional fields includ
 
 | Plan | Allowed | Default |
 | --- | --- | --- |
-| Business | `F4`, `F16`, `F32` | `F16` |
-| Lite, Free Trial | `F4`, `F16` | `F16` |
+| Business, Free Trial | `F4`, `F16`, `F32` | `F16` |
+| Lite | `F4`, `F16` | `F16` |
 | Free | `F4` | `F4` |
 
 Without `instanceType`, a new Flight gets the plan default and an existing Flight keeps its current size. Removing the field does not reset the size; set it to the size you want. MotherDuck rejects a size your plan does not allow when the Flight is created or updated. Sending a size needs DuckDB 1.5.6 or newer. The Blueprints action already uses it. Locally, `plan` and `deploy` stop before any write when the SQL backend is older; install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`, because the pinned MotherDuck CLI ships DuckDB 1.5.5.
@@ -238,7 +238,7 @@ resources:
       deploy: true
 ```
 
-Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them. Blueprints never delete roles automatically.
+Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `plan` and `deploy` look up every declared username with the MotherDuck [`GET /v1/users`](https://motherduck.com/docs/sql-reference/rest-api/users-list/) endpoint, without regard to case, and stop before any write when one is not a user in the organization. A deprovisioned user prints a warning. When the user list cannot be read, for example because the deployment identity lacks the `member_management.view_all_members` privilege, Blueprints prints a warning and skips the check, so an unknown username fails at its `GRANT` instead. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them. Blueprints never delete roles automatically.
 
 ## Adopting existing resources (0.4.3+)
 
