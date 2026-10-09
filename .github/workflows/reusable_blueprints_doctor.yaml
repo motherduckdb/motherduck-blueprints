@@ -29,7 +29,7 @@ jobs:
       - name: Run blueprints doctor
         id: doctor
         continue-on-error: true
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: doctor

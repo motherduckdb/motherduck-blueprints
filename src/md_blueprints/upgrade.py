@@ -8,7 +8,7 @@ import yaml
 from packaging.version import InvalidVersion, Version
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-from .maintenance import fetch_latest_version
+from .maintenance import TOKEN_CALLER, fetch_latest_version
 from .project import require_within
 from .schema import ValidationError
 
@@ -17,6 +17,50 @@ CLI_PIN = re.compile(r"^(CLI_VERSION\s*:?=\s*)([^\s#]+)", re.MULTILINE)
 TOOLING_PIN = re.compile(
     r"^(motherduckdb/motherduck-blueprints(?:/\.github/workflows/[^/@]+\.ya?ml)?)@[^\s]+$"
 )
+TOKEN_SECRET = "MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}"
+# Matches the generated callers so an upgraded repository equals a newly generated one.
+TOKEN_COMMENT = "# Passes only this secret. The reusable job reads it from the GitHub Environment its target selects."
+
+
+def add_token_secrets(text: str) -> tuple[str, int]:
+    """Pass MOTHERDUCK_TOKEN to reusable deploy and cleanup jobs that pass no secrets.
+
+    GitHub resolves an environment secret to an empty string in a reusable workflow unless
+    the caller passes it. Jobs that already declare `secrets`, including `secrets: inherit`,
+    are left unchanged. Flow-style jobs are left for `doctor` to report.
+    """
+    try:
+        document = yaml.compose(text)
+    except yaml.YAMLError as exc:
+        raise ValidationError(f"Invalid workflow YAML; no secrets were added: {exc}") from exc
+    insertions: dict[int, str] = {}
+    visited: set[int] = set()
+
+    def visit(node: Node | None) -> None:
+        if node is None or id(node) in visited:
+            return
+        visited.add(id(node))
+        if isinstance(node, MappingNode):
+            keys = {key.value for key, _ in node.value if isinstance(key, ScalarNode)}
+            for key, value in node.value:
+                if (
+                    isinstance(key, ScalarNode) and key.value == "uses" and not node.flow_style
+                    and "secrets" not in keys
+                    and isinstance(value, ScalarNode) and TOKEN_CALLER.fullmatch(value.value.strip())
+                ):
+                    line_end = text.find("\n", value.end_mark.index)
+                    line_end = len(text) if line_end == -1 else line_end
+                    indent = " " * key.start_mark.column
+                    insertions[line_end] = f"\n{indent}{TOKEN_COMMENT}\n{indent}secrets:\n{indent}  {TOKEN_SECRET}"
+                visit(value)
+        elif isinstance(node, SequenceNode):
+            for child in node.value:
+                visit(child)
+
+    visit(document)
+    for index, insertion in sorted(insertions.items(), reverse=True):
+        text = text[:index] + insertion + text[index:]
+    return text, len(insertions)
 
 
 def update_action_pins(text: str, version: str) -> tuple[str, int]:
@@ -88,11 +132,14 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
         return
     updates = [(makefile, original, CLI_PIN.sub(lambda match: match[1] + version, original))]
     action_count = 0
+    secret_count = 0
     for path in sorted((root / ".github/workflows").glob("*.y*ml")):
         path = require_within(path, root, "Workflow")
         original = path.read_text(encoding="utf-8")
         updated, count = update_action_pins(original, version)
         action_count += count
+        updated, added = add_token_secrets(updated)
+        secret_count += added
         updates.append((path, original, updated))
     if not action_count:
         raise ValidationError("No MotherDuck Blueprints action pins found in .github/workflows; nothing was changed.")
@@ -100,6 +147,11 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
     if not changed:
         print(f"Tooling pins are already aligned at {version}.")
         return
+    if secret_count:
+        print(
+            f"Passing MOTHERDUCK_TOKEN to {secret_count} reusable workflow job(s). GitHub gives reusable "
+            "workflows an empty environment secret unless the caller passes it.\n"
+        )
     for path, before, after in changed:
         relative = path.relative_to(root).as_posix()
         print("".join(difflib.unified_diff(

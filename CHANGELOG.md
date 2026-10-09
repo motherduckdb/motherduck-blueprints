@@ -6,6 +6,11 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Pass `MOTHERDUCK_TOKEN` from the generated deploy and cleanup callers to the reusable workflows, which now declare it as an optional `workflow_call` secret. GitHub resolves an environment secret to an empty string in a reusable workflow unless the caller passes it, even when the reusable job selects that environment, so previews, deploys, and cleanup failed with `MOTHERDUCK_TOKEN is required`. `secrets: inherit` is not a workaround for customer repositories because it works only within one organization or enterprise.
+- `md-blueprints upgrade` adds the `secrets:` block to existing reusable deploy and cleanup callers that pass no secrets. Callers with their own `secrets` entry, including `secrets: inherit`, are left unchanged. `doctor` warns about callers that do not pass the token.
+- Correct the GitHub Action guide, which said no secret passing was needed, and add a setup troubleshooting row for the error.
+- Bump the package and action pins to 0.7.8.
+
 ## v0.7.7 - 2026-10-08
 
 Patch release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.7`. Workflows on the floating `@v0` tag receive it automatically. `plan` and `deploy` now stop before any write when a role member or share grant user is not in the organization. See the [v0.7.7 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.7).

@@ -8,6 +8,7 @@ import urllib.request
 from importlib import util
 from pathlib import Path
 
+import yaml
 from packaging.version import InvalidVersion, Version
 
 from . import __version__
@@ -17,6 +18,31 @@ from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
 
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/motherduckdb/motherduck-blueprints/releases/latest"
+# Reusable workflows that read MOTHERDUCK_TOKEN, which the calling job must pass.
+TOKEN_CALLER = re.compile(
+    r"^motherduckdb/motherduck-blueprints/\.github/workflows/"
+    r"reusable_(?:deploy|cleanup_preview)_blueprints\.ya?ml@[^\s]+$"
+)
+
+
+def workflows_missing_token_secret(workflow_root: Path) -> list[str]:
+    """Workflow files whose reusable deploy or cleanup job passes no secrets."""
+    missing: list[str] = []
+    for path in sorted(workflow_root.glob("*.y*ml")):
+        try:
+            workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue
+        jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+        if not isinstance(jobs, dict):
+            continue
+        if any(
+            isinstance(job, dict) and isinstance(job.get("uses"), str)
+            and TOKEN_CALLER.fullmatch(job["uses"].strip()) and "secrets" not in job
+            for job in jobs.values()
+        ):
+            missing.append(path.name)
+    return missing
 
 
 def emit_lines(lines: list[str], *, output_format: str) -> None:
@@ -141,6 +167,15 @@ def run_doctor(
             "info: .github/workflows/prepare_guide_context.yaml is not present. Generated templates include it from "
             "v0.7.0 to prepare Guide context in CI as an artifact for an agent runner. To adopt it, copy it from a "
             "template generated with md-blueprints init in an empty directory"
+        )
+
+    missing_token = workflows_missing_token_secret(workflow_root)
+    if missing_token:
+        lines.append(
+            "warning: " + ", ".join(missing_token) + " call the reusable deploy or cleanup workflow without passing "
+            "MOTHERDUCK_TOKEN. GitHub gives the reusable job an empty string instead of the environment secret, so "
+            "previews, deploys, and cleanup fail. Run make upgrade, or add `secrets: MOTHERDUCK_TOKEN: "
+            "${{ secrets.MOTHERDUCK_TOKEN }}` to the calling job"
         )
 
     workflow = root / ".github" / "workflows" / "deploy_blueprints.yaml"

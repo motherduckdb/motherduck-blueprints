@@ -187,6 +187,36 @@ def test_doctor_points_existing_repositories_to_guide_context_workflow(
     assert "info: .github/workflows/prepare_guide_context.yaml is not present" in capsys.readouterr().out
 
 
+def test_doctor_warns_when_reusable_callers_do_not_pass_the_token(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    run_doctor(tmp_path)
+    assert "without passing MOTHERDUCK_TOKEN" not in capsys.readouterr().out
+    # Callers generated before 0.7.8 passed no secrets.
+    workflows = tmp_path / ".github/workflows"
+    for name in ("deploy_blueprints.yaml", "cleanup_preview_blueprints.yaml"):
+        path = workflows / name
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "    secrets:\n      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}\n", ""
+            ),
+            encoding="utf-8",
+        )
+    run_doctor(tmp_path)
+    assert (
+        "warning: cleanup_preview_blueprints.yaml, deploy_blueprints.yaml call the reusable deploy or cleanup "
+        "workflow without passing MOTHERDUCK_TOKEN"
+    ) in capsys.readouterr().out
+    path = workflows / "deploy_blueprints.yaml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("    with:\n", "    secrets: inherit\n    with:\n", 1),
+        encoding="utf-8",
+    )
+    run_doctor(tmp_path)
+    assert "warning: cleanup_preview_blueprints.yaml call" in capsys.readouterr().out
+
+
 def test_offline_update_checks_never_open_a_connection(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import urllib.request
 

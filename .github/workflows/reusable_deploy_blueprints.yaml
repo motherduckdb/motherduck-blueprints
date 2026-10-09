@@ -28,6 +28,12 @@ on:
         description: Python version used by the Blueprints action.
         type: string
         default: "3.11"
+    secrets:
+      MOTHERDUCK_TOKEN:
+        description: >-
+          Pass it by name from the caller. GitHub resolves an environment secret to an empty string in a
+          reusable workflow unless the caller passes it, even when the job selects that environment.
+        required: false
 
 jobs:
   compute_changes:
@@ -50,7 +56,7 @@ jobs:
 
       - name: Validate configured targets
         id: validate
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: validate
@@ -198,7 +204,7 @@ jobs:
       - name: Compute changed blueprints for pull request
         id: changed-pr
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -221,7 +227,7 @@ jobs:
       - name: Compute changed blueprints for push
         id: changed-push
         if: ${{ github.event_name == 'push' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -230,7 +236,7 @@ jobs:
       - name: Select all blueprints
         id: changed-all
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -287,7 +293,7 @@ jobs:
 
       - name: Plan preview blueprints
         id: plan-preview
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -310,7 +316,7 @@ jobs:
 
       - name: Deploy preview blueprints
         id: deploy-preview
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -392,7 +398,7 @@ jobs:
 
       - name: Plan target blueprints
         id: plan-stable
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -414,7 +420,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy target blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -459,7 +465,7 @@ jobs:
 
       - name: Plan released production blueprints
         id: plan-production
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -481,7 +487,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy released production blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
