@@ -100,7 +100,10 @@ def test_customer_workflows_delegate_with_matching_permissions_and_inputs(tmp_pa
         for name in ('runs-on', 'python-version'):
             assert name not in job.get('with', {})
             assert f'# {name}: ' in text or f'#   {name}: ' in text
-        assert 'secrets' not in job
+        # GitHub resolves an environment secret to an empty string in a reusable workflow unless the
+        # caller passes it, so callers pass exactly the secrets their provider declares, by name.
+        declared = (provider[True]['workflow_call'] or {}).get('secrets') or {}
+        assert job.get('secrets', {}) == {name: f'${{{{ secrets.{name} }}}}' for name in declared}
         assert all('steps' not in value for value in caller['jobs'].values())
 
 
@@ -108,6 +111,10 @@ def test_reusable_jobs_preserve_environment_secrets_and_verification() -> None:
     root = Path(__file__).resolve().parents[1]
     for name in ('deploy_blueprints', 'cleanup_preview_blueprints'):
         workflow = yaml.safe_load((root / f'.github/workflows/reusable_{name}.yaml').read_text())
+        # Optional so Dependabot and fork runs, which receive no secrets, still validate.
+        secrets = workflow[True]['workflow_call']['secrets']
+        assert set(secrets) == {'MOTHERDUCK_TOKEN'}
+        assert secrets['MOTHERDUCK_TOKEN']['required'] is False
         for job in workflow['jobs'].values():
             for step in job.get('steps', []):
                 command = step.get('with', {}).get('command')

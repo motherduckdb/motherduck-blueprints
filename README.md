@@ -102,7 +102,7 @@ Your repository must contain `motherduck.yml` and its blueprint packages. For a 
 
 ```bash
 python3 -m venv /tmp/blueprints-cli
-/tmp/blueprints-cli/bin/pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0.7.7"
+/tmp/blueprints-cli/bin/pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0.7.8"
 /tmp/blueprints-cli/bin/md-blueprints init /tmp/blueprints-starter
 ```
 
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
 ```
 
 ### Deploy to production manually
@@ -143,7 +143,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

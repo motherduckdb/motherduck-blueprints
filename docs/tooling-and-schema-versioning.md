@@ -19,12 +19,12 @@ make install-deploy
 
 The native CLI bundles its DuckDB runtime. Its tested version is maintained inside the Blueprints package, so customers do not need another version pin. `motherduck upgrade` updates a local CLI independently. CI installs the version tested with its Blueprints release.
 
-Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints workflow or direct action reference to the same exact release. Review the diff and open a pull request. Customer triggers, permissions, and other workflow settings are preserved.
+Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints workflow or direct action reference to the same exact release. It also adds `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}` to reusable deploy and cleanup callers that pass no secrets. Review the diff and open a pull request. Customer triggers, permissions, and other workflow settings are preserved.
 
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.7.7
+- uses: motherduckdb/motherduck-blueprints@v0.7.8
   with:
     command: validate
 ```
@@ -112,4 +112,4 @@ For `schemaVersion: 1`, `md-blueprints migrate --to latest` prints that no migra
 
 Run `make upgrade` in a generated repository to update `CLI_VERSION` and every MotherDuck Blueprints action pin to the latest stable release. The command prints a diff for review and leaves source code, workflow settings, and other actions intact. Run `make validate` afterward and submit the diff through a pull request.
 
-Use `make upgrade VERSION=X.Y.Z` for a specific release. For a read-only preview, run `.venv/bin/md-blueprints upgrade --to X.Y.Z`; add `--write` to apply it. This updates version pins only, not manifests or workflow structure; check the linked release notes for any migration steps.
+Use `make upgrade VERSION=X.Y.Z` for a specific release. For a read-only preview, run `.venv/bin/md-blueprints upgrade --to X.Y.Z`; add `--write` to apply it. This updates version pins, and adds the `MOTHERDUCK_TOKEN` secret to reusable deploy and cleanup callers that pass none. It does not change manifests or other workflow structure; check the linked release notes for any migration steps.

@@ -4,9 +4,9 @@ import sys
 
 import pytest
 
-from md_blueprints.init import run_init
+from md_blueprints.init import action_tag, run_init
 from md_blueprints.schema import ValidationError
-from md_blueprints.upgrade import run_upgrade, update_action_pins
+from md_blueprints.upgrade import add_token_secrets, run_upgrade, update_action_pins
 
 
 def test_upgrade_preserves_reusable_workflow_paths_and_unrelated_actions() -> None:
@@ -32,6 +32,62 @@ def test_upgrade_preserves_yaml_anchors() -> None:
     updated, count = update_action_pins(text, "1.2.3")
     assert count == 1
     assert updated == text.replace("@v0", "@v1.2.3")
+
+
+TOKEN_LINES = (
+    "    # Passes only this secret. The reusable job reads it from the GitHub Environment its target selects.\n"
+    "    secrets:\n      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}\n"
+)
+
+
+def test_token_secret_is_added_to_reusable_deploy_and_cleanup_callers() -> None:
+    text = (
+        "jobs:\n  deploy:\n"
+        "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0.7.7 # keep\n"
+        "    with:\n      target: prod\n"
+        "  cleanup:\n"
+        "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_cleanup_preview_blueprints.yaml@v0.7.7"
+    )
+    updated, count = add_token_secrets(text)
+    assert count == 2
+    assert updated == (
+        "jobs:\n  deploy:\n"
+        "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0.7.7 # keep\n"
+        + TOKEN_LINES + "    with:\n      target: prod\n"
+        "  cleanup:\n"
+        "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_cleanup_preview_blueprints.yaml@v0.7.7\n"
+        + TOKEN_LINES.rstrip("\n")
+    )
+    assert add_token_secrets(updated) == (updated, 0)
+
+
+@pytest.mark.parametrize("job", [
+    "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0\n"
+    "    secrets: inherit\n",
+    "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0\n"
+    "    secrets:\n      MOTHERDUCK_TOKEN: ${{ secrets.STAGING_TOKEN }}\n",
+    "    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_blueprints_doctor.yaml@v0\n",
+    "    uses: another/repo/.github/workflows/reusable_deploy_blueprints.yaml@v1\n",
+    "    {uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@v0}\n",
+])
+def test_token_secret_leaves_other_jobs_unchanged(job: str) -> None:
+    text = "jobs:\n  deploy:\n" + job
+    assert add_token_secrets(text) == (text, 0)
+
+
+def test_upgrade_passes_the_token_from_callers_generated_before_it_was_required(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    workflows = tmp_path / ".github/workflows"
+    generated = {name: (workflows / name).read_text() for name in ("deploy_blueprints.yaml", "cleanup_preview_blueprints.yaml")}
+    for name, text in generated.items():
+        assert TOKEN_LINES in text
+        (workflows / name).write_text(text.replace(TOKEN_LINES, ""))
+    run_upgrade(tmp_path, to_version="1.2.3", write=True)
+    assert "Passing MOTHERDUCK_TOKEN to 2 reusable workflow job(s)" in capsys.readouterr().out
+    for name, text in generated.items():
+        assert (workflows / name).read_text() == text.replace(f"@{action_tag()}", "@v1.2.3")
 
 
 def test_invalid_workflow_does_not_partially_upgrade(tmp_path: Path) -> None:

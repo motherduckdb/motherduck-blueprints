@@ -39,7 +39,7 @@ The GitHub workflows are short callers into versioned Blueprints workflows. Keep
 - Production selection expands downstream, not upstream. Deploy missing producers first or include them explicitly.
 - `plan` checks live identity and dependencies; it is not a complete source/config diff and does not promise a no-op deployment.
 - Deleting a manifest does not delete its production resource. Preview cleanup is a separate destructive operation.
-- CI credentials belong in the selected GitHub Environment as `MOTHERDUCK_TOKEN`. Do not print tokens or commit local exports before checking source/config for embedded secrets.
+- CI credentials belong in the selected GitHub Environment as `MOTHERDUCK_TOKEN`. The deploy and cleanup workflows pass it by name to the reusable jobs with `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}`; keep that block, because without it the reusable job gets an empty token. Do not use `secrets: inherit`, which does not cross GitHub organizations. Do not print tokens or commit local exports before checking source/config for embedded secrets.
 
 ## Validate and hand off
 

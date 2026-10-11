@@ -15,6 +15,12 @@ on:
         description: Python version used by the Blueprints action.
         type: string
         default: "3.11"
+    secrets:
+      MOTHERDUCK_TOKEN:
+        description: >-
+          Pass it by name from the caller. GitHub resolves an environment secret to an empty string in a
+          reusable workflow unless the caller passes it, even when the job selects that environment.
+        required: false
 
 jobs:
   resolve-environment:
@@ -39,7 +45,7 @@ jobs:
 
       - name: Validate base deployment configuration
         id: validate
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           python-version: ${{ inputs.python-version }}
           command: validate
@@ -146,7 +152,7 @@ jobs:
       - name: Cleanup preview blueprints from the branch manifest
         id: cleanup-branch-manifest
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -164,7 +170,7 @@ jobs:
 
       - name: Cleanup preview blueprints from the base manifest
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.7
+        uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

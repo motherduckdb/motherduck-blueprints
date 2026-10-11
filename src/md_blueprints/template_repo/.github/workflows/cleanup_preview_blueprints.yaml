@@ -13,6 +13,9 @@ on:
 jobs:
   cleanup:
     uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_cleanup_preview_blueprints.yaml@__MD_BLUEPRINTS_ACTION_TAG__
+    # Passes only this secret. The reusable job reads it from the GitHub Environment its target selects.
+    secrets:
+      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
     # Optional runner settings. Defaults are shown:
     # with:
     #   runs-on: ubuntu-latest # Or a JSON array, such as '["self-hosted", "linux"]'.

@@ -2,7 +2,7 @@
 
 The template includes short callers for versioned deployment, cleanup, and Doctor workflows maintained in the Blueprints repository. You do not need to write deployment jobs or maintain their third-party actions.
 
-Keep event triggers and permissions in your repository. Configure targets and environments in `motherduck.yml`. The reusable jobs select those environments, so existing environment secrets and approval rules still apply. No `secrets: inherit` is needed. This follows [GitHub's reusable workflow environment handling](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+Keep event triggers and permissions in your repository. Configure targets and environments in `motherduck.yml`. The reusable jobs select those environments, so existing environment secrets and approval rules still apply. The deploy and cleanup callers must also pass the token by name with `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}`: GitHub resolves an environment secret to an empty string in a reusable workflow unless the caller passes it, even when the reusable job selects that environment. The reusable job still receives the value from its target's environment. Pass the token by name rather than with `secrets: inherit`, which passes every secret and works only within one organization or enterprise. See [GitHub's reusable workflow secret handling](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
 
 Use `make upgrade` to update the CLI and workflow references together. The referenced release supplies the deployment implementation, including preview comments, dependency selection, verification, and cleanup. The composite action remains available for custom jobs.
 
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
 ```
 
 The action installs its own Python dependencies. Validation is the default command and needs no token. Import, planning, verification, deployment, and cleanup read the job's environment token. Import also installs the tested MotherDuck CLI. See [CI and compatibility](motherduck-cli.md#ci-and-compatibility) for how commands reach MotherDuck.
@@ -63,7 +63,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -112,7 +112,7 @@ permissions:
   contents: read
 jobs:
   context:
-    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@v0.7.7
+    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@v0.7.8
     with:
       root: .
       # dbt: analytics/dbt # Optional path inside the checkout.
@@ -126,7 +126,7 @@ To integrate an existing agent in the same job, use the composite action:
 - uses: actions/checkout@v7
   with:
     persist-credentials: false
-- uses: motherduckdb/motherduck-blueprints@v0.7.7
+- uses: motherduckdb/motherduck-blueprints@v0.7.8
   id: context
   with:
     command: guides
@@ -134,7 +134,7 @@ To integrate an existing agent in the same job, use the composite action:
 # Your existing agent step goes here. Give it the same checkout and pass
 # steps.context.outputs.stdout-file through an environment variable.
 # Instruct it to read that file and follow the Guide authoring workflow.
-- uses: motherduckdb/motherduck-blueprints@v0.7.7
+- uses: motherduckdb/motherduck-blueprints@v0.7.8
   with:
     command: validate
 ```
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
         id: context
         with:
           command: guides
@@ -212,7 +212,7 @@ jobs:
           git apply --include='guides/**' "$RUNNER_TEMP/agent.patch"
           git add -N -- guides
           git diff --binary -- guides > "$RUNNER_TEMP/guide-updates.patch"
-      - uses: motherduckdb/motherduck-blueprints@v0.7.7
+      - uses: motherduckdb/motherduck-blueprints@v0.7.8
         with:
           command: validate
       - uses: actions/upload-artifact@v7
@@ -233,7 +233,7 @@ By default, deployment then reads back resource identities and checks declared s
 For a separate read-only check of existing resources, including disabled imported bindings, use:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.7.7
+- uses: motherduckdb/motherduck-blueprints@v0.7.8
   env:
     MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   with:

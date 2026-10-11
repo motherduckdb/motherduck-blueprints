@@ -58,6 +58,9 @@ on:
 jobs:
   deploy:
     uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_deploy_blueprints.yaml@__MD_BLUEPRINTS_ACTION_TAG__
+    # Passes only this secret. The reusable job reads it from the GitHub Environment its target selects.
+    secrets:
+      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
     with:
       target: ${{ inputs.target || 'prod' }}
       branch: ${{ inputs.branch || '' }}
