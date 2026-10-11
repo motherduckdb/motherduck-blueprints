@@ -6,6 +6,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Add `docs/breaking-changes.md`, shipped in the template. It lists every backward-incompatible change from v0.7.8 on, with the exact symptom, how to find affected files, the fix, and the code that implements it. Errors added by those changes now end with `see docs/breaking-changes.md#<entry>`, and the template `AGENTS.md` tells agents to read the entries before upgrading.
+- Bump the package and action pins to 0.8.1.
+
 ## v0.8.0 - 2026-10-11
 
 Minor release. Existing repositories pin exact versions and need `make upgrade VERSION=0.8.0`. Workflows on the floating `@v0` tag receive it automatically. Some manifests that v0.7.8 accepted now fail validation, and Flight `config` values change format. See the [v0.8.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.8.0).

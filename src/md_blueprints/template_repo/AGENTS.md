@@ -11,6 +11,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 - Terraform-managed MotherDuck accounts, tokens, roles, or shares: follow [use with Terraform](docs/use-with-terraform.md). Give each object one owner and avoid `mode: authoritative` on grants Terraform also manages.
 - Package layout and command reference: [repository reference](docs/repository-reference.md).
 - Field definitions and target overrides: [manifest reference](docs/blueprint-yml-reference.md).
+- Upgrades, and errors that end with `see docs/breaking-changes.md#<entry>`: read that entry in [breaking changes](docs/breaking-changes.md). Each entry gives the exact symptom, how to find affected files, the fix, and the code that implements the check. Before `make upgrade`, read every entry newer than the current `CLI_VERSION`.
 - Product runtime APIs and limits: read the current `motherduck flight guide` or `motherduck dive guide`. Product guides do not override this repository's deployment policy.
 
 ## Files and tools
