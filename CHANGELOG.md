@@ -6,8 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.8.1 - 2026-10-11
+
 - Add `docs/breaking-changes.md`, shipped in the template. It lists every backward-incompatible change from v0.7.8 on, with the exact symptom, how to find affected files, the fix, and the code that implements it. Errors added by those changes now end with `see docs/breaking-changes.md#<entry>`, and the template `AGENTS.md` tells agents to read the entries before upgrading.
-- Bump the package and action pins to 0.8.1.
+- Bump the package and action pins to 0.8.1. See the [v0.8.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.8.1).
 
 ## v0.8.0 - 2026-10-11
 
