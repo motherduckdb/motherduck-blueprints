@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from md_blueprints.deploy import Deployer
 from md_blueprints.project import Project
 from md_blueprints.schema import ValidationError
 
@@ -195,64 +194,6 @@ def test_input_metadata_uses_target_rendered_producer_output(tmp_path: Path) -> 
     assert consumer.description == "Reads data_preview_feature_contracts"
 
 
-def test_consumer_only_production_plan_requires_existing_output(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project = write_graph_project(tmp_path)
-    deployer = Deployer(project)
-    rendered = project.render_all("prod", names=project.deployment_blueprint_names("prod", ["consumer"]))
-    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "")
-    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [])
-
-    records = deployer._build_deploy_plan(rendered)
-
-    input_record = next(record for record in records if record.type == "input")
-    assert input_record.action == "error"
-    assert "producer.data" in input_record.notes
-    assert "deploy producer 'producer' to the same target first" in input_record.notes
-
-
-def test_preview_plan_allows_selected_producer_output_to_be_pending(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project = write_graph_project(tmp_path)
-    deployer = Deployer(project)
-    names = project.deployment_blueprint_names("preview", ["consumer"])
-    rendered = project.render_all("preview", branch="feature/contracts", names=names)
-    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "")
-    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: [])
-    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [])
-
-    records = deployer._build_deploy_plan(rendered)
-
-    assert next(record for record in records if record.type == "input").action == "pending"
-
-
-def test_plan_rejects_missing_share_when_selected_producer_will_not_run(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project = write_graph_project(tmp_path)
-    deployer = Deployer(project)
-    names = project.deployment_blueprint_names("preview", ["consumer"])
-    rendered = project.render_all("preview", branch="feature/contracts", names=names)
-    rendered[0].flights["loader"]["runOnDeploy"] = False
-    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "")
-    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: [])
-    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: [])
-
-    records = deployer._build_deploy_plan(rendered)
-
-    share_record = next(record for record in records if record.type == "share")
-    input_record = next(record for record in records if record.type == "input")
-    assert share_record.action == "error"
-    assert input_record.action == "error"
-    assert "runOnDeploy" in share_record.notes
-    assert "runOnDeploy" in input_record.notes
-
-
 def test_duplicate_dive_required_resource_alias_is_rejected(tmp_path: Path) -> None:
     project = write_graph_project(tmp_path)
     manifest = project.root / "dives/consumer/blueprint.yml"
@@ -270,23 +211,6 @@ def test_duplicate_dive_required_resource_alias_is_rejected(tmp_path: Path) -> N
 
     with pytest.raises(ValidationError, match="duplicate alias 'source_data'"):
         Project(tmp_path).validate(targets=["prod"])
-
-
-def test_cleanup_plan_removes_consumers_before_producers(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project = write_graph_project(tmp_path)
-    deployer = Deployer(project)
-    rendered = project.render_all("preview", branch="feature/contracts")
-    monkeypatch.setattr(deployer, "_list_dive_ids", lambda title: ["dive-id"])
-    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: ["flight-id"])
-    monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
-
-    records = deployer._build_cleanup_plan(rendered, "feature_contracts", branch="feature/contracts")
-
-    assert [record.type for record in records] == ["dive", "flight", "share"]
-    assert [record.blueprint for record in records] == ["consumer", "producer", "producer"]
 
 
 def test_dependency_cycle_is_rejected_with_chain(tmp_path: Path) -> None:

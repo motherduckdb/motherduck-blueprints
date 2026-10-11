@@ -21,6 +21,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - The scheduled doctor workflow authenticates its release lookup on github.com, so a shared runner rate limit no longer opens a false "upgrade needed" issue. When doctor fails before printing a report, the issue now points to the workflow run.
 - `md-blueprints import` checks `--resource` selectors before connecting to MotherDuck, and `init --force` writes nothing when a destination would escape the target directory.
 - Correct the preview Dive status docs: a Dive with a non-draft base `status` needs `targets.preview.status: draft`.
+- Maintenance: replace unit tests that mocked deployer internals with end-to-end tests that run the installed CLI on a generated repository against a stateful fake MotherDuck account, now shared with `make mock-test`, and drop duplicate and wording-only tests.
 - Bump the package and action pins to 0.7.9.
 
 ## v0.7.8 - 2026-10-11

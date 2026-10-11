@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Fake MotherDuck CLI: answers `motherduck query --file F --output json` from the fake duckdb module."""
+import json
+import os
+import sys
+from pathlib import Path
+
+import duckdb
+
+assert sys.argv[1] == "query" and "--file" in sys.argv and "json" in sys.argv
+statement = Path(sys.argv[sys.argv.index("--file") + 1]).read_text()
+try:
+    connection = duckdb.connect("md:", config={"motherduck_token": os.environ.get("MOTHERDUCK_TOKEN")})
+    rows = connection.execute(statement).fetchall()
+    print(json.dumps([{str(index): value for index, value in enumerate(row)} for row in rows]))
+except duckdb.Error as error:
+    print(str(error), file=sys.stderr)
+    sys.exit(1)

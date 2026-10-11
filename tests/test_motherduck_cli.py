@@ -148,28 +148,6 @@ def test_installer_pins_runtime_without_credentials(tmp_path: Path, monkeypatch:
     assert len(downloads) == 1
 
 
-def test_legacy_python_backend_is_still_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from types import SimpleNamespace
-    import duckdb
-
-    run_init(tmp_path)
-    deployer = Deployer(Project(tmp_path))
-    deployer.sql_env = {'motherduck_token': 'test-only'}
-    monkeypatch.setenv('MD_BLUEPRINTS_SQL_BACKEND', 'duckdb')
-    queries: list[str] = []
-    closed: list[bool] = []
-
-    def execute(statement: str) -> Any:
-        queries.append(statement)
-        return SimpleNamespace(fetchall=lambda: [(1,)])
-
-    monkeypatch.setattr(duckdb, 'connect', lambda *a, **kw: SimpleNamespace(
-        execute=execute, close=lambda: closed.append(True),
-    ))
-    assert deployer._query_rows('SELECT 1') == [(1,)]
-    assert queries == ['SELECT 1'] and closed == [True]
-
-
 @pytest.mark.parametrize('payload,expected', [
     ('[{"first":1}]\n[{"second":2}]\n', [(2,)]),
     ('[{"id":"created"}]\n[]\n', []),
