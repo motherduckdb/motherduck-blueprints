@@ -417,6 +417,9 @@ def test_preview_deploy_never_cancels_cleanup_and_skips_closed_pull_requests() -
     cleanup = reusable("cleanup_preview_blueprints")["jobs"]["cleanup"]
     assert deploy["concurrency"]["group"].split("${{")[0] == cleanup["concurrency"]["group"].split("${{")[0]
     assert deploy["concurrency"]["cancel-in-progress"] is False
+    assert "needs.compute_changes.outputs.pull_request_open != 'false'" in deploy["if"]
+    changes = reusable("deploy_blueprints")["jobs"]["compute_changes"]
+    assert changes["outputs"]["pull_request_open"] == "${{ steps.pr-open.outputs.open }}"
     first, *rest = deploy["steps"]
     assert first["id"] == "pr-state" and "pulls.get" in first["with"]["script"]
     assert all("steps.pr-state.outputs.open == 'true'" in step.get("if", "") for step in rest)

@@ -7,14 +7,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 ## Unreleased
 
 - Detect changed packages when `motherduck.yml` lives in a subdirectory (`root: analytics`). Git reports paths from the repository root, so pull request previews and push deploys found no changes and skipped every package.
-- Stop preview deploys from cancelling preview cleanup. A push shortly before a pull request closed could cancel the running cleanup and redeploy the preview. Preview deploys now wait instead of cancelling, and skip deploying when the pull request is already closed.
+- Stop preview deploys from cancelling preview cleanup. A push shortly before a pull request closed could cancel the running cleanup and redeploy the preview. Preview deploys now wait instead of cancelling, and skip deploying when the pull request is already closed. GitHub keeps only one pending job per concurrency group, so a deploy that queues behind a running deploy can still replace a pending cleanup; that deploy then stops, and the preview needs a manual cleanup.
 - Preview cleanup accepts a Guide whose topic, rather than its title, includes the branch slug, as validation already did. Before, such a Guide failed cleanup and blocked every other resource on the branch from being removed.
 - Preview cleanup refuses resources whose names do not change with the branch, even when the name happens to contain the branch name, so closing branch `dev` no longer drops a shared `events_dev` database.
 - Authoritative role memberships and share user grants compare usernames without regard to case, like the plan's username check, so a member declared as `Alice@Example.com` is no longer revoked when MotherDuck lists `alice@example.com`.
 - Remove a `REQUIRED_DATABASES` export with a TypeScript type annotation, or on the last line without a trailing newline, before deploying a Dive. A multi-line export that is not a static array now stops `plan` and `deploy` before any write instead of deploying broken source.
 - Reject variables that reference each other in a cycle instead of deploying names that contain a literal `${var.name}`.
 - Guide `references` set in a `targets.<target>` override now join the dependency graph and are checked like base references. Before, the referencing package could deploy before the Guide it references, and a missing blueprint crashed validation.
-- Give branches with no ASCII letters or digits a distinct preview slug. They all shared the slug `preview` and could clean up each other's previews.
+- Give branches with no ASCII letters or digits a distinct preview slug. They all shared the slug `preview` and could clean up each other's previews. Cleanup no longer removes resources named with the old shared `preview` slug, because they cannot be attributed to one branch; delete those by hand.
 - Report the MotherDuck CLI's own error when a query fails, not its "New MotherDuck CLI available" notice.
 - The generated `.gitignore` only ignores `build/`, `dist/`, and `notes/` at the repository root, so packages with those names are committed.
 - `md-blueprints upgrade` updates `CLI_VERSION` in a repository without Blueprints workflows, and `doctor` no longer reports such a repository as mismatched.

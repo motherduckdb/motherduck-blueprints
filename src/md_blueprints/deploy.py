@@ -102,7 +102,7 @@ def quote_name(value: object) -> str:
     return '"' + str(value).replace('"', '""') + '"'
 
 
-_REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*(?::[^=]+)?=\s*", re.MULTILINE)
+_REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*(?::(?:=>|[^=])+?)?=(?!>)\s*", re.MULTILINE)
 _LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*(?:\n|$)")
 OTHER_BRANCH_PREVIEW = "other-branch preview"
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
@@ -128,7 +128,7 @@ def required_databases_export(source: str, start: int = 0) -> tuple[int, int, ob
     value, error, end = json5.parse(source, start=match.end(), consume_trailing=False, allow_duplicate_keys=False)
     if error:
         raise ValidationError("REQUIRED_DATABASES must be a static array")
-    suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?:\r?\n|$)", source[end:])
+    suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?://[^\n]*)?(?:\r?\n|$)", source[end:])
     if suffix is None:
         raise ValidationError("Unsupported expression after REQUIRED_DATABASES")
     return match.start(), end + suffix.end(), value
@@ -152,6 +152,8 @@ def strip_required_databases_export(source: str) -> str:
                 break
             line_end = result.find("\n", match.end())
             rest = result[match.end():len(result) if line_end == -1 else line_end]
+            # Brackets inside strings or a trailing comment do not continue the expression.
+            rest = re.sub(r"//.*", "", re.sub(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", "", rest))
             if sum(rest.count(c) for c in "[{(") > sum(rest.count(c) for c in "]})"):
                 # The legacy line removal would leave the rest of the expression behind.
                 raise
@@ -486,7 +488,9 @@ class Deployer:
             stable_renders=stable_renders,
         )
         legacy_slug = legacy_branch_slug(branch or "")
-        if legacy_slug == current_slug:
+        # Every branch without ASCII letters or digits, and a branch named "preview", used the slug
+        # "preview", so those resources cannot be attributed to this branch and are left alone.
+        if legacy_slug in {current_slug, "preview"}:
             return records
         # Previews created before long slugs were hashed used the plain truncation.
         # Plan and deploy never use it; cleanup removes what it finds and nothing else.

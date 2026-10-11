@@ -12,7 +12,7 @@ import pytest
 
 from md_blueprints import deploy as deploy_module
 from md_blueprints.deploy import OTHER_BRANCH_PREVIEW, Deployer, PlanRecord, quote_ident
-from md_blueprints.project import CommandError, Project, RenderedBlueprint
+from md_blueprints.project import CommandError, Project, RenderedBlueprint, branch_slug
 from md_blueprints.schema import ValidationError
 
 
@@ -1391,7 +1391,14 @@ def test_non_static_multi_line_required_databases_export_is_rejected() -> None:
 
     with pytest.raises(ValidationError, match="REQUIRED_DATABASES must be a static array"):
         strip_required_databases_export(source)
-    # Single-line expressions keep the legacy line removal.
+    # Single-line exports keep the legacy line removal, including brackets in strings and comments.
+    for line in (
+        'export const REQUIRED_DATABASES = [{url: "md:x", alias: "a"}]; // local preview only (see README',
+        'export const REQUIRED_DATABASES = ["a", "(b"].map((x) => x);',
+    ):
+        assert strip_required_databases_export(line + "\nexport default 1;\n") == "export default 1;\n"
+    multi = "export const REQUIRED_DATABASES = [\n  { alias: 'a' },\n]; // local preview\nexport default 1;\n"
+    assert strip_required_databases_export(multi) == "export default 1;\n"
     assert strip_required_databases_export("export const REQUIRED_DATABASES = load();\nexport default 1;\n") == (
         "export default 1;\n"
     )
@@ -1819,3 +1826,30 @@ def test_name_lookup_rejects_pages_that_repeat_ids(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(CommandError, match="repeated an ID"):
         deployer._list_flight_ids("loader")
+
+
+def test_cleanup_for_non_ascii_branch_leaves_the_shared_legacy_preview_slug_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "motherduck.yml").write_text(
+        "schemaVersion: 1\nrepository: {name: slugs}\ninclude: [projects/*/blueprint.yml]\n"
+        "targets:\n  preview:\n    mode: preview\n    policies: {cleanup: true, requireBranchSlugInDataResources: true}\n"
+        "  prod: {mode: production}\n",
+        encoding="utf-8",
+    )
+    package = tmp_path / "projects" / "events"
+    package.mkdir(parents=True)
+    (package / "blueprint.yml").write_text(
+        "schemaVersion: 1\nname: events\ntitle: Events\nresources:\n  shares:\n    data:\n"
+        "      name: events\n      database: events\n      targets:\n        preview:\n"
+        "          {name: 'events_${target.branch_slug}', database: 'events_${target.branch_slug}', dropDatabase: true}\n",
+        encoding="utf-8",
+    )
+    deployer = Deployer(Project(tmp_path))
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: f"md:_share/{name}/1")
+    monkeypatch.setattr(deployer, "_database_exists", lambda name: True)
+
+    records = deployer.cleanup_plan(target="preview", branch="日本", names=None)
+
+    assert {record.name for record in records} == {f"events_{branch_slug('日本')}"}
