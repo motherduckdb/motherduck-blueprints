@@ -49,10 +49,25 @@ def unsupported_schema_version_message(version: int) -> str:
     )
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Reject duplicate mapping keys; PyYAML otherwise keeps the last value and drops the rest silently."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[object, object]:
+        seen: set[object] = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"duplicate key {key!r}", key_node.start_mark,
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def load_yaml(path: Path) -> object:
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
+            return yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     except yaml.YAMLError as exc:
         raise ValidationError(f"Invalid YAML in {path}: {exc}") from exc
     except OSError as exc:

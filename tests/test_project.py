@@ -749,3 +749,41 @@ resources:
 
     with pytest.raises(ValidationError, match="resources.context is deprecated.*resources.guides"):
         Project(tmp_path).validate(targets=["prod"])
+
+
+def test_flight_config_values_render_as_json_strings(tmp_path: Path) -> None:
+    write_override_project(
+        tmp_path,
+        "          config:\n            dry_run: false\n            batch: 10\n            empty:\n"
+        "            nested: {a: 1, b: [x, y]}\n            name: plain",
+    )
+
+    config = Project(tmp_path).render_all("prod")[0].flights["loader"]["config"]
+
+    assert config == {
+        "dry_run": "false", "batch": "10", "empty": "", "nested": '{"a": 1, "b": ["x", "y"]}', "name": "plain",
+    }
+
+
+def test_override_for_an_unknown_target_is_rejected(tmp_path: Path) -> None:
+    write_override_project(
+        tmp_path,
+        "          name: loader",
+        extra_flight="      targets:\n        production:\n          id: 00000000-0000-0000-0000-000000000001\n",
+    )
+    path = tmp_path / "blueprints" / "loader" / "blueprint.yml"
+    # Merge the misspelled target into the existing targets block.
+    text = path.read_text(encoding="utf-8").replace(
+        "      targets:\n        production:\n          id: 00000000-0000-0000-0000-000000000001\n      targets:\n",
+        "      targets:\n        production:\n          id: 00000000-0000-0000-0000-000000000001\n",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ValidationError, match=r"names unknown target\(s\) production; motherduck.yml declares: preview, prod"):
+        Project(tmp_path).render_all("prod")
+
+
+def test_staging_overrides_are_allowed_before_staging_is_declared(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          name: loader\n        staging:\n          name: loader-staging")
+
+    assert Project(tmp_path).render_all("prod")[0].flights["loader"]["name"] == "loader"

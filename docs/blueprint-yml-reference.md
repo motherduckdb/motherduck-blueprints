@@ -156,7 +156,7 @@ resources:
           scheduleCron: ""
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
 
 `instanceType` sets the Flight's instance size: `F4` (0.5 vCPU, 4 GB), `F16` (2 vCPU, 16 GB), or `F32` (4 vCPU, 32 GB). Your plan decides which sizes are allowed:
 

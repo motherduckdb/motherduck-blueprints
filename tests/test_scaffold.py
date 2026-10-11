@@ -346,3 +346,13 @@ def test_starter_flight_reads_config_from_environment_variables(
     monkeypatch.setenv("database", "loader_preview_feature_x")
     namespace = runpy.run_path(str(source))
     assert namespace["setting"]("database") == "loader_preview_feature_x"
+
+
+def test_scaffolded_guide_validates_once_deploy_is_enabled(tmp_path: Path) -> None:
+    from md_blueprints.init import run_init
+
+    run_init(tmp_path)
+    manifest = run_new(tmp_path, "guide", "handbook") / "blueprint.yml"
+    manifest.write_text(manifest.read_text().replace("deploy: false", "deploy: true"))
+
+    Project(tmp_path).validate(targets=["preview", "prod"], branch="feature/docs")

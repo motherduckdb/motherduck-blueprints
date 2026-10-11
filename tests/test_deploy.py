@@ -861,6 +861,42 @@ def test_rbac_preflight_rejects_admin_only_resources_without_admin(
         deployer._preflight_rbac([blueprint])
 
 
+@pytest.mark.parametrize(("current", "desired", "blocked"), [
+    ("ready", "endorsed", True),
+    (None, "endorsed", True),
+    ("endorsed", "endorsed", False),
+    ("draft", "ready", False),
+])
+def test_endorsing_a_dive_requires_admin_before_any_write(
+    monkeypatch: pytest.MonkeyPatch, current: str | None, desired: str, blocked: bool,
+) -> None:
+    project = Project(FIXTURES / "simple")
+    deployer = Deployer(project)
+    record = PlanRecord(
+        "simple-dive", "dive", "dashboard", "Dashboard", "update" if current else "create", bool(current),
+        "dive-id" if current else None, current_status=current, desired_status=desired,
+    )
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [("builder",)])
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+    monkeypatch.setattr(deployer, "_preflight_rbac", lambda rendered: None)
+    monkeypatch.setattr(deployer, "_preflight_flight_instance_types", lambda rendered: None)
+    monkeypatch.setattr(deployer, "_build_deploy_plan", lambda rendered: [record])
+    writes: list[str] = []
+
+    def deploy_blueprint(*args: object) -> None:
+        writes.append("deploy")
+
+    monkeypatch.setattr(deployer, "_deploy_blueprint", deploy_blueprint)
+
+    if blocked:
+        with pytest.raises(ValidationError, match="requires the admin role.*endorses Dive Dashboard"):
+            deployer.deploy(target="prod", branch=None, names=None, verify=False)
+        assert writes == []
+    else:
+        deployer.deploy(target="prod", branch=None, names=None, verify=False)
+        assert writes
+
+
 def test_rbac_preflight_lists_roles_of_the_current_user(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     statements: list[str] = []
@@ -1853,3 +1889,17 @@ def test_cleanup_for_non_ascii_branch_leaves_the_shared_legacy_preview_slug_alon
     records = deployer.cleanup_plan(target="preview", branch="日本", names=None)
 
     assert {record.name for record in records} == {f"events_{branch_slug('日本')}"}
+
+
+def test_preview_dive_row_escapes_pipes_in_titles(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    deployer = Deployer(Project(FIXTURES / "simple"))
+    source = tmp_path / "dive.tsx"
+    source.write_text("export default function Dive() { return null; }\n", encoding="utf-8")
+    monkeypatch.setattr(deployer, "_sql", lambda statement: "")
+    title = "Ops | Revenue:feat-x (Preview)"
+    dive: dict[str, object] = {"title": title, "sourcePath": str(source), "requiredResources": [], "status": "draft"}
+    plan = PlanRecord("ops", "dive", "dashboard", title, "update", True, "dive-id", desired_status="draft")
+
+    row = deployer._deploy_dive(dive, {}, {}, "preview", plan)
+
+    assert row == r"| Ops \| Revenue:feat-x (Preview) | draft | [Open Dive](https://app.motherduck.com/dives/dive-id) |"

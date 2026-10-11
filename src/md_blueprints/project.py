@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import heapq
+import json
 import os
 import re
 import subprocess
@@ -625,6 +626,7 @@ class Project:
             "inputs": rendered_inputs,
         }
 
+        self._check_override_targets(blueprint.raw.get("targets"), f"{blueprint.path}: targets")
         raw_variables: dict[str, object] = {}
         raw_variables.update(self._extract_variable_values(self.manifest.get("variables", {})))
         raw_variables.update(self._extract_variable_values(target_settings.get("variables", {})))
@@ -699,7 +701,9 @@ class Project:
             if target == "preview" and isinstance(policies, dict) and policies.get("disableSchedules") is True:
                 flight["scheduleCron"] = ""
             config = flight.get("config", {})
-            flight["config"] = stringify_map(config if isinstance(config, dict) else {})
+            flight["config"] = {
+                str(key): config_value(value) for key, value in (config if isinstance(config, dict) else {}).items()
+            }
             flight.setdefault("secrets", [])
             flight.setdefault("accessTokenName", "")
             flight.setdefault("scheduleCron", "")
@@ -802,6 +806,7 @@ class Project:
             label = f"resources.{group}.{key}" if group else f"resources.{key}"
             if not isinstance(raw_value, dict):
                 raise ValidationError(f"{location}{label} must be an object")
+            self._check_override_targets(raw_value.get("targets"), f"{location}{label}.targets")
             base = {field: value for field, value in raw_value.items() if field != "targets"}
             target_value = nested_dict(raw_value, "targets", target) or {}
             merged = deep_merge(base, target_value)
@@ -816,6 +821,19 @@ class Project:
                 self._validate_rendered_resource(rendered_value, definition, label, location, target)
             rendered[str(key)] = rendered_value
         return rendered
+
+    def _check_override_targets(self, targets: object, label: str) -> None:
+        """Overrides for an unknown target are never applied, so a typo would silently drop them (and any bound id)."""
+        if not isinstance(targets, dict):
+            return
+        # Scaffolds add staging overrides before a repository enables staging.
+        known = {*self.target_names(), "preview", "staging", "prod"}
+        unknown = sorted(str(name) for name in targets if name not in known)
+        if unknown:
+            raise ValidationError(
+                f"{label} names unknown target(s) {', '.join(unknown)}; motherduck.yml declares: "
+                + ", ".join(self.target_names())
+            )
 
     def _validate_rendered_resource(
         self,
@@ -1294,6 +1312,17 @@ def nested_dict(node: object, *path: str) -> object | None:
         else:
             return None
     return current
+
+
+def config_value(value: object) -> str:
+    """Flight config values are strings; render YAML booleans, nulls, and nested values as JSON, not Python reprs."""
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, (bool, dict, list)):
+        return json.dumps(value)
+    return str(value)
 
 
 def stringify_map(values: dict[str, object]) -> dict[str, str]:

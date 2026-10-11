@@ -21,6 +21,15 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - The scheduled doctor workflow authenticates its release lookup on github.com, so a shared runner rate limit no longer opens a false "upgrade needed" issue. When doctor fails before printing a report, the issue now points to the workflow run.
 - `md-blueprints import` checks `--resource` selectors before connecting to MotherDuck, and `init --force` writes nothing when a destination would escape the target directory.
 - Correct the preview Dive status docs: a Dive with a non-draft base `status` needs `targets.preview.status: draft`.
+- Flight `config` values reach the Flight as JSON-style strings: `false` instead of `False`, an empty value instead of `None`, and JSON for nested objects and lists instead of Python reprs. Plain strings are unchanged. If Flight code compares a config value with `"True"` or `"False"`, compare with `"true"` or `"false"`.
+- `plan` and `deploy` check for the admin role before any write when a Dive moves to `status: endorsed`. Before, a non-admin deploy applied Flight and Dive content changes and then failed at the status change.
+- Overrides under a `targets.<name>` that `motherduck.yml` does not declare, other than `preview`, `staging`, and `prod`, now fail validation. Before, a misspelled target such as `production` was silently ignored, including any bound `id` in it.
+- Duplicate keys in `motherduck.yml` and `blueprint.yml` now fail validation. YAML kept only the last value, so a second `variables:` block silently replaced the first.
+- The preview pull request comment escapes `|` in resource names, and shows share URLs as code, because GitHub drops `md:` links.
+- `guides` skips multi-document YAML and YAML with custom tags in a dbt project, such as Kubernetes or CloudFormation files, instead of failing. YAML syntax errors still fail.
+- The Guide scaffold includes a branch-scoped preview title, so it validates once `deploy: true` is set.
+- The local Dive preview supports `useExport` and `exportAs` on query results, so Dives that export data build with `make preview-smoke`. Local exports are logged instead of downloaded.
+- Fix both examples in the Terraform guide, which failed validation in a generated repository, and document that removing `accessTokenName` or `maxRuntimeSec` keeps the Flight's current value.
 - Bump the package and action pins to 0.7.9.
 
 ## v0.7.8 - 2026-10-11

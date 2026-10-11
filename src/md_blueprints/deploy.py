@@ -336,7 +336,9 @@ class Deployer:
         self._prepare_live_command(target, "plan")
         self._preflight_rbac(rendered)
         self._preflight_flight_instance_types(rendered)
-        return self._build_deploy_plan(rendered)
+        records = self._build_deploy_plan(rendered)
+        self._preflight_endorsements(records)
+        return records
 
     def verify(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = copy.deepcopy(self._validate_and_render(target, branch, names))
@@ -420,6 +422,7 @@ class Deployer:
         self._preflight_flight_instance_types(rendered)
         records = self._build_deploy_plan(rendered)
         self.ensure_plan_succeeds(records)
+        self._preflight_endorsements(records)
         plan_index = self._index_by_resource(records)
 
         for blueprint, key, role in self._role_deployment_order(rendered):
@@ -1363,7 +1366,8 @@ class Deployer:
             url = self._wait_for_share(str(share["name"]))
             self._reconcile_share(share)
             if target == "preview":
-                share_rows.append(f"| {share['name']} | [Open Share]({url}) |")
+                # GitHub drops links with an md: scheme, so show the share URL as copyable code.
+                share_rows.append(f"| {PlanFormatter._escape_cell(share['name'])} | `{url}` |")
 
         for key, dive in blueprint.dives.items():
             if dive.get("deploy") is False:
@@ -1398,7 +1402,7 @@ class Deployer:
 
         sections = [
             self._format_section("Flights", "| Flight | ID | Run started |", "|--------|----|-------------|", flight_rows),
-            self._format_section("Shares", "| Share | Link |", "|-------|------|", share_rows),
+            self._format_section("Shares", "| Share | URL |", "|-------|-----|", share_rows),
             self._format_section("Dives", "| Dive | Status | Link |", "|------|--------|------|", dive_rows),
             self._format_section("Guides", "| Guide | ID |", "|-------|----|", guide_rows),
         ]
@@ -1495,7 +1499,10 @@ class Deployer:
                     name=name,
                 )
 
-        return f"| {name} | {flight_id} | {str(run_started).lower()} |" if target == "preview" else None
+        return (
+            f"| {PlanFormatter._escape_cell(name)} | {flight_id} | {str(run_started).lower()} |"
+            if target == "preview" else None
+        )
 
     def _flight_run_status(self, flight_id: str, run_number: int) -> str:
         # MD_GET_FLIGHT_RUN is unavailable before DuckDB 1.5.5. The paginated
@@ -1641,7 +1648,8 @@ class Deployer:
         print(f"  Deployed: https://app.motherduck.com/dives/{dive_id}", file=sys.stderr)
         effective_status = desired_status or plan.current_status or "draft"
         return (
-            f"| {title} | {effective_status} | [Open Dive](https://app.motherduck.com/dives/{dive_id}) |"
+            f"| {PlanFormatter._escape_cell(title)} | {effective_status} | "
+            f"[Open Dive](https://app.motherduck.com/dives/{dive_id}) |"
             if target == "preview"
             else None
         )
@@ -1732,6 +1740,18 @@ class Deployer:
                 for guide in blueprint.guides.values()
             ):
                 admin_reasons.append(f"{blueprint.name} publishes organization Guides")
+        self._require_admin(admin_reasons)
+
+    def _preflight_endorsements(self, records: list[PlanRecord]) -> None:
+        """Endorsing a Dive needs an admin; check before any write instead of failing after other changes."""
+        self._require_admin([
+            f"{record.blueprint} endorses Dive {record.name}"
+            for record in records
+            if record.type == "dive" and record.action in {"create", "update"}
+            and record.desired_status == "endorsed" and record.current_status != "endorsed"
+        ])
+
+    def _require_admin(self, admin_reasons: list[str]) -> None:
         if not admin_reasons:
             return
 
@@ -2049,7 +2069,7 @@ class Deployer:
             raise ValidationError(f"Cannot deploy Guide {title} with plan action {plan.action}")
 
         plan.id = guide_id
-        return f"| {title} | {guide_id} |" if target == "preview" else None
+        return f"| {PlanFormatter._escape_cell(title)} | {guide_id} |" if target == "preview" else None
 
     def _guide_references_sql(
         self,

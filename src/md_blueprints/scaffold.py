@@ -312,6 +312,9 @@ resources:
       description: Replace with a one-sentence summary of when to read this Guide.
       source: guide.md
       deploy: false
+      targets:
+        preview:
+          title: {_yaml_string(f"{_title(name)}:${{target.branch}} (Preview)")}
 """
 
 
