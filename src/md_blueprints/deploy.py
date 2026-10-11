@@ -1278,14 +1278,21 @@ class Deployer:
 
     def _resource_ids_by_uuid(self, reference_type: str, uuid_value: str) -> list[str]:
         uuid_sql = f"{sql_string(uuid_value)}::UUID"
-        if reference_type == "dive":
-            rows = self._query_rows(f"SELECT id FROM MD_GET_DIVE(id := {uuid_sql})")
-        elif reference_type == "flight":
-            rows = self._query_rows(
-                f"SELECT flight_id FROM MD_GET_FLIGHT(flight_id := {uuid_sql})"
-            )
-        else:
-            rows = self._get_guide_rows_by_id(uuid_value)
+        try:
+            if reference_type == "dive":
+                rows = self._query_rows(f"SELECT id FROM MD_GET_DIVE(id := {uuid_sql})")
+            elif reference_type == "flight":
+                rows = self._query_rows(
+                    f"SELECT flight_id FROM MD_GET_FLIGHT(flight_id := {uuid_sql})"
+                )
+            else:
+                rows = self._get_guide_rows_by_id(uuid_value)
+        except CommandError as exc:
+            # A deleted resource becomes a plan error for the reference, like a missing Guide.
+            message = str(exc).lower()
+            if "does not exist" in message or "not found" in message:
+                return []
+            raise
         return [str(row[0]) for row in rows]
 
     def _resource_ids_for_reference(

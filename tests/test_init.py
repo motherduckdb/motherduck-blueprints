@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import shutil
 from pathlib import Path
 
 import pytest
@@ -23,15 +22,6 @@ SHARED_TEMPLATE_PATHS = [
     ".dive-preview",
     "docs",
 ]
-
-
-def test_optional_example_requires_explicit_activation(tmp_path: Path) -> None:
-    run_init(tmp_path)
-    assert Project(tmp_path).all_blueprint_names() == ["wikipedia-pageviews-ingest", "wikipedia-pageviews"]
-    shutil.copytree(tmp_path / "examples/ncs-field-recovery", tmp_path / "projects/ncs-field-recovery")
-    project = Project(tmp_path)
-    assert "ncs-field-recovery" in project.all_blueprint_names()
-    project.validate()
 
 
 def test_slim_template_creates_optional_roots_on_demand(tmp_path: Path) -> None:
@@ -151,48 +141,6 @@ def test_doctor_workflows_close_resolved_upgrade_issues() -> None:
         assert "DOCTOR_OUTCOME" in text
         assert "state: 'all'" in text
         assert "state_reason: 'completed'" in text
-
-
-def test_init_refuses_non_empty_directory_without_force(tmp_path: Path) -> None:
-    target = tmp_path / "existing"
-    target.mkdir()
-    (target / "README.md").write_text("existing\n", encoding="utf-8")
-
-    with pytest.raises(ValidationError, match="is not empty. Pass --force to add only missing template files"):
-        run_init(target)
-    assert (target / "README.md").read_text(encoding="utf-8") == "existing\n"
-    assert not (target / "motherduck.yml").exists()
-
-
-def test_init_force_keeps_existing_files_and_lists_them(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    target = tmp_path / "existing"
-    target.mkdir()
-    existing = {"README.md": "my readme\n", ".gitignore": "secrets/\n", "LICENSE": "Proprietary\n"}
-    for name, text in existing.items():
-        (target / name).write_text(text, encoding="utf-8")
-
-    run_init(target, force=True)
-
-    for name, text in existing.items():
-        assert (target / name).read_text(encoding="utf-8") == text
-    assert (target / "motherduck.yml").is_file()
-    output = capsys.readouterr().out
-    assert "Kept 3 existing file(s) unchanged:" in output
-    assert "  .gitignore (merge the template's ignore entries into yours manually)" in output
-    assert "  LICENSE" in output
-
-
-def test_init_force_refuses_symlink_that_escapes_target(tmp_path: Path) -> None:
-    target = tmp_path / "existing"
-    outside = tmp_path / "outside"
-    target.mkdir()
-    outside.mkdir()
-    (target / "docs").symlink_to(outside, target_is_directory=True)
-
-    with pytest.raises(ValidationError, match="outside"):
-        run_init(target, force=True)
-
-    assert list(outside.iterdir()) == []
 
 
 def test_init_assembles_authoritative_repository_assets(tmp_path: Path) -> None:

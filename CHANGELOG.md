@@ -30,6 +30,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - The Guide scaffold includes a branch-scoped preview title, so it validates once `deploy: true` is set.
 - The local Dive preview supports `useExport` and `exportAs` on query results, so Dives that export data build with `make preview-smoke`. Local exports are logged instead of downloaded.
 - Fix both examples in the Terraform guide, which failed validation in a generated repository, and document that removing `accessTokenName` or `maxRuntimeSec` keeps the Flight's current value.
+- Maintenance: replace unit tests that mocked deployer internals with end-to-end tests that run the installed CLI on a generated repository against a stateful fake MotherDuck account, now shared with `make mock-test`, and drop duplicate and wording-only tests.
+- A Guide that references a deleted Dive or Flight by UUID now gets a plan error for that reference. Before, `plan` and `deploy` stopped with the raw `MotherDuck SQL failed: ... not found` message.
 - Bump the package and action pins to 0.8.0.
 
 ## v0.7.8 - 2026-10-11

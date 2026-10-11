@@ -11,50 +11,12 @@ import pytest
 import yaml
 import duckdb
 
-from md_blueprints.cli import main
-from md_blueprints.deploy import Deployer, PlanRecord
+from md_blueprints.deploy import Deployer
 from md_blueprints.importer import ImportReader, convert, run_import, dive_source
 from md_blueprints.init import run_init
-from md_blueprints.project import CommandError, Project
+from md_blueprints.project import Project
 from md_blueprints.schema import ValidationError
-
-
-OWNER = "owner@example.test"
-IDS = {kind: str(UUID(int=index)) for index, kind in enumerate(("flight", "dive", "guide"), 1)}
-
-
-def snapshots() -> list[dict[str, Any]]:
-    flight = {
-        "kind": "flight",
-        "metadata": {
-            "flight_id": IDS["flight"], "flight_name": "Existing pipeline", "owner_name": OWNER,
-            "current_version": 3, "schedule_cron": "0 * * * *", "schedule_status": "SCHEDULE_STATUS_DISABLED",
-            "status": "JOB_STATUS_ACTIVE", "updated_at": "2026-09-06",
-        },
-        "content": {
-            "flight_id": IDS["flight"], "flight_version": 3, "source_code": "print('unchanged')\n",
-            "requirements_txt": "requests==2.32.0\n", "config": {"DATABASE": "existing_db", "PASSWORD": "do-not-print"},
-            "flight_secret_names": ["vendor-key"], "access_token_name": "runtime-token", "max_runtime_sec": 600,
-        },
-    }
-    dive = {
-        "kind": "dive",
-        "metadata": {
-            "id": IDS["dive"], "title": "Existing dashboard", "description": "Keep this", "owner_name": OWNER,
-            "current_version": 4, "status": "endorsed", "updated_at": "2026-09-06",
-        },
-        "content": {
-            "version": 4, "api_version": 1, "content": "export default function Dive() { return null; }\n",
-            "required_resources": [{"url": "md:_share/data/original", "alias": "revenue", "resource_type": "share"}],
-        },
-    }
-    guide_meta = {
-        "id": IDS["guide"], "title": "Existing definitions", "description": "", "topic": "finance",
-        "owner_name": OWNER, "current_version": 5, "version": 5, "access": "organization",
-        "content": "# Revenue\n\nOriginal definition.\n", "updated_at": "2026-09-06",
-        "references": [{"type": "dive", "dive_id": IDS["dive"], "flight_id": None, "guide_id": None}],
-    }
-    return [flight, dive, {"kind": "guide", "metadata": guide_meta, "content": guide_meta}]
+from e2e_support import IMPORT_IDS as IDS, import_snapshot as snapshots
 
 
 def setup(root: Path) -> tuple[Project, Path]:
@@ -63,50 +25,6 @@ def setup(root: Path) -> tuple[Project, Path]:
     source.parent.mkdir()
     source.write_text(json.dumps(snapshots()))
     return Project(root), source
-
-
-def test_dry_run_and_write_preserve_identity_settings_and_disable_deploy(tmp_path: Path) -> None:
-    project, source = setup(tmp_path)
-    original = project.manifest_path.read_bytes()
-    report = run_import(project, target="prod", selectors=[], all_resources=False, write=False, snapshot_path=source)
-    assert len(report["resources"]) == 3
-    assert "do-not-print" not in json.dumps(report)
-    assert project.manifest_path.read_bytes() == original
-    assert not any((tmp_path / item["package"]).exists() for item in report["resources"])
-    run_import(project, target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    imported = Project(tmp_path)
-    assert ">=0.4.3" in str(imported.manifest["requiredCliVersion"])
-    names = [Path(item["package"]).name for item in report["resources"]]
-    prod = imported.render_all("prod", names=names)
-    resources = {
-        kind: resource for bp in prod
-        for kind, group in (("flight", bp.flights), ("dive", bp.dives), ("guide", bp.guides))
-        for resource in group.values()
-    }
-    for kind, resource in resources.items():
-        assert resource["id"] == IDS[kind]
-        assert resource["owner"] == OWNER
-        assert resource["deploy"] is False
-    assert resources["flight"]["scheduleCron"] == "0 * * * *"
-    assert resources["flight"]["manageSchedule"] is False
-    assert resources["flight"]["runOnDeploy"] is False
-    assert resources["flight"]["config"]["DATABASE"] == "existing_db"  # type: ignore[index]
-    assert resources["dive"]["requiredResources"] == [{"url": "md:_share/data/original", "alias": "revenue"}]
-    assert "status" not in resources["dive"]
-    assert resources["guide"]["references"] == [{"type": "dive", "uuid": IDS["dive"]}]
-    for bp in imported.render_all("preview", branch="test/import", names=names):
-        for resource in [*bp.flights.values(), *bp.dives.values(), *bp.guides.values()]:
-            assert "id" not in resource and resource["deploy"] is False
-
-
-def test_reimport_keeps_customer_edits(tmp_path: Path) -> None:
-    project, source = setup(tmp_path)
-    report = run_import(project, target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    script = tmp_path / report["resources"][0]["package"] / "main.py"
-    script.write_text("print('customer changes')\n")
-    again = run_import(Project(tmp_path), target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    assert {item["action"] for item in again["resources"]} == {"already_managed"}
-    assert script.read_text() == "print('customer changes')\n"
 
 
 def test_incomplete_batch_and_path_escape_do_not_write(tmp_path: Path) -> None:
@@ -212,54 +130,6 @@ def test_snapshot_refuses_concurrent_changes(tmp_path: Path, monkeypatch: pytest
         reader.snapshot("flight", IDS["flight"])
 
 
-@pytest.mark.parametrize("kind", ["flight", "dive", "guide"])
-def test_bound_id_never_falls_back_to_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
-    project, _ = setup(tmp_path)
-    deployer = Deployer(project)
-    bp = project.render_all("prod")[0]
-    resource: dict[str, object] = {"id": IDS[kind], "owner": OWNER, "name": "renamed", "title": "renamed"}
-    calls = []
-
-    def missing(statement: str) -> list[tuple[object, ...]]:
-        calls.append(statement)
-        raise CommandError("not found")
-
-    monkeypatch.setattr(deployer, "_query_rows", missing)
-    record = deployer._bound_resource_record(bp, kind, "resource", resource)
-    assert record.action == "error" and record.id == IDS[kind]
-    assert all("MD_GET_" in statement for statement in calls)
-    assert not any("MD_LIST_" in statement or "CREATE" in statement for statement in calls)
-
-
-def test_adopted_flight_renames_by_id_without_running_or_changing_schedule(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project, _ = setup(tmp_path)
-    _, files, _ = convert(snapshots()[0], "prod")
-    data = yaml.safe_load(files["blueprint.yml"])["resources"]["flights"]["imported"]
-    data.update(name="new name", sourcePath="main.py", requirementsPath="requirements.txt")
-    deployer = Deployer(project)
-    calls: list[str] = []
-    def capture(statement: str) -> str:
-        calls.append(statement)
-        return ""
-    monkeypatch.setattr(deployer, "_sql", capture)
-    deployer._deploy_flight(data, "prod", PlanRecord("package", "flight", "imported", "new name", "update", True, IDS["flight"]))
-    assert len(calls) == 1
-    assert "MD_UPDATE_FLIGHT" in calls[0] and IDS["flight"] in calls[0]
-    assert "schedule_cron" not in calls[0] and "MD_RUN_FLIGHT" not in calls[0]
-    assert "runtime-token" in calls[0] and "vendor-key" in calls[0]
-
-
-def test_cli_dry_run_reports_without_source_or_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _, source = setup(tmp_path)
-    capsys.readouterr()
-    assert main(["import", "--root", str(tmp_path), "--snapshot", str(source)]) == 0
-    output = capsys.readouterr().out
-    assert json.loads(output)["written"] is False
-    assert "do-not-print" not in output and "print('unchanged')" not in output
-
-
 def test_import_rejects_preview_and_inconsistent_versions(tmp_path: Path) -> None:
     project, source = setup(tmp_path)
     with pytest.raises(ValidationError, match="never preview"):
@@ -350,120 +220,6 @@ def test_all_import_executes_readonly_sql_contracts(tmp_path: Path, monkeypatch:
     assert len(Project(tmp_path).blueprints) == 5
     assert any("MD_GET_DIVE_VERSION" in query for query in queries)
     assert any("MD_GET_FLIGHT_VERSION" in query for query in queries)
-
-
-def test_bound_flight_rejects_other_owner_and_preserves_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project, _ = setup(tmp_path)
-    deployer = Deployer(project)
-    bp = project.render_all("prod")[0]
-    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [(IDS["flight"], OWNER)])
-    monkeypatch.setattr(deployer, "_sql", lambda statement: "different-account")
-    record = deployer._bound_resource_record(bp, "flight", "item", {"id": IDS["flight"], "owner": OWNER, "name": "Renamed"})
-    assert record.action == "error" and "creator" in record.notes
-    monkeypatch.setattr(deployer, "_sql", lambda statement: OWNER)
-    record = deployer._bound_resource_record(bp, "flight", "item", {"id": IDS["flight"], "owner": OWNER, "name": "Renamed"})
-    assert record.action == "update" and record.id == IDS["flight"]
-
-
-def test_imported_resources_are_inert_in_deployment_and_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project, source = setup(tmp_path)
-    report = run_import(project, target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    project = Project(tmp_path)
-    names = [Path(item["package"]).name for item in report["resources"]]
-    deployer = Deployer(project)
-    monkeypatch.setattr(deployer, "_query_rows", lambda statement: pytest.fail(f"Unexpected live read: {statement}"))
-    rendered = project.render_all("prod", names=names)
-    records = deployer._build_deploy_plan(rendered)
-    assert {record.action for record in records} == {"validated_only"}
-    for bp in rendered:
-        deployer._deploy_blueprint(bp, "prod", deployer._index_by_resource(records))
-    preview = project.render_all("preview", branch="test/import", names=names)
-    assert deployer._build_cleanup_plan(preview, "test_import", branch="test/import") == []
-
-
-def test_reviewed_imports_update_all_original_ids_without_creating_replacements(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    project, source = setup(tmp_path)
-    report = run_import(project, target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    names = []
-    for item in report["resources"]:
-        path = tmp_path / item["package"] / "blueprint.yml"
-        data = yaml.safe_load(path.read_text())
-        resource = data["resources"][item["kind"] + "s"]["imported"]
-        resource["targets"]["prod"]["deploy"] = True
-        resource["name" if item["kind"] == "flight" else "title"] = "Renamed " + item["kind"]
-        path.write_text(yaml.safe_dump(data))
-        names.append(data["name"])
-    deployer = Deployer(Project(tmp_path))
-    statements: list[str] = []
-
-    def rows(statement: str) -> list[tuple[object, ...]]:
-        if statement.startswith("SHOW ROLES TO USER"):
-            return [("admin", "preset", True, None)]
-        if statement.startswith("SET VARIABLE desired_guide_references"):
-            return [("old content", "", "[]", "[]", "Old title", "finance", "", "organization")]
-        for kind in IDS:
-            if f"MD_GET_{kind.upper()}" in statement:
-                return [(IDS[kind], OWNER, "endorsed")] if kind == "dive" else [(IDS[kind], OWNER)]
-        pytest.fail(f"Unexpected SQL: {statement}")
-
-    def sql(statement: str) -> str:
-        if statement == "SELECT current_user":
-            return OWNER
-        statements.append(statement)
-        return ""
-
-    monkeypatch.setenv("MOTHERDUCK_TOKEN", "fake-local-only-token")
-    monkeypatch.setattr(deployer, "_query_rows", rows)
-    monkeypatch.setattr(deployer, "_sql", sql)
-    monkeypatch.setattr(deployer, "_list_flight_ids", lambda name: pytest.fail("name-based Flight lookup"))
-    monkeypatch.setattr(deployer, "_list_dive_states", lambda title: pytest.fail("name-based Dive lookup"))
-    deployer.deploy(target="prod", branch=None, names=names)
-    combined = "\n".join(statements)
-    assert "MD_CREATE_" not in combined and "MD_RUN_FLIGHT" not in combined
-    assert "schedule_cron" not in combined and "MD_UPDATE_DIVE_STATUS" not in combined
-    for kind in IDS:
-        assert IDS[kind] in combined and f"MD_UPDATE_{kind.upper()}" in combined
-
-
-@pytest.mark.parametrize("missing", ["flight", "dive", "guide"])
-@pytest.mark.parametrize("failure", ["missing", "owner_changed"])
-def test_customer_cd_checks_every_bound_id_before_first_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str, failure: str,
-) -> None:
-    project, source = setup(tmp_path)
-    report = run_import(project, target="prod", selectors=[], all_resources=False, write=True, snapshot_path=source)
-    names = []
-    for item in report["resources"]:
-        path = tmp_path / item["package"] / "blueprint.yml"
-        data = yaml.safe_load(path.read_text())
-        data["resources"][item["kind"] + "s"]["imported"]["targets"]["prod"]["deploy"] = True
-        path.write_text(yaml.safe_dump(data))
-        names.append(data["name"])
-    calls = []
-
-    def rows(self: Deployer, statement: str) -> list[tuple[object, ...]]:
-        calls.append(statement)
-        assert statement.startswith(("SELECT ", "SHOW ")), "CD must not write before all IDs pass"
-        if statement == "SELECT current_user":
-            return [(OWNER,)]
-        if statement == f'SHOW ROLES TO USER "{OWNER}"':
-            return [("admin", "preset", True, None)]
-        for kind in IDS:
-            if f"MD_GET_{kind.upper()}(" in statement:
-                if kind == missing:
-                    if failure == "missing":
-                        raise CommandError("resource no longer exists")
-                    return [(IDS[kind], "changed-owner", "endorsed")] if kind == "dive" else [(IDS[kind], "changed-owner")]
-                return [(IDS[kind], OWNER, "endorsed")] if kind == "dive" else [(IDS[kind], OWNER)]
-        pytest.fail(f"Unexpected query: {statement}")
-
-    monkeypatch.setenv("MOTHERDUCK_TOKEN", "test-token")
-    monkeypatch.setattr(Deployer, "_query_rows", rows)
-    with pytest.raises((ValidationError, CommandError)):
-        Deployer(Project(tmp_path)).deploy(target="prod", branch=None, names=names)
-    assert calls and all(statement.startswith(("SELECT ", "SHOW ")) for statement in calls)
 
 
 def test_import_normalizes_native_javascript_mounts_without_evaluating_code() -> None:
