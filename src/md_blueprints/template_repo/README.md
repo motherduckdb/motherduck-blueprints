@@ -90,4 +90,4 @@ Run **Actions → Prepare Guide context** to collect context in CI, with an opti
 - [GitHub Action inputs](docs/github-action.md)
 - [Adapt names, environments, and branches](docs/repository-reference.md#adapt-the-defaults-to-your-organization)
 - [Use with the MotherDuck Terraform provider](docs/use-with-terraform.md)
-- [Guides as code](docs/guides-as-code.md) · [Repository reference](docs/repository-reference.md) · [Upgrades](docs/tooling-and-schema-versioning.md)
+- [Guides as code](docs/guides-as-code.md) · [Repository reference](docs/repository-reference.md) · [Upgrades](docs/tooling-and-schema-versioning.md) · [Breaking changes](docs/breaking-changes.md)

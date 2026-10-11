@@ -16,6 +16,7 @@
   "template_repo/dives/wikipedia-pageviews/src/dive.tsx": "dives/wikipedia-pageviews/src/dive.tsx",
   "template_repo/docs/adopt-existing-resources.md": "docs/adopt-existing-resources.md",
   "template_repo/docs/blueprint-yml-reference.md": "docs/blueprint-yml-reference.md",
+  "template_repo/docs/breaking-changes.md": "docs/breaking-changes.md",
   "template_repo/docs/examples/ncs-field-recovery.md": "docs/examples/ncs-field-recovery.md",
   "template_repo/docs/examples/wikipedia-pageviews.md": "docs/examples/wikipedia-pageviews.md",
   "template_repo/docs/github-action.md": "docs/github-action.md",

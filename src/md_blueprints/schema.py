@@ -49,6 +49,11 @@ def unsupported_schema_version_message(version: int) -> str:
     )
 
 
+def breaking_change(entry: str) -> str:
+    """Point an error introduced by a backward-incompatible release at its entry in docs/breaking-changes.md."""
+    return f" This check is new; see docs/breaking-changes.md#{entry}."
+
+
 class _UniqueKeyLoader(yaml.SafeLoader):
     """Reject duplicate mapping keys; PyYAML otherwise keeps the last value and drops the rest silently."""
 
@@ -69,7 +74,8 @@ def load_yaml(path: Path) -> object:
         with path.open("r", encoding="utf-8") as handle:
             return yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     except yaml.YAMLError as exc:
-        raise ValidationError(f"Invalid YAML in {path}: {exc}") from exc
+        hint = breaking_change("duplicate-yaml-keys") if "duplicate key" in str(exc) else ""
+        raise ValidationError(f"Invalid YAML in {path}: {exc}.{hint}") from exc
     except OSError as exc:
         raise ValidationError(f"Could not read YAML file {path}: {exc}") from exc
 

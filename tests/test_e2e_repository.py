@@ -35,7 +35,7 @@ def test_init_writes_a_valid_repository_and_never_overwrites_customer_files(
     assert (root / "README.md").read_text(encoding="utf-8") == "my readme\n"
     assert (root / ".gitignore").read_text(encoding="utf-8") == "secrets/\n"
     assert (root / "motherduck.yml").is_file()
-    assert "Kept 46 existing file(s) unchanged:" in forced.stdout
+    assert "Kept 47 existing file(s) unchanged:" in forced.stdout
     assert "  .gitignore (merge the template's ignore entries into yours manually)" in forced.stdout
     assert "  README.md" in forced.stdout
 

@@ -19,12 +19,12 @@ make install-deploy
 
 The native CLI bundles its DuckDB runtime. Its tested version is maintained inside the Blueprints package, so customers do not need another version pin. `motherduck upgrade` updates a local CLI independently. CI installs the version tested with its Blueprints release.
 
-Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints workflow or direct action reference to the same exact release. It also adds `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}` to reusable deploy and cleanup callers that pass no secrets. Review the diff and open a pull request. Customer triggers, permissions, and other workflow settings are preserved.
+Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints workflow or direct action reference to the same exact release. It also adds `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}` to reusable deploy and cleanup callers that pass no secrets. Review the diff and open a pull request. Customer triggers, permissions, and other workflow settings are preserved. Before upgrading, read the entries newer than your current version in [breaking changes](breaking-changes.md).
 
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.8.0
+- uses: motherduckdb/motherduck-blueprints@v0.8.1
   with:
     command: validate
 ```

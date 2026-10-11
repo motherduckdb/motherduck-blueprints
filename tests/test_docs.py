@@ -40,3 +40,17 @@ def test_customer_docs_do_not_link_to_tooling_only_paths() -> None:
         and any(part in target for part in tooling_only)
     ]
     assert not offenders, offenders
+
+
+def test_breaking_change_pointers_name_existing_entries() -> None:
+    doc = (REPO_ROOT / "docs/breaking-changes.md").read_text(encoding="utf-8")
+    entries = set(re.findall(r"^### ([a-z0-9-]+)$", doc, flags=re.MULTILINE))
+    referenced = {
+        entry
+        for path in (REPO_ROOT / "src/md_blueprints").glob("*.py")
+        for entry in re.findall(r'breaking_change\("([^"]+)"\)', path.read_text(encoding="utf-8"))
+    }
+    assert referenced, "expected errors that point at docs/breaking-changes.md"
+    assert referenced <= entries, sorted(referenced - entries)
+    mapping = json.loads((REPO_ROOT / "src/md_blueprints/asset-map.json").read_text(encoding="utf-8"))
+    assert mapping.get("template_repo/docs/breaking-changes.md") == "docs/breaking-changes.md"

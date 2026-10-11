@@ -24,7 +24,7 @@ from .project import (
     contains_branch_marker,
     legacy_branch_slug,
 )
-from .schema import ValidationError
+from .schema import ValidationError, breaking_change
 from .motherduck_cli import query_rows as cli_query_rows, sql_backend
 
 # MD_CREATE_FLIGHT and MD_UPDATE_FLIGHT accept instance_type from this client release.
@@ -1045,7 +1045,8 @@ class Deployer:
                 if target_name == OTHER_BRANCH_PREVIEW:
                     return (
                         f"refusing to delete preview {resource_type} because its name does not change with the "
-                        f"branch, so other previews share it: {name}"
+                        f"branch, so other previews share it: {name}."
+                        + breaking_change("preview-cleanup-fixed-names")
                     )
                 stable_label = "production" if target_name == "prod" else target_name
                 return f"refusing to delete preview {resource_type} because it matches {stable_label}: {name}"
@@ -1714,7 +1715,9 @@ class Deployer:
                 try:
                     strip_required_databases_export(source)
                 except ValidationError as exc:
-                    raise ValidationError(f"Dive {blueprint.name}.{key}: {exc}") from exc
+                    raise ValidationError(
+                        f"Dive {blueprint.name}.{key}: {exc}." + breaking_change("dive-required-databases-static")
+                    ) from exc
 
     def _preflight_flight_instance_types(self, rendered: list[RenderedBlueprint]) -> None:
         """Fail before any write when the SQL backend cannot send a Flight instance size."""
@@ -1756,9 +1759,9 @@ class Deployer:
             for record in records
             if record.type == "dive" and record.action in {"create", "update"}
             and record.desired_status == "endorsed" and record.current_status != "endorsed"
-        ])
+        ], hint=breaking_change("endorse-requires-admin"))
 
-    def _require_admin(self, admin_reasons: list[str]) -> None:
+    def _require_admin(self, admin_reasons: list[str], *, hint: str = "") -> None:
         if not admin_reasons:
             return
 
@@ -1772,7 +1775,7 @@ class Deployer:
                 f"RBAC preflight failed: target requires the admin role ({reasons}); "
                 f"the deployment identity has: {', '.join(sorted(roles)) or 'no roles'}. "
                 "Next: use a service account with the admin role, or disable the resources "
-                "that require organization administration."
+                "that require organization administration." + hint
             )
 
     def _current_role_grants(self, name: str) -> tuple[set[str], set[str]]:

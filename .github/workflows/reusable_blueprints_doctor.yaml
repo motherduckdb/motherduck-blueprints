@@ -29,7 +29,7 @@ jobs:
       - name: Run blueprints doctor
         id: doctor
         continue-on-error: true
-        uses: motherduckdb/motherduck-blueprints@v0.8.0
+        uses: motherduckdb/motherduck-blueprints@v0.8.1
         env:
           # Authenticated release lookups avoid the shared runner IP rate limit. Only github.com accepts this token.
           MD_BLUEPRINTS_GITHUB_TOKEN: ${{ github.api_url == 'https://api.github.com' && github.token || '' }}

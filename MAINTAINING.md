@@ -34,7 +34,7 @@ CI runs `scripts/check-version-available.sh` on every pull request and `main` pu
 
 ### Cutting a release
 
-1. Open a release pull request that replaces `RELEASE_NOTES.md` with the new notes and moves the `Unreleased` changelog entries under `## vX.Y.Z - YYYY-MM-DD`. The notes must end with `**Full diff:** .../compare/vPREVIOUS...vX.Y.Z`, which `make release-check` enforces.
+1. Open a release pull request that replaces `RELEASE_NOTES.md` with the new notes and moves the `Unreleased` changelog entries under `## vX.Y.Z - YYYY-MM-DD`. The notes must end with `**Full diff:** .../compare/vPREVIOUS...vX.Y.Z`, which `make release-check` enforces. Link each Compatibility item to its `docs/breaking-changes.md` entry.
 2. Run the checks below, then merge the pull request after CI passes.
 3. Tag the merge commit on `main` with an annotated tag and push only that tag:
 

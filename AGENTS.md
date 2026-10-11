@@ -101,6 +101,10 @@ The GitHub Action defaults to validation. Prefer named `target`, `branch`, `blue
 
 Deployment always runs preflight before writes and verifies live identity/dependency/status results afterward by default. `verify` is read-only and checks disabled imported bindings too. Keep tests proving that invalid IDs/owners block all writes and that postcheck failures fail CD. Postcheck opt-out must never bypass preflight.
 
+## Breaking changes
+
+Every backward-incompatible change gets an entry in `docs/breaking-changes.md` in the same pull request. That includes newly rejected manifests, changed deployed values or names, changed cleanup or workflow behavior, and changed output that automation may parse. Use the existing fields and a stable kebab-case heading under its release. An error the change introduces ends with `breaking_change("<entry>")` from `md_blueprints.schema`, so users and agents can go from the message to the entry. `tests/test_docs.py` checks that every referenced entry exists. The release notes' Compatibility items link to the entries.
+
 ## Changelog
 
 Update `CHANGELOG.md` in every pull request, including docs-only changes. Keep entries under `Unreleased` until the change is released or merged into a reusable template.

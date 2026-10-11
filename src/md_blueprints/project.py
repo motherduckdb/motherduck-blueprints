@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from .schema import SchemaValidator, ValidationError, load_yaml, validate_required_cli_version
+from .schema import SchemaValidator, ValidationError, breaking_change, load_yaml, validate_required_cli_version
 from .template import Template
 
 
@@ -832,7 +832,7 @@ class Project:
         if unknown:
             raise ValidationError(
                 f"{label} names unknown target(s) {', '.join(unknown)}; motherduck.yml declares: "
-                + ", ".join(self.target_names())
+                + ", ".join(self.target_names()) + "." + breaking_change("unknown-target-override")
             )
 
     def _validate_rendered_resource(
@@ -893,7 +893,8 @@ class Project:
         )
         if unresolved:
             raise ValidationError(
-                "variables reference each other in a cycle or nest too deeply: " + ", ".join(unresolved)
+                "variables reference each other in a cycle or nest too deeply: " + ", ".join(unresolved) + "."
+                + breaking_change("variable-cycle")
             )
         return stringify_map(rendered)
 
