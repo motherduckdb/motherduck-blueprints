@@ -480,3 +480,16 @@ def test_import_normalizes_native_javascript_mounts_without_evaluating_code() ->
     for expression in ('[getMounts()]', '[...mounts]', '[{path: "x", path: "y"}]', '[]; runSomething();'):
         with pytest.raises(ValidationError):
             dive_source('export const REQUIRED_DATABASES = ' + expression + '\n' + component, mounts)
+
+
+@pytest.mark.parametrize("selector", ["flight:abc", "table:00000000-0000-0000-0000-000000000001", "flight"])
+def test_invalid_resource_selector_fails_before_connecting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selector: str,
+) -> None:
+    from md_blueprints.deploy import Deployer
+
+    project, _ = setup(tmp_path)
+    monkeypatch.setattr(Deployer, "_prepare_live_command", lambda *a: pytest.fail("connected before checking selectors"))
+
+    with pytest.raises(ValidationError):
+        run_import(project, target="prod", selectors=[selector], all_resources=False, write=False, snapshot_path=None)

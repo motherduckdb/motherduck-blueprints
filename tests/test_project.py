@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,30 @@ targets:
 
     monkeypatch.setattr(project_module, "run_command", lambda argv: "schemas/v1/blueprint.schema.json\n")
     assert project.changed_blueprints(base="main", head="HEAD") == ["first", "second"]
+
+
+def test_changed_blueprints_maps_repository_paths_to_a_subdirectory_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    root = tmp_path / "analytics"
+    shutil.copytree(FIXTURES / "simple", root)
+    project = Project(root)
+    name = project.all_blueprint_names()[0]
+    rel_dir = next(b.dir for b in project.blueprints).relative_to(root).as_posix()
+
+    monkeypatch.setattr(project_module, "run_command", lambda argv: f"analytics/{rel_dir}/blueprint.yml\n")
+    assert project.changed_blueprints(base="main", head="HEAD") == [name]
+
+    monkeypatch.setattr(project_module, "run_command", lambda argv: "analytics/motherduck.yml\n")
+    assert project.changed_blueprints(base="main", head="HEAD") == project.all_blueprint_names()
+
+    monkeypatch.setattr(project_module, "run_command", lambda argv: ".github/workflows/deploy_blueprints.yaml\n")
+    assert project.changed_blueprints(base="main", head="HEAD") == project.all_blueprint_names()
+
+    monkeypatch.setattr(project_module, "run_command", lambda argv: f"other/{rel_dir}/blueprint.yml\nmotherduck.yml\n")
+    assert project.changed_blueprints(base="main", head="HEAD") == []
 
 
 def test_include_pattern_cannot_escape_project_root(tmp_path: Path) -> None:
@@ -434,7 +459,16 @@ def test_branch_slug_keeps_short_slugs_unchanged() -> None:
     assert project_module.branch_slug("feature/Fix-Login") == "feature_fix_login"
     below_limit = "a" * 47
     assert project_module.branch_slug(below_limit) == below_limit
-    assert project_module.branch_slug("///") == "preview"
+    assert project_module.branch_slug("") == "preview"
+
+
+def test_branches_without_ascii_slug_characters_get_distinct_slugs() -> None:
+    first, second = project_module.branch_slug("修正"), project_module.branch_slug("バグ")
+    assert first != second
+    assert re.fullmatch(r"preview_[0-9a-f]{8}", first)
+    assert project_module.branch_slug("///") != "preview"
+    # Cleanup still finds previews created with the old shared slug.
+    assert project_module.legacy_branch_slug("修正") == "preview"
 
 
 def test_current_slugs_never_equal_another_branchs_legacy_slug() -> None:
@@ -676,6 +710,22 @@ def test_escaped_reference_in_variable_value_stays_literal(tmp_path: Path) -> No
     config = Project(tmp_path).render_all("prod")[0].flights["loader"]["config"]
 
     assert config == {"pattern": "${not_a_reference}", "nested": "x-${not_a_reference}"}
+
+
+@pytest.mark.parametrize("variables", [
+    '  a: "${var.a}"\n',
+    '  a: "x-${var.b}"\n  b: "y-${var.a}"\n',
+])
+def test_variable_cycles_are_rejected(tmp_path: Path, variables: str) -> None:
+    write_override_project(tmp_path, "          config:\n            pattern: ${var.a}")
+    blueprint = tmp_path / "blueprints" / "loader" / "blueprint.yml"
+    blueprint.write_text(
+        blueprint.read_text(encoding="utf-8").replace('variables:\n  runtime: "900"\n', 'variables:\n  runtime: "900"\n' + variables),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="variables reference each other in a cycle or nest too deeply: a"):
+        Project(tmp_path).render_all("prod")
 
 
 def test_context_deploy_error_points_to_guides(tmp_path: Path) -> None:

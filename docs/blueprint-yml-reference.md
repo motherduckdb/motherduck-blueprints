@@ -190,7 +190,7 @@ Each item requires `alias` and exactly one of:
 - `input`: a declared top-level input.
 - `url`: a literal MotherDuck share URL, normally owned outside this repository.
 
-A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives are always `draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
+A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives must be `draft`, so a Dive with another base `status` needs `targets.preview.status: draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
 The deployer strips the `export const REQUIRED_DATABASES = ...` declaration (single-line or multi-line) from local-preview source and passes the rendered mounts to MotherDuck.
 

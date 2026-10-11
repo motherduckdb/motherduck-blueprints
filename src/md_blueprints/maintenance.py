@@ -84,13 +84,15 @@ def fetch_latest_version(*, offline: bool, offline_hint: str = "Use --offline to
     if offline:
         return None
 
-    request = urllib.request.Request(
-        GITHUB_LATEST_RELEASE_URL,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"md-blueprints/{__version__}",
-        },
-    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"md-blueprints/{__version__}",
+    }
+    # Unauthenticated requests share a 60 per hour limit per IP address, which hosted runners exhaust.
+    token = os.environ.get("MD_BLUEPRINTS_GITHUB_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(GITHUB_LATEST_RELEASE_URL, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -326,7 +328,8 @@ def tooling_pin_status(root: Path) -> tuple[str, bool]:
             )
 
     expected_action = f"v{cli_version}"
-    mismatch = cli_version != __version__ or action_versions != {expected_action}
+    # Workflows are optional, so a repository without Blueprints workflows is aligned on its Makefile alone.
+    mismatch = cli_version != __version__ or not action_versions <= {expected_action}
     if mismatch:
         rendered = ", ".join(sorted(action_versions)) or "none"
         return (

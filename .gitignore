@@ -8,8 +8,8 @@ node_modules/
 # generated
 .dive-preview/src/dive.tsx
 .dive-preview/dist/
-build/
-dist/
+/build/
+/dist/
 *.egg-info/
 __pycache__/
 .pytest_cache/
@@ -17,7 +17,7 @@ __pycache__/
 
 # local-only
 .imports/
-notes/
+/notes/
 .release-notes.md
 .DS_Store
 *.log

@@ -230,3 +230,33 @@ def test_offline_update_checks_never_open_a_connection(monkeypatch: pytest.Monke
     run_check_updates(offline=True)
     run_doctor(FIXTURES / "simple", check_updates=True, offline=True)
     assert "latest md-blueprints: unknown (offline mode)" in capsys.readouterr().out
+
+
+def test_latest_release_lookup_sends_the_github_token_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import urllib.request
+
+    from md_blueprints.maintenance import fetch_latest_version
+
+    seen: list[str | None] = []
+
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> io.BytesIO:
+        seen.append(request.get_header("Authorization"))
+        return io.BytesIO(b'{"tag_name": "v9.9.9"}')
+
+    monkeypatch.delenv("MD_BLUEPRINTS_LATEST_VERSION", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.delenv("MD_BLUEPRINTS_GITHUB_TOKEN", raising=False)
+    assert fetch_latest_version(offline=False) == "9.9.9"
+    monkeypatch.setenv("MD_BLUEPRINTS_GITHUB_TOKEN", "test-token")
+    assert fetch_latest_version(offline=False) == "9.9.9"
+    assert seen == [None, "Bearer test-token"]
+
+
+def test_tooling_pins_are_aligned_without_blueprints_workflows(tmp_path: Path) -> None:
+    import shutil
+
+    run_init(tmp_path)
+    shutil.rmtree(tmp_path / ".github/workflows")
+
+    assert tooling_pin_status(tmp_path) == (f"aligned at {__version__}", False)

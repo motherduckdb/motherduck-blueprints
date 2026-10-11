@@ -386,3 +386,43 @@ resources:
 
     with pytest.raises(ValidationError, match="validation-only Guide knowledge.base"):
         Project(tmp_path).validate(targets=["prod"])
+
+
+def write_guide_package(root: Path, name: str, guides: str) -> None:
+    package = root / "projects" / name
+    package.mkdir(parents=True)
+    (package / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    (package / "blueprint.yml").write_text(
+        f"schemaVersion: 1\nname: {name}\ntitle: {name}\nresources:\n  guides:\n{guides}",
+        encoding="utf-8",
+    )
+
+
+def test_guide_references_in_target_overrides_join_the_graph(tmp_path: Path) -> None:
+    write_graph_project(tmp_path)
+    write_guide_package(tmp_path, "zzz", "    base:\n      source: notes.md\n      deploy: true\n")
+    write_guide_package(
+        tmp_path,
+        "aaa",
+        "    runbook:\n      source: notes.md\n      deploy: true\n      targets:\n        prod:\n"
+        "          references:\n            - type: guide\n              blueprint: zzz\n              resource: base\n",
+    )
+    project = Project(tmp_path)
+
+    assert project.dependencies["aaa"] == {"zzz"}
+    order = project.deployment_blueprint_names("prod", ["aaa", "zzz"])
+    assert order.index("zzz") < order.index("aaa")
+    assert "aaa" in project.deployment_blueprint_names("prod", ["zzz"])
+
+
+def test_guide_reference_in_target_override_to_missing_blueprint_is_rejected(tmp_path: Path) -> None:
+    write_graph_project(tmp_path)
+    write_guide_package(
+        tmp_path,
+        "aaa",
+        "    runbook:\n      source: notes.md\n      targets:\n        prod:\n"
+        "          references:\n            - type: guide\n              blueprint: ghost\n              resource: base\n",
+    )
+
+    with pytest.raises(ValidationError, match="uses missing blueprint 'ghost'"):
+        Project(tmp_path)

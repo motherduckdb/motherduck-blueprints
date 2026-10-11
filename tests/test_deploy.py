@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from md_blueprints import deploy as deploy_module
-from md_blueprints.deploy import Deployer, PlanRecord, quote_ident
+from md_blueprints.deploy import OTHER_BRANCH_PREVIEW, Deployer, PlanRecord, quote_ident
 from md_blueprints.project import CommandError, Project, RenderedBlueprint
 from md_blueprints.schema import ValidationError
 
@@ -202,6 +202,26 @@ def test_cleanup_plan_accepts_validation_only_production_guide(
     )
 
     assert [(record.type, record.action) for record in records] == [("guide", "delete")]
+
+
+@pytest.mark.parametrize(("topic", "action"), [("docs_feature_docs", "delete"), ("docs", "error")])
+def test_cleanup_plan_accepts_guide_scoped_by_topic(
+    monkeypatch: pytest.MonkeyPatch, topic: str, action: str,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_list_guide_ids", lambda title, topic: ["guide-id"])
+
+    def guides(topic: str) -> RenderedBlueprint:
+        return RenderedBlueprint(
+            name="knowledge", title="Knowledge", description="", shares={}, flights={}, dives={}, contexts={},
+            guides={"runbook": {"title": "Runbook", "topic": topic, "sourcePath": "runbook.md", "deploy": True}},
+        )
+
+    records = deployer._build_cleanup_plan(
+        [guides(topic)], "feature_docs", branch="feature/docs", production={"knowledge": guides("docs")},
+    )
+
+    assert [(record.type, record.action) for record in records] == [("guide", action)]
 
 
 def test_deploy_plan_is_idempotent_for_same_live_state(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -772,6 +792,30 @@ def test_role_reconciliation_supports_authoritative_memberships(monkeypatch: pyt
     assert 'REVOKE ROLE "finance team" FROM USER "old@example.com";' in calls
 
 
+def test_authoritative_role_keeps_members_that_differ_only_in_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        if "SHOW ROLES" in statement:
+            return []
+        return [("alice@example.com", "alice@example.com", False, None)]
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    deployer._deploy_role(
+        {"name": "finance", "includedRoles": [], "members": ["Alice@Example.com"], "mode": "authoritative"},
+        PlanRecord("access", "role", "finance", "finance", "update", True, "finance"),
+    )
+
+    assert calls == ['CREATE ROLE IF NOT EXISTS "finance";']
+
+
 def test_role_deployment_orders_managed_inheritance() -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     blueprint = RenderedBlueprint(
@@ -1306,7 +1350,7 @@ def test_single_line_required_databases_strip_matches_legacy_regex() -> None:
         '  export const REQUIRED_DATABASES = [];\nexport default 1;\n',
     ]
     for source in sources:
-        legacy = re.sub(r"export const REQUIRED_DATABASES[^\n]*\n", "", source)
+        legacy = re.sub(r"export const REQUIRED_DATABASES[^\n]*(?:\n|$)", "", source)
         assert strip_required_databases_export(source) == legacy
 
 
@@ -1324,6 +1368,32 @@ def test_multi_line_required_databases_export_is_removed_whole() -> None:
 
     assert strip_required_databases_export(source) == (
         "import { useSQLQuery } from '@motherduck/react-sql-query';\n" + component
+    )
+
+
+def test_typed_multi_line_required_databases_export_is_removed_whole() -> None:
+    from md_blueprints.deploy import strip_required_databases_export
+
+    component = "export default function Dive() { return null; }\n"
+    source = (
+        "export const REQUIRED_DATABASES: Array<{ type: string; path: string; alias: string }> = [\n"
+        "  { type: 'share', path: 'md:_share/a/1', alias: 'a' },\n"
+        "];\n" + component
+    )
+
+    assert strip_required_databases_export(source) == component
+
+
+def test_non_static_multi_line_required_databases_export_is_rejected() -> None:
+    from md_blueprints.deploy import strip_required_databases_export
+
+    source = "export const REQUIRED_DATABASES = [\n  { alias: ALIAS },\n];\nexport default 1;\n"
+
+    with pytest.raises(ValidationError, match="REQUIRED_DATABASES must be a static array"):
+        strip_required_databases_export(source)
+    # Single-line expressions keep the legacy line removal.
+    assert strip_required_databases_export("export const REQUIRED_DATABASES = load();\nexport default 1;\n") == (
+        "export default 1;\n"
     )
 
 
@@ -1462,7 +1532,34 @@ def test_cleanup_plan_renders_all_stable_targets(monkeypatch: pytest.MonkeyPatch
 
     stable_renders = captured["stable_renders"]
     assert isinstance(stable_renders, dict)
-    assert set(stable_renders) == {"staging", "prod"}
+    assert set(stable_renders) == {"staging", "prod", OTHER_BRANCH_PREVIEW}
+
+
+def test_cleanup_refuses_fixed_names_that_contain_the_branch_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "motherduck.yml").write_text(
+        "schemaVersion: 1\nrepository: {name: fixed}\ninclude: [projects/*/blueprint.yml]\n"
+        "targets:\n  preview:\n    mode: preview\n    policies: {cleanup: true}\n  prod: {mode: production}\n",
+        encoding="utf-8",
+    )
+    package = tmp_path / "projects" / "events"
+    package.mkdir(parents=True)
+    (package / "blueprint.yml").write_text(
+        "schemaVersion: 1\nname: events\ntitle: Events\nresources:\n  shares:\n    data:\n"
+        "      name: events\n      database: events\n"
+        "      targets:\n        preview: {name: events_dev, database: events_dev, dropDatabase: true}\n",
+        encoding="utf-8",
+    )
+    deployer = Deployer(Project(tmp_path))
+    monkeypatch.setattr(deployer, "_prepare_live_command", lambda target, operation: None)
+    monkeypatch.setattr(deployer, "_find_share_url", lambda name: pytest.fail("unsafe share lookup"))
+
+    records = deployer.cleanup_plan(target="preview", branch="dev", names=None)
+
+    # The refused share also stops its database from being dropped.
+    assert [(record.type, record.action) for record in records] == [("share", "error")]
+    assert "does not change with the branch, so other previews share it: events_dev" in records[0].notes
 
 
 def test_name_matched_resources_get_binding_note_outside_preview(monkeypatch: pytest.MonkeyPatch) -> None:

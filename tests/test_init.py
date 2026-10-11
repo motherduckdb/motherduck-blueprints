@@ -246,3 +246,28 @@ def test_asset_manifest_has_only_authoritative_sources() -> None:
         'template_repo/schemas/v1/blueprint.schema.json',
         'template_repo/.dive-preview/.env.example',
     }
+
+
+def test_generated_gitignore_does_not_hide_packages_named_like_build_dirs(tmp_path: Path) -> None:
+    import subprocess
+
+    run_init(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    paths = ["guides/notes/blueprint.yml", "flights/build/blueprint.yml", "dives/dist/blueprint.yml"]
+    ignored = subprocess.run(
+        ["git", "-C", str(tmp_path), "check-ignore", *paths], capture_output=True, text=True, check=False,
+    )
+    assert ignored.stdout == ""
+
+
+def test_init_force_writes_nothing_when_a_destination_escapes_the_target(tmp_path: Path) -> None:
+    target = tmp_path / "repo"
+    outside = tmp_path / "outside"
+    target.mkdir()
+    outside.mkdir()
+    (target / "docs").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="outside"):
+        run_init(target, force=True)
+    assert [path.name for path in target.iterdir()] == ["docs"]
+    assert not any(outside.iterdir())

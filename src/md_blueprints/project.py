@@ -61,6 +61,9 @@ def branch_slug(branch: str) -> str:
         # Shorter slugs stay byte-for-byte unchanged for open previews.
         digest = hashlib.sha1(branch.encode("utf-8")).hexdigest()[:8]
         slug = slug[: BRANCH_SLUG_MAX_LENGTH - len(digest) - 1].rstrip("_") + "_" + digest
+    if not slug and branch:
+        # Branches without ASCII letters or digits used to share the slug "preview"; cleanup still reads it.
+        return "preview_" + hashlib.sha1(branch.encode("utf-8")).hexdigest()[:8]
     return slug or "preview"
 
 
@@ -301,9 +304,12 @@ class Project:
         except CommandError:
             return all_names
 
-        changed_files = [line.strip() for line in diff.splitlines() if line.strip()]
-        if not changed_files:
+        repo_files = [line.strip() for line in diff.splitlines() if line.strip()]
+        if not repo_files:
             return []
+        # git prints paths relative to the repository root, not to a motherduck.yml in a subdirectory.
+        prefix = self._repository_prefix()
+        changed_files = [file[len(prefix):] for file in repo_files if file.startswith(prefix)]
 
         global_patterns = [
             "motherduck.yml",
@@ -314,6 +320,9 @@ class Project:
             "templates/",
             "pyproject.toml",
             "action.yml",
+        ]
+        # Workflows live at the repository root even when motherduck.yml is in a subdirectory.
+        workflow_patterns = [
             ".github/workflows/deploy_blueprints.yaml",
             ".github/workflows/cleanup_preview_blueprints.yaml",
         ]
@@ -321,7 +330,7 @@ class Project:
             file == pattern or file.startswith(pattern)
             for file in changed_files
             for pattern in global_patterns
-        ):
+        ) or any(file in workflow_patterns for file in repo_files):
             return all_names
 
         changed: list[str] = []
@@ -330,6 +339,14 @@ class Project:
             if any(file == rel_dir or file.startswith(f"{rel_dir}/") for file in changed_files):
                 changed.append(blueprint.name)
         return sorted(set(changed))
+
+    def _repository_prefix(self) -> str:
+        root = self.root.resolve()
+        for parent in (root, *root.parents):
+            if (parent / ".git").exists():
+                prefix = root.relative_to(parent).as_posix()
+                return "" if prefix == "." else f"{prefix}/"
+        return ""
 
     def target_config(self, target: str) -> dict[str, object]:
         targets = self.manifest.get("targets")
@@ -473,10 +490,17 @@ class Project:
             for guide_key, guide_value in guides.items():
                 if not isinstance(guide_value, dict):
                     continue
-                references = guide_value.get("references", [])
-                if not isinstance(references, list):
-                    continue
-                for index, reference in enumerate(references):
+                # Target overrides can replace references, so check every variant the graph may deploy.
+                variants = [guide_value.get("references", [])]
+                guide_targets = guide_value.get("targets")
+                if isinstance(guide_targets, dict):
+                    variants.extend(
+                        override["references"] for override in guide_targets.values()
+                        if isinstance(override, dict) and "references" in override
+                    )
+                for index, reference in (
+                    item for references in variants if isinstance(references, list) for item in enumerate(references)
+                ):
                     if not isinstance(reference, dict):
                         continue
                     producer_name = str(reference.get("blueprint", blueprint.name))
@@ -845,6 +869,14 @@ class Project:
             if not isinstance(candidate, dict):
                 raise ValidationError("variables must render to an object")
             rendered = candidate
+        unresolved = sorted(
+            name for name, value in rendered.items()
+            if isinstance(value, str) and Template._REFERENCE.search(value)
+        )
+        if unresolved:
+            raise ValidationError(
+                "variables reference each other in a cycle or nest too deeply: " + ", ".join(unresolved)
+            )
         return stringify_map(rendered)
 
     def _validate_uniqueness(self, target: str, rendered_blueprints: list[RenderedBlueprint]) -> None:

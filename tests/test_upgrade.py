@@ -211,3 +211,14 @@ def test_offline_upgrade_never_contacts_github(tmp_path: Path, monkeypatch: pyte
         run_upgrade(tmp_path, offline=True)
     assert main(["upgrade", "--root", str(tmp_path), "--offline", "--to", "1.2.3", "--write"]) == 0
     assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()
+
+
+def test_upgrade_updates_the_makefile_without_blueprints_workflows(tmp_path: Path) -> None:
+    import shutil
+
+    run_init(tmp_path)
+    shutil.rmtree(tmp_path / ".github/workflows")
+
+    run_upgrade(tmp_path, to_version="1.2.3", write=True)
+
+    assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()

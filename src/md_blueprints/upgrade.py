@@ -142,7 +142,8 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
         secret_count += added
         updates.append((path, original, updated))
     if not action_count:
-        raise ValidationError("No MotherDuck Blueprints action pins found in .github/workflows; nothing was changed.")
+        # The workflows are optional; a repository may use only the Makefile tooling.
+        print("No MotherDuck Blueprints workflows found; updating CLI_VERSION in Makefile only.")
     changed = [(path, before, after) for path, before, after in updates if before != after]
     if not changed:
         print(f"Tooling pins are already aligned at {version}.")
