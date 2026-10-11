@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.8.0 - 2026-10-11
+
+Minor release. Existing repositories pin exact versions and need `make upgrade VERSION=0.8.0`. Workflows on the floating `@v0` tag receive it automatically. Some manifests that v0.7.8 accepted now fail validation, and Flight `config` values change format. See the [v0.8.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.8.0).
+
 - Detect changed packages when `motherduck.yml` lives in a subdirectory (`root: analytics`). Git reports paths from the repository root, so pull request previews and push deploys found no changes and skipped every package.
 - Stop preview deploys from cancelling preview cleanup. A push shortly before a pull request closed could cancel the running cleanup and redeploy the preview. Preview deploys now wait instead of cancelling, and skip deploying when the pull request is already closed. GitHub keeps only one pending job per concurrency group, so a deploy that queues behind a running deploy can still replace a pending cleanup; that deploy then stops, and the preview needs a manual cleanup.
 - Preview cleanup accepts a Guide whose topic, rather than its title, includes the branch slug, as validation already did. Before, such a Guide failed cleanup and blocked every other resource on the branch from being removed.
@@ -32,7 +36,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Fix both examples in the Terraform guide, which failed validation in a generated repository, and document that removing `accessTokenName` or `maxRuntimeSec` keeps the Flight's current value.
 - Maintenance: replace unit tests that mocked deployer internals with end-to-end tests that run the installed CLI on a generated repository against a stateful fake MotherDuck account, now shared with `make mock-test`, and drop duplicate and wording-only tests.
 - A Guide that references a deleted Dive or Flight by UUID now gets a plan error for that reference. Before, `plan` and `deploy` stopped with the raw `MotherDuck SQL failed: ... not found` message.
-- Bump the package and action pins to 0.8.0.
+- Bump the package and action pins to 0.8.0. (#130)
 
 ## v0.7.8 - 2026-10-11
 
