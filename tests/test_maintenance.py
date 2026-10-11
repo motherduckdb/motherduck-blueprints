@@ -192,7 +192,9 @@ def test_doctor_warns_when_reusable_callers_do_not_pass_the_token(
 ) -> None:
     run_init(tmp_path)
     run_doctor(tmp_path)
-    assert "without passing MOTHERDUCK_TOKEN" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "without passing MOTHERDUCK_TOKEN" not in out
+    assert "secrets: inherit" not in out
     # Callers generated before 0.7.8 passed no secrets.
     workflows = tmp_path / ".github/workflows"
     for name in ("deploy_blueprints.yaml", "cleanup_preview_blueprints.yaml"):
@@ -214,7 +216,10 @@ def test_doctor_warns_when_reusable_callers_do_not_pass_the_token(
         encoding="utf-8",
     )
     run_doctor(tmp_path)
-    assert "warning: cleanup_preview_blueprints.yaml call" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "warning: cleanup_preview_blueprints.yaml call" in out
+    # `secrets: inherit` passes nothing across organizations, so it gets its own warning.
+    assert "warning: deploy_blueprints.yaml pass secrets to the reusable deploy or cleanup workflow with `secrets: inherit`" in out
 
 
 def test_offline_update_checks_never_open_a_connection(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
