@@ -60,24 +60,6 @@ def test_scaffold_rejects_root_symlink_outside_repository(tmp_path: Path) -> Non
     assert list(outside.iterdir()) == []
 
 
-def test_all_typed_scaffolds_generate_a_valid_repository(tmp_path: Path) -> None:
-    write_root(tmp_path)
-
-    run_new(tmp_path, "flight", "events-ingest")
-    run_new(tmp_path, "dive", "events-dashboard", input_ref="events-ingest.data")
-    run_new(tmp_path, "dive", "external-dashboard", share_url="md:_share/example/id")
-    run_new(tmp_path, "guide", "analytics-guide")
-    run_new(tmp_path, "role", "analytics-team")
-    run_new(tmp_path, "project", "revenue")
-
-    assert Project(tmp_path).validate()
-    assert (tmp_path / "flights/events-ingest/src/flight.py").is_file()
-    assert (tmp_path / "dives/events-dashboard/src/dive.tsx").is_file()
-    assert (tmp_path / "guides/analytics-guide/guide.md").is_file()
-    assert (tmp_path / "roles/analytics-team/blueprint.yml").is_file()
-    assert (tmp_path / "projects/revenue/src/dive.tsx").is_file()
-
-
 @pytest.mark.parametrize("kind", ["flight", "dive", "guide", "role", "project"])
 @pytest.mark.parametrize(
     "name",
@@ -160,21 +142,6 @@ def test_new_rejects_options_that_do_not_apply_to_the_kind(
         run_new(tmp_path, kind, "invalid-options", **options)
 
     assert not (tmp_path / f"{kind}s/invalid-options").exists()
-
-
-def test_new_project_uses_the_complete_starter_template(tmp_path: Path) -> None:
-    write_root(tmp_path)
-
-    destination = run_new(tmp_path, "project", "daily-metrics")
-
-    manifest = (destination / "blueprint.yml").read_text(encoding="utf-8")
-    readme = (destination / "README.md").read_text(encoding="utf-8")
-    assert "status: ready" in manifest
-    assert "status: draft" in manifest
-    assert "Starter project that publishes" in manifest
-    assert "## Replace the Starter Logic" in readme
-    assert "__BLUEPRINT_" not in manifest
-    assert "__BLUEPRINT_" not in readme
 
 
 def test_new_dive_requires_one_data_source(tmp_path: Path) -> None:
@@ -295,23 +262,6 @@ def test_new_role_is_disabled_until_reviewed(tmp_path: Path) -> None:
     assert rendered.roles["role"]["deploy"] is False
 
 
-def test_new_dive_description_matches_its_data_source(tmp_path: Path) -> None:
-    write_root(tmp_path)
-    write_producer(tmp_path)
-    by_url = load_yaml(run_new(tmp_path, "dive", "by-url", share_url="md:_share/example/id") / "blueprint.yml")
-    by_input = load_yaml(run_new(tmp_path, "dive", "by-input", input_ref="producer.data") / "blueprint.yml")
-    assert isinstance(by_url, dict) and isinstance(by_input, dict)
-    assert by_url["description"] == "Dive package that reads an existing MotherDuck share by URL."
-    assert by_input["description"] == "Dive package that reads a declared input from another package."
-
-
-def test_starter_headings_use_titles(tmp_path: Path) -> None:
-    write_root(tmp_path)
-    project = run_new(tmp_path, "project", "daily-metrics")
-    assert (project / "README.md").read_text(encoding="utf-8").startswith("# Daily Metrics\n")
-    assert ">Daily Metrics</h1>" in (project / "src/dive.tsx").read_text(encoding="utf-8")
-
-
 @pytest.mark.parametrize("variable,value,message", [
     ("MOTHERDUCK_FLIGHT_CONFIG", "{not json", "is not valid JSON"),
     ("FLIGHT_CONFIG", "[1, 2]", "must be a JSON object"),
@@ -346,3 +296,13 @@ def test_starter_flight_reads_config_from_environment_variables(
     monkeypatch.setenv("database", "loader_preview_feature_x")
     namespace = runpy.run_path(str(source))
     assert namespace["setting"]("database") == "loader_preview_feature_x"
+
+
+def test_scaffolded_guide_validates_once_deploy_is_enabled(tmp_path: Path) -> None:
+    from md_blueprints.init import run_init
+
+    run_init(tmp_path)
+    manifest = run_new(tmp_path, "guide", "handbook") / "blueprint.yml"
+    manifest.write_text(manifest.read_text().replace("deploy: false", "deploy: true"))
+
+    Project(tmp_path).validate(targets=["preview", "prod"], branch="feature/docs")

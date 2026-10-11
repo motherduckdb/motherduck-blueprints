@@ -64,7 +64,7 @@ resource "motherduck_role_grant" "blueprints_admin" {
 
 ## Use Terraform-owned data from a package
 
-**A share owned by the deployment account.** Declare it without `includePattern` or `grants`, and turn off cleanup. Blueprints then checks that the share exists and never changes it:
+**A share owned by the deployment account.** Declare it in a `projects/` package without `includePattern` or `grants`, and turn off cleanup. Blueprints then checks that the share exists and never changes it. Previews cannot use the production share or database, so give them branch-scoped names that preview cleanup removes:
 
 ```yaml
 resources:
@@ -73,6 +73,12 @@ resources:
       name: acme_orders_curated # created by motherduck_share
       database: orders
       cleanup: false
+      targets:
+        preview:
+          name: acme_orders_curated${var.preview_suffix}
+          database: orders${var.preview_suffix}
+          cleanup: true
+          dropDatabase: true
   dives:
     orders:
       title: Orders
@@ -80,12 +86,20 @@ resources:
       requiredResources:
         - share: orders
           alias: orders
+      targets:
+        preview:
+          title: Orders:${target.branch} (Preview)
 ```
+
+The preview database starts empty unless a Flight in the package loads it. To preview against real data, mount the share by URL instead, as below.
 
 **A share owned by another account.** Mount it by URL. Use a target variable so each environment can point to its own share:
 
 ```yaml
 # motherduck.yml
+variables:
+  orders_share_url:
+    default: md:_share/orders_preview/... # used by preview and any target without its own value
 targets:
   prod:
     variables:

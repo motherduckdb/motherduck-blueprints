@@ -72,12 +72,13 @@ def run_init(target: Path, *, force: bool = False) -> None:
         name.removeprefix("template_repo/"): path
         for name, path in source_assets().items() if name.startswith("template_repo/")
     })
-    for relative, resource in sorted(assets.items()):
-        if not relative or "/__pycache__/" in f"/{relative}/":
-            continue
-        if relative.split("/", 1)[0] == "templates":
-            continue
-        destination = safe_destination(target, relative)
+    planned = [
+        (relative, resource, safe_destination(target, relative))
+        for relative, resource in sorted(assets.items())
+        if relative and "/__pycache__/" not in f"/{relative}/" and relative.split("/", 1)[0] != "templates"
+    ]
+    # Every destination is checked above, so an unsafe path stops init before any file is written.
+    for relative, resource, destination in planned:
         if destination.exists() or destination.is_symlink():
             skipped.append(relative)
             continue

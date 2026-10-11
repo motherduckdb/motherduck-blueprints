@@ -29,7 +29,10 @@ jobs:
       - name: Run blueprints doctor
         id: doctor
         continue-on-error: true
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
+        env:
+          # Authenticated release lookups avoid the shared runner IP rate limit. Only github.com accepts this token.
+          MD_BLUEPRINTS_GITHUB_TOKEN: ${{ github.api_url == 'https://api.github.com' && github.token || '' }}
         with:
           python-version: ${{ inputs.python-version }}
           command: doctor
@@ -47,7 +50,7 @@ jobs:
             const marker = '<!-- motherduck-blueprints-upgrade-needed -->';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const notice = `\n\n_Output truncated. See the [workflow run](${runUrl}) for the full report._`;
-            let report = process.env.DOCTOR_OUTPUT || 'The scheduled MotherDuck Blueprints doctor check failed. Bump the pinned action and run md-blueprints doctor locally.';
+            let report = process.env.DOCTOR_OUTPUT || `The scheduled MotherDuck Blueprints doctor check failed before it printed a report. See the [workflow run](${runUrl}) for the error, then run md-blueprints doctor locally.`;
             // GitHub rejects issue bodies over 65536 characters.
             const limit = 65000 - marker.length - notice.length;
             if (report.length > limit) {

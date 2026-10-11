@@ -257,3 +257,13 @@ def test_share_access_and_visibility_schema(field: str, value: str, valid: bool)
     else:
         with pytest.raises(ValidationError, match=f"{field} must be one of"):
             SchemaValidator().validate(data, "blueprint.schema.json")
+
+
+def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:
+    from md_blueprints.schema import load_yaml
+
+    path = tmp_path / "motherduck.yml"
+    path.write_text("targets:\n  prod:\n    variables: {a: 1}\n    mode: production\n    variables: {b: 2}\n")
+
+    with pytest.raises(ValidationError, match="duplicate key 'variables'"):
+        load_yaml(path)

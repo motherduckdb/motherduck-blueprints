@@ -64,6 +64,23 @@ def install_cli() -> None:
         raise CommandError(f"Another MotherDuck CLI shadows {installed}. Put its directory first on PATH.")
 
 
+def failure_message(stdout: str, stderr: str) -> str:
+    """The native CLI reports JSON errors on stdout and may print only an upgrade notice on stderr."""
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    # Blueprints pins a tested CLI version; the upgrade notice is not the failure.
+    lines = [
+        line for line in stderr.strip().splitlines()
+        if "New MotherDuck CLI available" not in line and "motherduck upgrade" not in line
+    ]
+    return "\n".join(lines).strip() or stdout.strip()
+
+
 def query_rows(statement: str, *, token: str | None) -> list[tuple[object, ...]]:
     binary = executable()
     if not binary:
@@ -87,7 +104,7 @@ def query_rows(statement: str, *, token: str | None) -> list[tuple[object, ...]]
         except OSError as exc:
             raise CommandError("Could not start the MotherDuck CLI. Run make install-deploy.") from exc
     if result.returncode:
-        message = (result.stderr or result.stdout).strip()
+        message = failure_message(result.stdout, result.stderr)
         if token:
             message = message.replace(token, "[redacted]")
         message = message.replace(statement, "[SQL omitted]")

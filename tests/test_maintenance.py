@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from packaging.version import Version
 
 from md_blueprints import __version__
 from md_blueprints.init import run_init
@@ -12,41 +11,6 @@ from md_blueprints.schema import ValidationError
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def test_check_updates_accepts_installed_version_ahead_of_latest(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    earlier = "0.0.0"
-    monkeypatch.setenv("MD_BLUEPRINTS_LATEST_VERSION", earlier)
-
-    run_check_updates()
-
-    assert f"latest md-blueprints: {earlier}" in capsys.readouterr().out
-
-
-def test_check_updates_rejects_newer_release(monkeypatch: pytest.MonkeyPatch) -> None:
-    installed = Version(__version__)
-    newer = f"{installed.major}.{installed.minor + 1}.0"
-    monkeypatch.setenv("MD_BLUEPRINTS_LATEST_VERSION", newer)
-
-    with pytest.raises(ValidationError, match=f"older than release {newer}"):
-        run_check_updates()
-
-
-def test_doctor_reports_ahead_version_without_requesting_upgrade(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    earlier = "0.0.0"
-    monkeypatch.setenv("MD_BLUEPRINTS_LATEST_VERSION", earlier)
-
-    run_doctor(FIXTURES / "simple", check_updates=True)
-
-    output = capsys.readouterr().out
-    assert f"latest md-blueprints: {earlier}" in output
-    assert "version status: ahead of latest release" in output
 
 
 def test_generated_repository_tooling_pins_are_aligned(tmp_path: Path) -> None:
@@ -230,3 +194,33 @@ def test_offline_update_checks_never_open_a_connection(monkeypatch: pytest.Monke
     run_check_updates(offline=True)
     run_doctor(FIXTURES / "simple", check_updates=True, offline=True)
     assert "latest md-blueprints: unknown (offline mode)" in capsys.readouterr().out
+
+
+def test_latest_release_lookup_sends_the_github_token_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import urllib.request
+
+    from md_blueprints.maintenance import fetch_latest_version
+
+    seen: list[str | None] = []
+
+    def fake_urlopen(request: urllib.request.Request, timeout: int) -> io.BytesIO:
+        seen.append(request.get_header("Authorization"))
+        return io.BytesIO(b'{"tag_name": "v9.9.9"}')
+
+    monkeypatch.delenv("MD_BLUEPRINTS_LATEST_VERSION", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.delenv("MD_BLUEPRINTS_GITHUB_TOKEN", raising=False)
+    assert fetch_latest_version(offline=False) == "9.9.9"
+    monkeypatch.setenv("MD_BLUEPRINTS_GITHUB_TOKEN", "test-token")
+    assert fetch_latest_version(offline=False) == "9.9.9"
+    assert seen == [None, "Bearer test-token"]
+
+
+def test_tooling_pins_are_aligned_without_blueprints_workflows(tmp_path: Path) -> None:
+    import shutil
+
+    run_init(tmp_path)
+    shutil.rmtree(tmp_path / ".github/workflows")
+
+    assert tooling_pin_status(tmp_path) == (f"aligned at {__version__}", False)

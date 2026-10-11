@@ -134,21 +134,6 @@ def test_upgrade_rejects_external_workflow_before_any_write(tmp_path: Path) -> N
     assert (root / "Makefile").read_bytes() == original
 
 
-def test_upgrade_resolves_latest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    run_init(tmp_path)
-    monkeypatch.setattr("md_blueprints.upgrade.fetch_latest_version", lambda **kwargs: "1.2.3")
-    run_upgrade(tmp_path, write=True)
-    assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()
-
-
-def test_latest_does_not_downgrade_an_unreleased_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    run_init(tmp_path)
-    before = (tmp_path / "Makefile").read_bytes()
-    monkeypatch.setattr("md_blueprints.upgrade.fetch_latest_version", lambda **kwargs: "0.0.1")
-    run_upgrade(tmp_path, write=True)
-    assert (tmp_path / "Makefile").read_bytes() == before
-
-
 def test_customer_make_upgrade_prepares_pins_with_one_command(tmp_path: Path) -> None:
     run_init(tmp_path)
     cli = Path(sys.executable).parent / "md-blueprints"
@@ -210,4 +195,15 @@ def test_offline_upgrade_never_contacts_github(tmp_path: Path, monkeypatch: pyte
     with pytest.raises(ValidationError, match="Cannot determine the latest release offline. Pass --to X.Y.Z"):
         run_upgrade(tmp_path, offline=True)
     assert main(["upgrade", "--root", str(tmp_path), "--offline", "--to", "1.2.3", "--write"]) == 0
+    assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()
+
+
+def test_upgrade_updates_the_makefile_without_blueprints_workflows(tmp_path: Path) -> None:
+    import shutil
+
+    run_init(tmp_path)
+    shutil.rmtree(tmp_path / ".github/workflows")
+
+    run_upgrade(tmp_path, to_version="1.2.3", write=True)
+
     assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()

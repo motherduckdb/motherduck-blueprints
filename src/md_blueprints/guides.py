@@ -178,7 +178,15 @@ def _dbt(path: Path) -> list[str]:
         if remaining <= 0:
             lines.append("YAML excerpt limit reached. Read the remaining files from the source index.\n")
             break
-        document = _yaml(source)
+        try:
+            document = _yaml(source)
+        except ValidationError as exc:
+            # Valid non-dbt YAML, such as multi-document manifests or custom tags, should not stop discovery.
+            # Syntax errors still fail, so broken dbt files are never silently left out.
+            if not isinstance(exc.__cause__, (yaml.composer.ComposerError, yaml.constructor.ConstructorError)):
+                raise
+            lines.append(f"Skipped {_code(source.relative_to(root))}: not a single plain YAML document.\n")
+            continue
         if not isinstance(document, dict):
             continue
         excerpt = {

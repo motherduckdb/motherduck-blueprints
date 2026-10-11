@@ -6,6 +6,34 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Detect changed packages when `motherduck.yml` lives in a subdirectory (`root: analytics`). Git reports paths from the repository root, so pull request previews and push deploys found no changes and skipped every package.
+- Stop preview deploys from cancelling preview cleanup. A push shortly before a pull request closed could cancel the running cleanup and redeploy the preview. Preview deploys now wait instead of cancelling, and skip deploying when the pull request is already closed. GitHub keeps only one pending job per concurrency group, so a deploy that queues behind a running deploy can still replace a pending cleanup; that deploy then stops, and the preview needs a manual cleanup.
+- Preview cleanup accepts a Guide whose topic, rather than its title, includes the branch slug, as validation already did. Before, such a Guide failed cleanup and blocked every other resource on the branch from being removed.
+- Preview cleanup refuses resources whose names do not change with the branch, even when the name happens to contain the branch name, so closing branch `dev` no longer drops a shared `events_dev` database.
+- Authoritative role memberships and share user grants compare usernames without regard to case, like the plan's username check, so a member declared as `Alice@Example.com` is no longer revoked when MotherDuck lists `alice@example.com`.
+- Remove a `REQUIRED_DATABASES` export with a TypeScript type annotation, or on the last line without a trailing newline, before deploying a Dive. A multi-line export that is not a static array now stops `plan` and `deploy` before any write instead of deploying broken source.
+- Reject variables that reference each other in a cycle instead of deploying names that contain a literal `${var.name}`.
+- Guide `references` set in a `targets.<target>` override now join the dependency graph and are checked like base references. Before, the referencing package could deploy before the Guide it references, and a missing blueprint crashed validation.
+- Give branches with no ASCII letters or digits a distinct preview slug. They all shared the slug `preview` and could clean up each other's previews. Cleanup no longer removes resources named with the old shared `preview` slug, because they cannot be attributed to one branch; delete those by hand.
+- Report the MotherDuck CLI's own error when a query fails, not its "New MotherDuck CLI available" notice.
+- The generated `.gitignore` only ignores `build/`, `dist/`, and `notes/` at the repository root, so packages with those names are committed.
+- `md-blueprints upgrade` updates `CLI_VERSION` in a repository without Blueprints workflows, and `doctor` no longer reports such a repository as mismatched.
+- The scheduled doctor workflow authenticates its release lookup on github.com, so a shared runner rate limit no longer opens a false "upgrade needed" issue. When doctor fails before printing a report, the issue now points to the workflow run.
+- `md-blueprints import` checks `--resource` selectors before connecting to MotherDuck, and `init --force` writes nothing when a destination would escape the target directory.
+- Correct the preview Dive status docs: a Dive with a non-draft base `status` needs `targets.preview.status: draft`.
+- Flight `config` values reach the Flight as JSON-style strings: `false` instead of `False`, an empty value instead of `None`, and JSON for nested objects and lists instead of Python reprs. Plain strings are unchanged. If Flight code compares a config value with `"True"` or `"False"`, compare with `"true"` or `"false"`.
+- `plan` and `deploy` check for the admin role before any write when a Dive moves to `status: endorsed`. Before, a non-admin deploy applied Flight and Dive content changes and then failed at the status change.
+- Overrides under a `targets.<name>` that `motherduck.yml` does not declare, other than `preview`, `staging`, and `prod`, now fail validation. Before, a misspelled target such as `production` was silently ignored, including any bound `id` in it.
+- Duplicate keys in `motherduck.yml` and `blueprint.yml` now fail validation. YAML kept only the last value, so a second `variables:` block silently replaced the first.
+- The preview pull request comment escapes `|` in resource names, and shows share URLs as code, because GitHub drops `md:` links.
+- `guides` skips multi-document YAML and YAML with custom tags in a dbt project, such as Kubernetes or CloudFormation files, instead of failing. YAML syntax errors still fail.
+- The Guide scaffold includes a branch-scoped preview title, so it validates once `deploy: true` is set.
+- The local Dive preview supports `useExport` and `exportAs` on query results, so Dives that export data build with `make preview-smoke`. Local exports are logged instead of downloaded.
+- Fix both examples in the Terraform guide, which failed validation in a generated repository, and document that removing `accessTokenName` or `maxRuntimeSec` keeps the Flight's current value.
+- Maintenance: replace unit tests that mocked deployer internals with end-to-end tests that run the installed CLI on a generated repository against a stateful fake MotherDuck account, now shared with `make mock-test`, and drop duplicate and wording-only tests.
+- A Guide that references a deleted Dive or Flight by UUID now gets a plan error for that reference. Before, `plan` and `deploy` stopped with the raw `MotherDuck SQL failed: ... not found` message.
+- Bump the package and action pins to 0.8.0.
+
 ## v0.7.8 - 2026-10-11
 
 Patch release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.8`, which also adds the `MOTHERDUCK_TOKEN` secret to the deploy and cleanup workflows. Workflows on the floating `@v0` tag still need that workflow change. See the [v0.7.8 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.8).

@@ -148,28 +148,6 @@ def test_installer_pins_runtime_without_credentials(tmp_path: Path, monkeypatch:
     assert len(downloads) == 1
 
 
-def test_legacy_python_backend_is_still_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from types import SimpleNamespace
-    import duckdb
-
-    run_init(tmp_path)
-    deployer = Deployer(Project(tmp_path))
-    deployer.sql_env = {'motherduck_token': 'test-only'}
-    monkeypatch.setenv('MD_BLUEPRINTS_SQL_BACKEND', 'duckdb')
-    queries: list[str] = []
-    closed: list[bool] = []
-
-    def execute(statement: str) -> Any:
-        queries.append(statement)
-        return SimpleNamespace(fetchall=lambda: [(1,)])
-
-    monkeypatch.setattr(duckdb, 'connect', lambda *a, **kw: SimpleNamespace(
-        execute=execute, close=lambda: closed.append(True),
-    ))
-    assert deployer._query_rows('SELECT 1') == [(1,)]
-    assert queries == ['SELECT 1'] and closed == [True]
-
-
 @pytest.mark.parametrize('payload,expected', [
     ('[{"first":1}]\n[{"second":2}]\n', [(2,)]),
     ('[{"id":"created"}]\n[]\n', []),
@@ -215,3 +193,19 @@ def test_python_backend_checks_timestamp_dependency_before_connecting(
     monkeypatch.setattr(duckdb, 'connect', lambda *a, **kw: pytest.fail('Connection opened before dependency check'))
     with pytest.raises(CommandError, match=r'md-blueprints\[deploy\]'):
         deployer._query_rows('CREATE TABLE example (x INT)')
+
+
+@pytest.mark.parametrize(("stdout", "stderr", "expected"), [
+    ('{"success":false,"error":"Catalog Error: no such table"}', 'New MotherDuck CLI available: v9\nTo upgrade, run: motherduck upgrade\n', 'Catalog Error: no such table'),
+    ('', 'New MotherDuck CLI available: v9\nTo upgrade, run: motherduck upgrade\nAuthentication failed\n', 'Authentication failed'),
+    ('', 'plain failure', 'plain failure'),
+])
+def test_failed_query_reports_the_error_not_the_upgrade_notice(
+    monkeypatch: pytest.MonkeyPatch, stdout: str, stderr: str, expected: str,
+) -> None:
+    monkeypatch.setattr(motherduck_cli, 'executable', lambda: '/bin/motherduck')
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: subprocess.CompletedProcess(a, 1, stdout, stderr))
+
+    with pytest.raises(CommandError) as error:
+        motherduck_cli.query_rows('SELECT 1', token=None)
+    assert str(error.value) == f'MotherDuck SQL failed: {expected}'

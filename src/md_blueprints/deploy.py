@@ -92,12 +92,19 @@ def quote_ident(value: object) -> str:
     return f'"{rendered}"'
 
 
+def users_missing_from(users: set[str], other: set[str]) -> set[str]:
+    """Users not in ``other``, comparing usernames without regard to case like the plan's username check."""
+    lowered = {user.lower() for user in other}
+    return {user for user in users if user.lower() not in lowered}
+
+
 def quote_name(value: object) -> str:
     return '"' + str(value).replace('"', '""') + '"'
 
 
-_REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*=\s*", re.MULTILINE)
-_LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*\n")
+_REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*(?::(?:=>|[^=])+?)?=(?!>)\s*", re.MULTILINE)
+_LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*(?:\n|$)")
+OTHER_BRANCH_PREVIEW = "other-branch preview"
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
 LIST_PAGE_SIZE = 1000
 FLIGHT_RUN_START_GRACE_SECONDS = 120
@@ -121,7 +128,7 @@ def required_databases_export(source: str, start: int = 0) -> tuple[int, int, ob
     value, error, end = json5.parse(source, start=match.end(), consume_trailing=False, allow_duplicate_keys=False)
     if error:
         raise ValidationError("REQUIRED_DATABASES must be a static array")
-    suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?:\r?\n|$)", source[end:])
+    suffix = re.match(r"[ \t]*(?:as[ \t]+const)?[ \t]*;?[ \t]*(?://[^\n]*)?(?:\r?\n|$)", source[end:])
     if suffix is None:
         raise ValidationError("Unsupported expression after REQUIRED_DATABASES")
     return match.start(), end + suffix.end(), value
@@ -143,6 +150,13 @@ def strip_required_databases_export(source: str) -> str:
             match = _REQUIRED_DATABASES_EXPORT.search(result, position)
             if match is None:
                 break
+            line_end = result.find("\n", match.end())
+            rest = result[match.end():len(result) if line_end == -1 else line_end]
+            # Brackets inside strings or a trailing comment do not continue the expression.
+            rest = re.sub(r"//.*", "", re.sub(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", "", rest))
+            if sum(rest.count(c) for c in "[{(") > sum(rest.count(c) for c in "]})"):
+                # The legacy line removal would leave the rest of the expression behind.
+                raise
             position = match.end()
             continue
         if found is None:
@@ -318,10 +332,13 @@ class Deployer:
 
     def plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = self._validate_and_render(target, branch, names)
+        self._preflight_dive_sources(rendered)
         self._prepare_live_command(target, "plan")
         self._preflight_rbac(rendered)
         self._preflight_flight_instance_types(rendered)
-        return self._build_deploy_plan(rendered)
+        records = self._build_deploy_plan(rendered)
+        self._preflight_endorsements(records)
+        return records
 
     def verify(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = copy.deepcopy(self._validate_and_render(target, branch, names))
@@ -399,11 +416,13 @@ class Deployer:
         self, *, target: str, branch: str | None, names: list[str] | None, verify: bool = True,
     ) -> None:
         rendered = self._validate_and_render(target, branch, names)
+        self._preflight_dive_sources(rendered)
         self._prepare_live_command(target, "deploy")
         self._preflight_rbac(rendered)
         self._preflight_flight_instance_types(rendered)
         records = self._build_deploy_plan(rendered)
         self.ensure_plan_succeeds(records)
+        self._preflight_endorsements(records)
         plan_index = self._index_by_resource(records)
 
         for blueprint, key, role in self._role_deployment_order(rendered):
@@ -454,6 +473,14 @@ class Deployer:
             for name in self.project.target_names()
             if name != "preview"
         }
+        # A name that stays the same for another branch is shared between previews, even when it
+        # happens to contain this branch's name (for example events_dev on branch dev).
+        stable_renders[OTHER_BRANCH_PREVIEW] = {
+            blueprint.name: blueprint
+            for blueprint in self.project.render_all(
+                target, branch=f"{branch or 'preview'}-cleanup-probe", names=rendered_names,
+            )
+        }
         current_slug = branch_slug(branch or "")
         records = self._build_cleanup_plan(
             rendered,
@@ -464,7 +491,9 @@ class Deployer:
             stable_renders=stable_renders,
         )
         legacy_slug = legacy_branch_slug(branch or "")
-        if legacy_slug == current_slug:
+        # Every branch without ASCII letters or digits, and a branch named "preview", used the slug
+        # "preview", so those resources cannot be attributed to this branch and are left alone.
+        if legacy_slug in {current_slug, "preview"}:
             return records
         # Previews created before long slugs were hashed used the plain truncation.
         # Plan and deploy never use it; cleanup removes what it finds and nothing else.
@@ -878,13 +907,16 @@ class Deployer:
                 if not guide.get("deploy") or not guide.get("cleanup", True):
                     continue
                 title = str(guide["title"])
+                topic = str(guide.get("topic", ""))
+                # Guides are found by title and topic, and validation accepts the branch slug in either.
                 safety_error = scope_error("Guide", title, blueprint.name, "guides", key, "title")
+                if safety_error and topic and scope_error("Guide", topic, blueprint.name, "guides", key, "topic") is None:
+                    safety_error = None
                 if safety_error:
                     records.append(
                         self._cleanup_record(blueprint, "guide", key, title, "error", None, None, safety_error)
                     )
                     continue
-                topic = str(guide.get("topic", ""))
                 ids = self._list_guide_ids(title, topic)
                 if not ids:
                     records.append(self._cleanup_record(blueprint, "guide", key, title, "missing", False, None))
@@ -1010,6 +1042,11 @@ class Deployer:
             candidates.insert(0, (stable_target, production_name))
         for target_name, stable_name in candidates:
             if name == stable_name:
+                if target_name == OTHER_BRANCH_PREVIEW:
+                    return (
+                        f"refusing to delete preview {resource_type} because its name does not change with the "
+                        f"branch, so other previews share it: {name}"
+                    )
                 stable_label = "production" if target_name == "prod" else target_name
                 return f"refusing to delete preview {resource_type} because it matches {stable_label}: {name}"
         branch_markers = {rendered_branch_slug}
@@ -1241,14 +1278,21 @@ class Deployer:
 
     def _resource_ids_by_uuid(self, reference_type: str, uuid_value: str) -> list[str]:
         uuid_sql = f"{sql_string(uuid_value)}::UUID"
-        if reference_type == "dive":
-            rows = self._query_rows(f"SELECT id FROM MD_GET_DIVE(id := {uuid_sql})")
-        elif reference_type == "flight":
-            rows = self._query_rows(
-                f"SELECT flight_id FROM MD_GET_FLIGHT(flight_id := {uuid_sql})"
-            )
-        else:
-            rows = self._get_guide_rows_by_id(uuid_value)
+        try:
+            if reference_type == "dive":
+                rows = self._query_rows(f"SELECT id FROM MD_GET_DIVE(id := {uuid_sql})")
+            elif reference_type == "flight":
+                rows = self._query_rows(
+                    f"SELECT flight_id FROM MD_GET_FLIGHT(flight_id := {uuid_sql})"
+                )
+            else:
+                rows = self._get_guide_rows_by_id(uuid_value)
+        except CommandError as exc:
+            # A deleted resource becomes a plan error for the reference, like a missing Guide.
+            message = str(exc).lower()
+            if "does not exist" in message or "not found" in message:
+                return []
+            raise
         return [str(row[0]) for row in rows]
 
     def _resource_ids_for_reference(
@@ -1329,7 +1373,8 @@ class Deployer:
             url = self._wait_for_share(str(share["name"]))
             self._reconcile_share(share)
             if target == "preview":
-                share_rows.append(f"| {share['name']} | [Open Share]({url}) |")
+                # GitHub drops links with an md: scheme, so show the share URL as copyable code.
+                share_rows.append(f"| {PlanFormatter._escape_cell(share['name'])} | `{url}` |")
 
         for key, dive in blueprint.dives.items():
             if dive.get("deploy") is False:
@@ -1364,7 +1409,7 @@ class Deployer:
 
         sections = [
             self._format_section("Flights", "| Flight | ID | Run started |", "|--------|----|-------------|", flight_rows),
-            self._format_section("Shares", "| Share | Link |", "|-------|------|", share_rows),
+            self._format_section("Shares", "| Share | URL |", "|-------|-----|", share_rows),
             self._format_section("Dives", "| Dive | Status | Link |", "|------|--------|------|", dive_rows),
             self._format_section("Guides", "| Guide | ID |", "|-------|----|", guide_rows),
         ]
@@ -1461,7 +1506,10 @@ class Deployer:
                     name=name,
                 )
 
-        return f"| {name} | {flight_id} | {str(run_started).lower()} |" if target == "preview" else None
+        return (
+            f"| {PlanFormatter._escape_cell(name)} | {flight_id} | {str(run_started).lower()} |"
+            if target == "preview" else None
+        )
 
     def _flight_run_status(self, flight_id: str, run_number: int) -> str:
         # MD_GET_FLIGHT_RUN is unavailable before DuckDB 1.5.5. The paginated
@@ -1607,7 +1655,8 @@ class Deployer:
         print(f"  Deployed: https://app.motherduck.com/dives/{dive_id}", file=sys.stderr)
         effective_status = desired_status or plan.current_status or "draft"
         return (
-            f"| {title} | {effective_status} | [Open Dive](https://app.motherduck.com/dives/{dive_id}) |"
+            f"| {PlanFormatter._escape_cell(title)} | {effective_status} | "
+            f"[Open Dive](https://app.motherduck.com/dives/{dive_id}) |"
             if target == "preview"
             else None
         )
@@ -1615,7 +1664,7 @@ class Deployer:
     @staticmethod
     def _dive_content_sql(source_path: str) -> str:
         legacy_sql = (
-            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*\\n', '', 'g') "
+            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*(\\n|$)', '', 'g') "
             f"FROM read_text({sql_string(source_path)}))"
         )
         try:
@@ -1651,6 +1700,22 @@ class Deployer:
             expressions.append(f"{{'url': {sql_string(url)}, 'alias': {sql_string(resource['alias'])}}}")
         return f"[{', '.join(expressions)}]"
 
+    @staticmethod
+    def _preflight_dive_sources(rendered: list[RenderedBlueprint]) -> None:
+        """Fail before any write when a Dive's REQUIRED_DATABASES export cannot be removed cleanly."""
+        for blueprint in rendered:
+            for key, dive in blueprint.dives.items():
+                if dive.get("deploy") is False:
+                    continue
+                try:
+                    source = Path(str(dive["sourcePath"])).read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                try:
+                    strip_required_databases_export(source)
+                except ValidationError as exc:
+                    raise ValidationError(f"Dive {blueprint.name}.{key}: {exc}") from exc
+
     def _preflight_flight_instance_types(self, rendered: list[RenderedBlueprint]) -> None:
         """Fail before any write when the SQL backend cannot send a Flight instance size."""
         sized = [
@@ -1682,6 +1747,18 @@ class Deployer:
                 for guide in blueprint.guides.values()
             ):
                 admin_reasons.append(f"{blueprint.name} publishes organization Guides")
+        self._require_admin(admin_reasons)
+
+    def _preflight_endorsements(self, records: list[PlanRecord]) -> None:
+        """Endorsing a Dive needs an admin; check before any write instead of failing after other changes."""
+        self._require_admin([
+            f"{record.blueprint} endorses Dive {record.name}"
+            for record in records
+            if record.type == "dive" and record.action in {"create", "update"}
+            and record.desired_status == "endorsed" and record.current_status != "endorsed"
+        ])
+
+    def _require_admin(self, admin_reasons: list[str]) -> None:
         if not admin_reasons:
             return
 
@@ -1735,7 +1812,7 @@ class Deployer:
             return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
         return (
             f"{AUTHORITATIVE_NOTE}; "
-            f"{self._revocation_summary(current_roles - desired_roles, current_users - desired_users)}"
+            f"{self._revocation_summary(current_roles - desired_roles, users_missing_from(current_users, desired_users))}"
         )
 
     def _authoritative_share_note(self, share: dict[str, object]) -> str:
@@ -1749,7 +1826,7 @@ class Deployer:
             return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
         return (
             f"{AUTHORITATIVE_NOTE}; "
-            f"{self._revocation_summary(current_roles - desired_roles, current_users - desired_users)}"
+            f"{self._revocation_summary(current_roles - desired_roles, users_missing_from(current_users, desired_users))}"
         )
 
     def _org_users(self) -> dict[str, bool] | None:
@@ -1800,12 +1877,12 @@ class Deployer:
 
         for included in sorted(desired_roles - current_roles):
             self._sql(f"GRANT ROLE {quote_name(included)} TO ROLE {name_sql};")
-        for member in sorted(desired_users - current_users):
+        for member in sorted(users_missing_from(desired_users, current_users)):
             self._sql(f"GRANT ROLE {name_sql} TO USER {quote_name(member)};")
         if role.get("mode") == "authoritative":
             for included in sorted(current_roles - desired_roles):
                 self._sql(f"REVOKE ROLE {quote_name(included)} FROM ROLE {name_sql};")
-            for member in sorted(current_users - desired_users):
+            for member in sorted(users_missing_from(current_users, desired_users)):
                 self._sql(f"REVOKE ROLE {name_sql} FROM USER {quote_name(member)};")
 
     def _role_deployment_order(
@@ -1859,12 +1936,12 @@ class Deployer:
 
         for role in sorted(desired_roles - current_roles):
             self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO ROLE {quote_name(role)};")
-        for user in sorted(desired_users - current_users):
+        for user in sorted(users_missing_from(desired_users, current_users)):
             self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO USER {quote_name(user)};")
         if grants.get("mode") == "authoritative":
             for role in sorted(current_roles - desired_roles):
                 self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM ROLE {quote_name(role)};")
-            for user in sorted(current_users - desired_users):
+            for user in sorted(users_missing_from(current_users, desired_users)):
                 self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM USER {quote_name(user)};")
 
     def _guide_deployment_order(self, blueprint: RenderedBlueprint) -> list[str]:
@@ -1999,7 +2076,7 @@ class Deployer:
             raise ValidationError(f"Cannot deploy Guide {title} with plan action {plan.action}")
 
         plan.id = guide_id
-        return f"| {title} | {guide_id} |" if target == "preview" else None
+        return f"| {PlanFormatter._escape_cell(title)} | {guide_id} |" if target == "preview" else None
 
     def _guide_references_sql(
         self,

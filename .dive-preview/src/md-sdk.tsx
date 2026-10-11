@@ -1,6 +1,6 @@
 /**
  * Simplified @motherduck/react-sql-query shim for local Vite preview.
- * Same API as the production dive runtime — useSQLQuery, useDiveState,
+ * Same API as the production dive runtime — useSQLQuery (with exportAs), useExport, useDiveState,
  * useConnection, useConnectionStatus, and MotherDuckSDKProvider.
  */
 import { MDConnection } from "@motherduck/wasm-client";
@@ -28,6 +28,15 @@ export type RequiredDatabase = {
   type?: "share" | "database";
 };
 
+export type ExportQueryOptions = {
+  format: "csv" | "json" | "parquet" | "xlsx";
+  title?: string;
+  filename?: string;
+  sheetName?: string;
+  // Format-specific settings are accepted for API compatibility; the saved Dive applies them.
+  [setting: string]: unknown;
+};
+
 export type UseSQLQueryResult<TData = readonly DuckDBRow[]> = {
   data: TData | undefined;
   isLoading: boolean;
@@ -36,8 +45,15 @@ export type UseSQLQueryResult<TData = readonly DuckDBRow[]> = {
   isPlaceholderData: boolean;
   error: Error | null;
   refetch: () => void;
+  exportAs: (options: ExportQueryOptions) => Promise<void>;
   status: QueryStatus;
 };
+
+// The saved Dive runtime generates and downloads export files. Locally, log the request instead.
+async function simulateLocalExport(sql: string, options: ExportQueryOptions): Promise<void> {
+  const filename = options.filename || options.title || "export";
+  console.info(`Dive export requested in local preview: ${filename}.${options.format}`, { sql, options });
+}
 
 type UseSQLQueryOptions<TData = readonly DuckDBRow[]> = {
   enabled?: boolean;
@@ -235,6 +251,13 @@ export function useSQLQuery<TData = readonly DuckDBRow[]>(
     }
   }, [observer, connState, enabled, sql]);
 
+  const exportAs = useCallback(async (exportOptions: ExportQueryOptions) => {
+    if (connState.status !== "connected") {
+      throw new Error("Cannot export before the MotherDuck connection is ready.");
+    }
+    await simulateLocalExport(sql, exportOptions);
+  }, [connState.status, sql]);
+
   const isLoading = snap.status === "loading" || connState.status === "connecting";
   const rawData = snap.data ?? snap.lastData;
 
@@ -265,8 +288,21 @@ export function useSQLQuery<TData = readonly DuckDBRow[]>(
     isError: snap.status === "error",
     isPlaceholderData,
     error: snap.error ?? null,
-    refetch, status: snap.status,
+    refetch, exportAs, status: snap.status,
   };
+}
+
+// ── useExport ──────────────────────────────────────────────────────
+
+export function useExport() {
+  const { state } = useSDKContext();
+  const exportQuery = useCallback(async ({ sql, ...options }: { sql: string } & ExportQueryOptions) => {
+    if (state.status !== "connected") {
+      throw new Error("Cannot export before the MotherDuck connection is ready.");
+    }
+    await simulateLocalExport(sql, options as ExportQueryOptions);
+  }, [state.status]);
+  return { exportQuery };
 }
 
 // ── useDiveState ───────────────────────────────────────────────────

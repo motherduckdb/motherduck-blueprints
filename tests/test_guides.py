@@ -214,3 +214,16 @@ def test_invalid_requests_fail(args: list[str], code: int, tmp_path: Path, capsy
     assert main([*args, "--root", str(tmp_path)]) == code
     if args[0] == "validate":
         assert "--dbt is only supported by guides" in capsys.readouterr().err
+
+
+def test_non_dbt_yaml_documents_are_skipped_not_fatal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = tmp_path / "repo"
+    write_dbt(repo)
+    (repo / "deploy").mkdir()
+    (repo / "deploy" / "k8s.yaml").write_text("kind: A\n---\nkind: B\n")
+    (repo / "deploy" / "stack.yml").write_text("Value: !Ref Bucket\n")
+
+    assert main(["guides", "--root", str(repo)]) == 0
+    output = capsys.readouterr().out
+    assert "One row per completed order" in output
+    assert "Skipped <code>deploy/k8s.yaml</code>" in output and "Skipped <code>deploy/stack.yml</code>" in output

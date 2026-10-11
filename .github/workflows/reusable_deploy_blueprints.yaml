@@ -47,6 +47,7 @@ jobs:
       target_identity: ${{ steps.topology.outputs.identity }}
       staging_enabled: ${{ steps.topology.outputs.staging_enabled }}
       deployment_enabled: ${{ steps.topology.outputs.deployment_enabled }}
+      pull_request_open: ${{ steps.pr-open.outputs.open }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +57,7 @@ jobs:
 
       - name: Validate configured targets
         id: validate
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         with:
           python-version: ${{ inputs.python-version }}
           command: validate
@@ -204,7 +205,7 @@ jobs:
       - name: Compute changed blueprints for pull request
         id: changed-pr
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -227,7 +228,7 @@ jobs:
       - name: Compute changed blueprints for push
         id: changed-push
         if: ${{ github.event_name == 'push' }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -236,7 +237,7 @@ jobs:
       - name: Select all blueprints
         id: changed-all
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.blueprints == '') }}
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         with:
           python-version: ${{ inputs.python-version }}
           command: changed
@@ -258,6 +259,15 @@ jobs:
           echo "changed_blueprints=${changed}" >> "$GITHUB_OUTPUT"
           echo "changed_csv=${csv}" >> "$GITHUB_OUTPUT"
 
+      - name: Check that the pull request is still open
+        id: pr-open
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            core.setOutput('open', String(data.state === 'open'));
+
   deploy-preview:
     name: Deploy Preview Blueprints
     needs: compute_changes
@@ -266,20 +276,41 @@ jobs:
       needs.compute_changes.outputs.changed_blueprints != '[]' &&
       needs.compute_changes.outputs.target == 'preview' &&
       needs.compute_changes.outputs.deployment_enabled == 'true' &&
+      needs.compute_changes.outputs.pull_request_open != 'false' &&
       (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
     environment: ${{ needs.compute_changes.outputs.target_environment }}
     concurrency:
-      # Shared with preview cleanup so a closed pull request cannot be redeployed after cleanup.
+      # Shared with preview cleanup. A running cleanup is never cancelled, and a deploy for a closed pull
+      # request skips the job, so it does not join the group. GitHub keeps one pending job per group, so a
+      # deploy that queues after a cleanup can still replace that pending cleanup; the step below then
+      # stops the deploy, and the preview needs a manual cleanup.
       group: md-blueprints-preview-${{ github.head_ref || inputs.branch }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
+      - name: Check that the pull request is still open
+        id: pr-state
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('open', 'true');
+              return;
+            }
+            const { data } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            core.setOutput('open', String(data.state === 'open'));
+            if (data.state !== 'open') {
+              core.notice('The pull request is closed, so the preview is not redeployed after its cleanup.');
+            }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.pr-state.outputs.open == 'true' }}
         with:
           persist-credentials: false
 
       - name: Resolve preview branch
         id: preview-branch
+        if: ${{ steps.pr-state.outputs.open == 'true' }}
         shell: bash
         env:
           PREVIEW_BRANCH: ${{ github.head_ref || inputs.branch }}
@@ -293,7 +324,8 @@ jobs:
 
       - name: Plan preview blueprints
         id: plan-preview
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        if: ${{ steps.pr-state.outputs.open == 'true' }}
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -304,6 +336,7 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Summarize preview plan
+        if: ${{ steps.pr-state.outputs.open == 'true' }}
         shell: bash
         env:
           PLAN_OUTPUT: ${{ steps.plan-preview.outputs.stdout }}
@@ -316,7 +349,8 @@ jobs:
 
       - name: Deploy preview blueprints
         id: deploy-preview
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        if: ${{ steps.pr-state.outputs.open == 'true' }}
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -328,7 +362,7 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Comment on pull request
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && steps.pr-state.outputs.open == 'true' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DEPLOY_OUTPUT: ${{ steps.deploy-preview.outputs.stdout }}
@@ -398,7 +432,7 @@ jobs:
 
       - name: Plan target blueprints
         id: plan-stable
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -420,7 +454,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy target blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -465,7 +499,7 @@ jobs:
 
       - name: Plan released production blueprints
         id: plan-production
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -487,7 +521,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy released production blueprints
-        uses: motherduckdb/motherduck-blueprints@v0.7.8
+        uses: motherduckdb/motherduck-blueprints@v0.8.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

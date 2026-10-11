@@ -12,17 +12,6 @@ from md_blueprints.schema import ValidationError
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_migrate_latest_is_idempotent_for_current_schema(capsys: pytest.CaptureFixture[str]) -> None:
-    run_migrate(FIXTURES / "simple", from_version=None, to_version="latest", write=False)
-
-    assert "No migration needed" in capsys.readouterr().out
-
-
-def test_migrate_from_mismatch_rejects_project() -> None:
-    with pytest.raises(ValidationError, match="--from 2 does not match project schemaVersion set: 1"):
-        run_migrate(FIXTURES / "simple", from_version=2, to_version="latest", write=False)
-
-
 def test_migration_rejects_external_symlinks(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

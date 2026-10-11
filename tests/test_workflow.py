@@ -341,7 +341,7 @@ def test_github_script_lookups_paginate_and_truncate(name: str, lookup: str) -> 
     scripts = [
         step["with"]["script"]
         for job in reusable(name)["jobs"].values() for step in job["steps"]
-        if step.get("uses", "").startswith("actions/github-script@")
+        if step.get("uses", "").startswith("actions/github-script@") and lookup in step["with"]["script"]
     ]
     assert len(scripts) == 1
     script = scripts[0]
@@ -410,3 +410,16 @@ def test_preview_comment_truncation_keeps_the_notice_outside_details(report: str
     assert body.startswith("<!-- preview-blueprints-comment -->\n### Preview Blueprints\n")
     assert body.endswith("for the full plan and deployment log._")
     assert ("</details>\n\n_Output truncated." in body) is closes_details
+
+
+def test_preview_deploy_never_cancels_cleanup_and_skips_closed_pull_requests() -> None:
+    deploy = reusable("deploy_blueprints")["jobs"]["deploy-preview"]
+    cleanup = reusable("cleanup_preview_blueprints")["jobs"]["cleanup"]
+    assert deploy["concurrency"]["group"].split("${{")[0] == cleanup["concurrency"]["group"].split("${{")[0]
+    assert deploy["concurrency"]["cancel-in-progress"] is False
+    assert "needs.compute_changes.outputs.pull_request_open != 'false'" in deploy["if"]
+    changes = reusable("deploy_blueprints")["jobs"]["compute_changes"]
+    assert changes["outputs"]["pull_request_open"] == "${{ steps.pr-open.outputs.open }}"
+    first, *rest = deploy["steps"]
+    assert first["id"] == "pr-state" and "pulls.get" in first["with"]["script"]
+    assert all("steps.pr-state.outputs.open == 'true'" in step.get("if", "") for step in rest)

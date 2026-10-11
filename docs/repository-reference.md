@@ -177,7 +177,7 @@ Customer repositories include a manual **Prepare Guide context** workflow. It up
 
 ## Dives
 
-Preview Dives always use `draft`. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
+Preview Dives use `draft`. A Dive that omits `status` gets `draft` in preview; a Dive with another base `status` needs `targets.preview.status: draft`, or preview validation fails. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
 
 ## Guides
 

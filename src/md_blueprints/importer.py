@@ -332,19 +332,19 @@ def run_import(
             raise ValidationError("Snapshot must be an array of {kind, metadata, content} objects")
         snapshots = data
     else:
+        # Check selectors before connecting so a typo never opens a live session.
+        selected: list[tuple[str, str]] = []
+        for value in selectors:
+            kind, separator, resource_id = value.partition(":")
+            if not separator or kind not in KINDS:
+                raise ValidationError("--resource must be flight:UUID, dive:UUID, or guide:UUID")
+            selected.append((kind, checked_uuid(resource_id)))
         deployer = Deployer(project)
         deployer._prepare_live_command(target, "import")
         read_identity = deployer._sql("SELECT current_user").strip()
         reader = ImportReader(deployer)
-        selected: list[tuple[str, str]] = []
         if all_resources:
             selected = [(kind, resource_id) for kind in KINDS for resource_id in reader.inventory(kind)]
-        else:
-            for value in selectors:
-                kind, separator, resource_id = value.partition(":")
-                if not separator or kind not in KINDS:
-                    raise ValidationError("--resource must be flight:UUID, dive:UUID, or guide:UUID")
-                selected.append((kind, checked_uuid(resource_id)))
         snapshots = [reader.snapshot(kind, resource_id) for kind, resource_id in dict.fromkeys(selected)]
     proposals: list[tuple[str, dict[str, str]]] = []
     reports = []
