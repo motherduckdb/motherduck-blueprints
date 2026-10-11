@@ -6,10 +6,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.7.8 - 2026-10-11
+
+Patch release. Existing repositories pin exact versions and need `make upgrade VERSION=0.7.8`, which also adds the `MOTHERDUCK_TOKEN` secret to the deploy and cleanup workflows. Workflows on the floating `@v0` tag still need that workflow change. See the [v0.7.8 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.7.8).
+
 - Pass `MOTHERDUCK_TOKEN` from the generated deploy and cleanup callers to the reusable workflows, which now declare it as an optional `workflow_call` secret. GitHub resolves an environment secret to an empty string in a reusable workflow unless the caller passes it, even when the reusable job selects that environment, so previews, deploys, and cleanup failed with `MOTHERDUCK_TOKEN is required`. `secrets: inherit` is not a workaround for customer repositories because it works only within one organization or enterprise.
 - `md-blueprints upgrade` adds the `secrets:` block to existing reusable deploy and cleanup callers that pass no secrets. Callers with their own `secrets` entry, including `secrets: inherit`, are left unchanged. `doctor` warns about callers that do not pass the token, and about callers that use `secrets: inherit`, which passes nothing outside the motherduckdb organization. The template agent guide tells agents to keep the `secrets:` block.
 - Correct the GitHub Action guide, which said no secret passing was needed, and add a setup troubleshooting row for the error.
-- Bump the package and action pins to 0.7.8.
+- Bump the package and action pins to 0.7.8. (#127)
 - Update the local Dive preview to React and React DOM 19.3.0, lucide-react 1.52.0, Vite 8.3.2, and @vitejs/plugin-react 6.1.2. Update the action's pinned pytz to 2026.5, and the development lock to urllib3 2.8.0, mypy 2.4.0, and ruff 0.16.10. (#98, #108, #119, #120, #121, #122, #123, #124)
 
 ## v0.7.7 - 2026-10-08
