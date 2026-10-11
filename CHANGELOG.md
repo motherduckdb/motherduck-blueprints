@@ -10,6 +10,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - `md-blueprints upgrade` adds the `secrets:` block to existing reusable deploy and cleanup callers that pass no secrets. Callers with their own `secrets` entry, including `secrets: inherit`, are left unchanged. `doctor` warns about callers that do not pass the token, and about callers that use `secrets: inherit`, which passes nothing outside the motherduckdb organization. The template agent guide tells agents to keep the `secrets:` block.
 - Correct the GitHub Action guide, which said no secret passing was needed, and add a setup troubleshooting row for the error.
 - Bump the package and action pins to 0.7.8.
+- Update the local Dive preview to React and React DOM 19.3.0, lucide-react 1.52.0, Vite 8.3.2, and @vitejs/plugin-react 6.1.2. Update the action's pinned pytz to 2026.5, and the development lock to urllib3 2.8.0, mypy 2.4.0, and ruff 0.16.10. (#98, #108, #119, #120, #121, #122, #123, #124)
 
 ## v0.7.7 - 2026-10-08
 
