@@ -10,6 +10,31 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.9.0
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.9.0`, except the preview change, which also needs `.venv/bin/md-blueprints sync-preview --write`. Workflows on the floating `@v0` tag pick up the plan change automatically. Release notes: [v0.9.0](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.0).
+
+### preview-matches-dive-runtime
+
+- **Changed in:** v0.9.0
+- **What changed:** the local Dive preview builds against the production Dive runtime.
+  - `@motherduck/react-sql-query` exports only the production v1 API: `useSQLQuery`, `useExport`, `useDiveState`, `useRunFlight`, `useFlightRun`, `quoteSqlIdentifier`, and `quoteSqlString`. Before, it also exported `useConnection`, `useConnectionStatus`, and `MotherDuckSDKProvider`, which production Dives do not have.
+  - React and React DOM are 18.3.1, lucide-react 0.468.0, recharts 3.7.0, and d3 7.9.0, the versions production Dives load. Before, Dependabot had moved the preview to React 19 and lucide-react 1.x, and d3 was missing.
+  - Tailwind CSS is pinned to 3.4.17.
+- **Symptom:** `make preview-smoke NAME` or `make preview NAME` fails with `"useConnection" is not exported by "src/md-sdk.tsx"`, or with a missing lucide-react icon. Those Dives already failed when MotherDuck rendered them.
+- **Find:** `grep -rnE "useConnection|useConnectionStatus|MotherDuckSDKProvider" dives projects blueprints`, then `make preview-smoke NAME` for each Dive.
+- **Fix:** read data with `useSQLQuery`, and replace icons added after lucide-react 0.468.0 with ones that exist in it. Keep `.dive-preview/package.json` at the pinned versions.
+- **Implemented in:** `.dive-preview/src/md-sdk.tsx`, `.dive-preview/package.json`, and `md_blueprints.init.run_sync_preview`.
+
+### share-plan-reports-changes
+
+- **Changed in:** v0.9.0
+- **What changed:** for a share whose `includePattern` or `grants` Blueprints manages, `plan` compares the live state. A share that already matches is `present` instead of `update`. The notes list the changes, such as `include pattern changes from unfiltered to [reporting.*]`, `will grant: role analysts`, and `will revoke: user old@example.com`, instead of `filter and/or grants will be reconciled`. Deploy skips `ALTER SHARE ... SET INCLUDE_PATTERN` when the live pattern already matches.
+- **Symptom:** no error. Automation that parses `plan --json` and expects `update` for every managed share, or matches the old note text, sees `present` or the new notes.
+- **Find:** search your scripts for `filter and/or grants will be reconciled` or for checks on share `action`.
+- **Fix:** treat `present` as "nothing to change" and read the notes for the planned changes.
+- **Implemented in:** `md_blueprints.deploy.Deployer._managed_share_plan` and `Deployer._reconcile_share`.
+
 ## v0.8.0
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.8.0`. Workflows on the floating `@v0` tag pick them up automatically. Release notes: [v0.8.0](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.8.0).

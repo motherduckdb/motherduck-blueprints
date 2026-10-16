@@ -195,7 +195,22 @@ def _missing_roles(root: Path, fake: FakeMotherDuck) -> tuple[list[str], dict[st
     return [], {}, [
         "included role(s) do not exist and are not selected for deployment: missing-parent",
         "grant role(s) do not exist and are not selected for deployment: missing-grantee",
+        # MotherDuck refuses hyphens in new role names; plan says so before any write.
+        "MotherDuck cannot create role 'finance-team'",
+        "rename it, for example to 'finance_team'",
     ]
+
+
+def _expired_access_token(root: Path, fake: FakeMotherDuck) -> tuple[list[str], dict[str, str], list[str]]:
+    flight_target(root, "prod", accessTokenName="flights")
+    fake.seed(access_tokens=[["flights", "expired", "2026-10-01 00:00:00+00"], ["ci", "never", None]])
+    return [], {}, ["access token 'flights' expired at 2026-10-01 00:00:00+00"]
+
+
+def _unknown_access_token(root: Path, fake: FakeMotherDuck) -> tuple[list[str], dict[str, str], list[str]]:
+    flight_target(root, "prod", accessTokenName="flihgts")
+    fake.seed(access_tokens=[["flights", "never", None]])
+    return [], {}, ["accessTokenName 'flihgts' is not an access token of the deployment identity"]
 
 
 def _dynamic_dive_mounts(root: Path, fake: FakeMotherDuck) -> tuple[list[str], dict[str, str], list[str]]:
@@ -218,7 +233,7 @@ def _branch_without_slug(root: Path, fake: FakeMotherDuck) -> tuple[list[str], d
 
 @pytest.mark.parametrize("setup", [
     _duplicate_flights, _missing_admin, _old_duckdb, _missing_upstream_output, _missing_roles, _dynamic_dive_mounts,
-    _branch_without_slug,
+    _branch_without_slug, _expired_access_token, _unknown_access_token,
 ])
 @pytest.mark.parametrize("verify", ["--verify", "--skip-verification"])
 def test_preflight_failures_block_every_write_even_without_the_postcheck(
@@ -231,6 +246,19 @@ def test_preflight_failures_block_every_write_even_without_the_postcheck(
         assert message in result.stderr
     assert md_cli.fake.mutations() == []
     assert md_cli.fake.state().get("flights", {}) == {}
+
+
+def test_access_token_that_expires_soon_warns_once_and_deploys(starter: Path, md_cli: Cli) -> None:
+    flight_target(starter, "prod", accessTokenName="flights")
+    md_cli.fake.seed(access_tokens=[["flights", "soon", "2026-10-20 00:00:00+00"]])
+    result = md_cli.ok("deploy", "--root", str(starter))
+    assert result.stderr.count("access token 'flights' used by Flight wikipedia-pageviews-ingest.pageviews_loader") == 1
+    assert any('"access_token_name" => \'flights\'' in query for query in md_cli.fake.queries())
+
+    # verify is read-only: a token that has since expired does not fail it, while plan stops.
+    md_cli.fake.seed(access_tokens=[["flights", "expired", "2026-10-20 00:00:00+00"]])
+    md_cli.ok("verify", "--root", str(starter))
+    assert "expired at 2026-10-20" in md_cli.fails("plan", "--root", str(starter)).stderr
 
 
 def test_missing_producer_output_is_pending_only_while_a_selected_flight_will_produce_it(
@@ -345,26 +373,26 @@ def test_roles_and_share_grants_reconcile_with_authoritative_revocations(starter
     write_yaml(starter / "roles/finance-team/blueprint.yml", {
         "schemaVersion": 1, "name": "finance-team", "title": "Finance Team",
         "resources": {"roles": {"team": {
-            "name": "finance-team", "includedRoles": ["explorer"], "members": ["new@example.com"],
+            "name": "finance_team", "includedRoles": ["explorer"], "members": ["new@example.com"],
             "mode": "authoritative", "deploy": True,
         }}},
     })
     write_yaml(starter / "roles/senior-analysts/blueprint.yml", {
         "schemaVersion": 1, "name": "senior-analysts", "title": "Senior Analysts",
         "resources": {"roles": {"team": {
-            "name": "senior-analysts", "includedRoles": ["finance-team"], "mode": "authoritative", "deploy": True,
+            "name": "senior_analysts", "includedRoles": ["finance_team"], "mode": "authoritative", "deploy": True,
         }}},
     })
 
     def manage_share(data: dict[str, Any]) -> None:
         data["resources"]["shares"]["pageviews"].update(
-            includePattern=["reporting.*"], grants={"roles": ["finance-team"], "mode": "authoritative"},
+            includePattern=["reporting.*"], grants={"roles": ["finance_team"], "mode": "authoritative"},
         )
 
     edit_yaml(starter / INGEST, manage_share)
     fake.seed(
         current_user='ci "bot"',
-        roles={"explorer": {}, "legacy": {}, "finance-team": {"included": ["legacy"], "users": ["old@example.com"]}},
+        roles={"explorer": {}, "legacy": {}, "finance_team": {"included": ["legacy"], "users": ["old@example.com"]}},
         share_grantees={"wikipedia_pageviews": [["terraform-role", "role"], ["ops@example.com", "user"]]},
     )
 
@@ -377,7 +405,9 @@ def test_roles_and_share_grants_reconcile_with_authoritative_revocations(starter
     assert role["action"] == "update" and "will revoke: role legacy, user old@example.com" in role["notes"]
     assert "nothing to revoke today (new role)" in plan[("senior-analysts", "role", "team")]["notes"]
     share = plan[("wikipedia-pageviews-ingest", "share", "pageviews")]
-    assert share["action"] == "update" and "filter and/or grants will be reconciled" in share["notes"]
+    assert share["action"] == "update"
+    assert "include pattern changes from unfiltered to [reporting.*]" in share["notes"]
+    assert "will grant: role finance_team" in share["notes"]
     assert "including grants created outside Blueprints (for example by Terraform" in share["notes"]
     assert "will revoke: role terraform-role, user ops@example.com" in share["notes"]
 
@@ -385,24 +415,31 @@ def test_roles_and_share_grants_reconcile_with_authoritative_revocations(starter
     md_cli.ok("deploy", "--root", str(starter))
     queries = fake.queries()
     expected = [
-        'CREATE ROLE IF NOT EXISTS "finance-team";',
-        'GRANT ROLE "explorer" TO ROLE "finance-team";',
-        'GRANT ROLE "finance-team" TO USER "new@example.com";',
-        'REVOKE ROLE "legacy" FROM ROLE "finance-team";',
-        'REVOKE ROLE "finance-team" FROM USER "old@example.com";',
-        'CREATE ROLE IF NOT EXISTS "senior-analysts";',
-        'GRANT ROLE "finance-team" TO ROLE "senior-analysts";',
+        'CREATE ROLE IF NOT EXISTS "finance_team";',
+        'GRANT ROLE "explorer" TO ROLE "finance_team";',
+        'GRANT ROLE "finance_team" TO USER "new@example.com";',
+        'REVOKE ROLE "legacy" FROM ROLE "finance_team";',
+        'REVOKE ROLE "finance_team" FROM USER "old@example.com";',
+        'CREATE ROLE IF NOT EXISTS "senior_analysts";',
+        'GRANT ROLE "finance_team" TO ROLE "senior_analysts";',
     ]
     assert [query for query in queries if query in expected] == expected
     assert queries.index(expected[-1]) < next(i for i, query in enumerate(queries) if "MD_CREATE_FLIGHT" in query)
     for statement in (
         "ALTER SHARE \"wikipedia_pageviews\" SET INCLUDE_PATTERN 'reporting.*';",
-        'GRANT READ ON SHARE "wikipedia_pageviews" TO ROLE "finance-team";',
+        'GRANT READ ON SHARE "wikipedia_pageviews" TO ROLE "finance_team";',
         'REVOKE READ ON SHARE "wikipedia_pageviews" FROM ROLE "terraform-role";',
         'REVOKE READ ON SHARE "wikipedia_pageviews" FROM USER "ops@example.com";',
     ):
         assert statement in queries
-    assert fake.state()["share_grantees"]["wikipedia_pageviews"] == [["finance-team", "role"]]
+    assert fake.state()["share_grantees"]["wikipedia_pageviews"] == [["finance_team", "role"]]
+
+    # A share that already matches plans as present and is not altered again.
+    share = records(md_cli.ok("plan", "--root", str(starter), "--json"))[("wikipedia-pageviews-ingest", "share", "pageviews")]
+    assert share["action"] == "present" and "include pattern and grants already match" in share["notes"]
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    assert not any(query.startswith("ALTER SHARE") or "ON SHARE" in query for query in fake.queries())
 
     def reset_filter(data: dict[str, Any]) -> None:
         data["resources"]["shares"]["pageviews"]["includePattern"] = None

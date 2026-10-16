@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from md_blueprints import __version__
-from md_blueprints.init import run_init
+from md_blueprints.init import run_init, run_sync_preview
 from md_blueprints.maintenance import run_check_updates, run_doctor, tooling_pin_status
 from md_blueprints.schema import ValidationError
 
@@ -224,3 +224,31 @@ def test_tooling_pins_are_aligned_without_blueprints_workflows(tmp_path: Path) -
     shutil.rmtree(tmp_path / ".github/workflows")
 
     assert tooling_pin_status(tmp_path) == (f"aligned at {__version__}", False)
+
+
+def test_sync_preview_restores_the_packaged_dive_preview(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    shim = tmp_path / ".dive-preview/src/md-sdk.tsx"
+    packaged = shim.read_text(encoding="utf-8")
+    shim.write_text("export const useConnection = () => null;\n", encoding="utf-8")
+    (tmp_path / ".dive-preview/src/md-sdk-runtime.tsx").unlink()
+    env_file = tmp_path / ".dive-preview/.env"
+    env_file.write_text("VITE_MOTHERDUCK_TOKEN=local\n", encoding="utf-8")
+    capsys.readouterr()
+
+    run_doctor(tmp_path)
+    assert "local Dive preview differs" in capsys.readouterr().out
+    run_sync_preview(tmp_path)
+    listed = capsys.readouterr().out
+    assert ".dive-preview/src/md-sdk.tsx" in listed and ".dive-preview/src/md-sdk-runtime.tsx" in listed
+    assert shim.read_text(encoding="utf-8") != packaged
+
+    run_sync_preview(tmp_path, write=True)
+    assert shim.read_text(encoding="utf-8") == packaged
+    assert (tmp_path / ".dive-preview/src/md-sdk-runtime.tsx").is_file()
+    assert env_file.read_text(encoding="utf-8") == "VITE_MOTHERDUCK_TOKEN=local\n"
+    capsys.readouterr()
+    run_doctor(tmp_path)
+    assert "local Dive preview: in sync with packaged files" in capsys.readouterr().out

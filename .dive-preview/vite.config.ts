@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      // Production Dives load d3, lucide-react, recharts, and React at the versions pinned in
+      // package.json; Dives import nothing else.
       "@motherduck/react-sql-query": path.resolve(__dirname, "src/md-sdk.tsx"),
+      "d3": path.resolve(__dirname, "node_modules/d3"),
       "recharts": path.resolve(__dirname, "node_modules/recharts"),
       "lucide-react": path.resolve(__dirname, "node_modules/lucide-react"),
       "react": path.resolve(__dirname, "node_modules/react"),

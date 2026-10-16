@@ -159,6 +159,7 @@ make new-project revenue-overview
 make preview wikipedia-pageviews
 make preview-smoke wikipedia-pageviews
 make render-preview wikipedia-pageviews
+make sync-preview
 
 .venv/bin/md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
 .venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/local
@@ -178,6 +179,8 @@ Customer repositories include a manual **Prepare Guide context** workflow. It up
 ## Dives
 
 Preview Dives use `draft`. A Dive that omits `status` gets `draft` in preview; a Dive with another base `status` needs `targets.preview.status: draft`, or preview validation fails. Production manifests can declare `draft`, `ready`, `endorsed`, or `archived`; omitting `status` preserves the live value during content updates. Deployment plans show current and desired status, and endorsement requires an organization-admin identity.
+
+Dive source imports from `@motherduck/react-sql-query` only what production Dives provide: `useSQLQuery`, `useExport`, `useDiveState`, `useRunFlight`, `useFlightRun`, `quoteSqlIdentifier`, and `quoteSqlString`. The other importable libraries are React 18.3.1, d3 7.9.0, lucide-react 0.468.0, and recharts 3.7.0, with Tailwind CSS 3.4.17 classes. The local preview pins the same versions, and `make preview-smoke` fails on any other import from the SDK. `useRunFlight` and `useFlightRun` start and follow a Flight run by UUID. MotherDuck currently lets only the Dive's owner run Flights from it, and a deployed Dive is owned by the deployment identity, so viewers of a Blueprints-deployed Dive cannot run Flights yet. The local preview treats you as the owner.
 
 ## Guides
 

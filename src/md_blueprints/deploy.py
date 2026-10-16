@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import json5
 
@@ -98,6 +99,38 @@ def users_missing_from(users: set[str], other: set[str]) -> set[str]:
     return {user for user in users if user.lower() not in lowered}
 
 
+def role_name_problem(name: str) -> str | None:
+    """Why MotherDuck refuses to create a role with this name, or None when it accepts it."""
+    if not 1 <= len(name) <= 255:
+        return "must be 1 to 255 characters long"
+    if not name[0].isalpha():
+        return "must start with a letter"
+    if not all(char.isalpha() or char in "0123456789_" for char in name):
+        return "may contain only letters, digits, and underscores"
+    return None
+
+
+def split_include_pattern(value: str) -> list[str]:
+    """Split an INCLUDE_PATTERN like MotherDuck does: on commas outside double quotes, trimmed, blanks dropped."""
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in value:
+        if char == '"':
+            quoted = not quoted
+        if char == "," and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def format_include_pattern(value: list[str] | None) -> str:
+    return "unfiltered" if value is None else "[" + ", ".join(value) + "]"
+
+
 def quote_name(value: object) -> str:
     return '"' + str(value).replace('"', '""') + '"'
 
@@ -106,6 +139,7 @@ _REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*(?:
 _LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*(?:\n|$)")
 OTHER_BRANCH_PREVIEW = "other-branch preview"
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
+ACCESS_TOKEN_WARNING_DAYS = 14
 LIST_PAGE_SIZE = 1000
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 AUTHORITATIVE_NOTE = (
@@ -327,6 +361,15 @@ class Deployer:
     def __init__(self, project: Project) -> None:
         self.project = project
         self.sql_env: dict[str, DuckDBConfigValue] | None = None
+        # One Python-backend connection per command: each new md: connection costs a round of
+        # MotherDuck setup, and a deploy issues dozens of statements.
+        self._connection: Any = None
+        # Access token name -> (never/expired/soon/later, expire_at), read once per command.
+        # None until read; False when the list could not be read.
+        self._access_tokens: dict[str, tuple[str, str]] | bool | None = None
+        # verify is read-only; an expiring token is a deploy concern, not a verification failure.
+        self._check_access_tokens = True
+        self._warned_tokens: set[str] = set()
         self.rendered_by_name: dict[str, RenderedBlueprint] = {}
         self.target: str | None = None
 
@@ -349,6 +392,7 @@ class Deployer:
                     resource["deploy"] = True
         self._prepare_live_command(target, "verify")
         self._preflight_rbac(rendered)
+        self._check_access_tokens = False
         records = self._verify_rendered(rendered)
         self._verification_summary(records, names)
         return records
@@ -603,7 +647,14 @@ class Deployer:
                 "secret using a service-account read/write token. Ensure the job selects that environment. "
                 f"For local commands, provide {token_env_var} through your secret manager."
             )
+        self.close()
         self.sql_env = {"motherduck_token": token}
+
+    def close(self) -> None:
+        """Close the Python-backend connection, if one is open."""
+        connection, self._connection = self._connection, None
+        if connection is not None:
+            connection.close()
 
     def _build_deploy_plan(self, rendered: list[RenderedBlueprint]) -> list[PlanRecord]:
         self.rendered_by_name.update({blueprint.name: blueprint for blueprint in rendered})
@@ -688,6 +739,14 @@ class Deployer:
                     )
                 if unknown_members:
                     problems.append(f"member(s) are not users in this organization: {', '.join(unknown_members)}")
+                if not exists and (name_problem := role_name_problem(name)):
+                    suggestion = re.sub(r"\W", "_", name)
+                    if not suggestion[:1].isalpha():
+                        suggestion = "role_" + suggestion.lstrip("_")
+                    problems.append(
+                        f"MotherDuck cannot create role {name!r}: a role name {name_problem}. "
+                        f"Next: rename it, for example to {suggestion!r}"
+                    )
                 role_notes = "; ".join(problems)
                 if not problems and role.get("mode") == "authoritative":
                     role_notes = self._authoritative_role_note(role, exists)
@@ -713,10 +772,9 @@ class Deployer:
                     ))
                     continue
                 if flight.get("id"):
-                    records.append(self._bound_resource_record(blueprint, "flight", key, flight))
-                    continue
-                records.append(
-                    self._existing_resource_record(
+                    record = self._bound_resource_record(blueprint, "flight", key, flight)
+                else:
+                    record = self._existing_resource_record(
                         blueprint=blueprint,
                         type_name="flight",
                         key=key,
@@ -724,7 +782,14 @@ class Deployer:
                         ids=self._list_flight_ids(str(flight["name"])),
                         duplicate_note="duplicate Flight name; expected 0 or 1",
                     )
-                )
+                if (
+                    self._check_access_tokens and record.action in {"create", "update"}
+                    and (token_name := str(flight.get("accessTokenName", "")))
+                ):
+                    if problem := self._access_token_problem(token_name, f"{blueprint.name}.{key}"):
+                        record.action = "error"
+                        record.notes = problem
+                records.append(record)
 
             for key, share in blueprint.shares.items():
                 url = self._find_share_url(str(share["name"]))
@@ -756,10 +821,7 @@ class Deployer:
                         )
                     notes = "; ".join(problems)
                 elif url and manages_share:
-                    action = "update"
-                    notes = "share is available; filter and/or grants will be reconciled"
-                    if isinstance(grants, dict) and grants.get("mode") == "authoritative":
-                        notes = f"{notes}; {self._authoritative_share_note(share)}"
+                    action, notes = self._managed_share_plan(share)
                 elif url:
                     action = "present"
                     notes = "share is available"
@@ -1736,8 +1798,9 @@ class Deployer:
         minimum = ".".join(str(part) for part in FLIGHT_INSTANCE_TYPE_MIN_DUCKDB)
         raise ValidationError(
             f"instanceType on {', '.join(sized)} needs DuckDB {minimum} or newer, but the "
-            f"{sql_backend()} SQL backend runs {version or 'an unknown version'}. Install md-blueprints[deploy] "
-            "and set MD_BLUEPRINTS_SQL_BACKEND=duckdb, or remove instanceType to keep the current size."
+            f"{sql_backend()} SQL backend runs {version or 'an unknown version'}. Run make install-deploy for the "
+            "pinned MotherDuck CLI, or install md-blueprints[deploy] and set MD_BLUEPRINTS_SQL_BACKEND=duckdb, "
+            "or remove instanceType to keep the current size."
         )
 
     def _preflight_rbac(self, rendered: list[RenderedBlueprint]) -> None:
@@ -1818,19 +1881,113 @@ class Deployer:
             f"{self._revocation_summary(current_roles - desired_roles, users_missing_from(current_users, desired_users))}"
         )
 
-    def _authoritative_share_note(self, share: dict[str, object]) -> str:
-        grants = share.get("grants")
-        assert isinstance(grants, dict)
-        desired_roles = {str(value) for value in grants.get("roles", [])}
-        desired_users = {str(value) for value in grants.get("users", [])}
+    def _managed_share_plan(self, share: dict[str, object]) -> tuple[str, str]:
+        """Plan action and notes for a share whose include pattern or grants Blueprints manages."""
+        name = str(share["name"])
+        changes: list[str] = []
+        notes: list[str] = []
         try:
-            current_roles, current_users = self._current_share_grantees(str(share["name"]))
+            if "includePattern" in share:
+                desired = self._desired_include_pattern(share)
+                live = self._live_include_pattern(name)
+                if desired != live:
+                    changes.append(
+                        f"include pattern changes from {format_include_pattern(live)} "
+                        f"to {format_include_pattern(desired)}"
+                    )
+            grants = share.get("grants")
+            if isinstance(grants, dict):
+                desired_roles = {str(value) for value in grants.get("roles", [])}
+                desired_users = {str(value) for value in grants.get("users", [])}
+                current_roles, current_users = self._current_share_grantees(name)
+                additions = [f"role {value}" for value in sorted(desired_roles - current_roles)] + [
+                    f"user {value}" for value in sorted(users_missing_from(desired_users, current_users))
+                ]
+                if additions:
+                    changes.append(f"will grant: {', '.join(additions)}")
+                if grants.get("mode") == "authoritative":
+                    revoked_roles = current_roles - desired_roles
+                    revoked_users = users_missing_from(current_users, desired_users)
+                    if revoked_roles or revoked_users:
+                        changes.append(self._revocation_summary(revoked_roles, revoked_users))
+                    notes.append(AUTHORITATIVE_NOTE)
         except CommandError:
-            return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
+            fallback = [
+                "share is available", "include pattern and grants will be reconciled",
+                "current state could not be read at plan time",
+            ]
+            grants = share.get("grants")
+            if isinstance(grants, dict) and grants.get("mode") == "authoritative":
+                fallback.append(AUTHORITATIVE_NOTE)
+            return "update", "; ".join(fallback)
         return (
-            f"{AUTHORITATIVE_NOTE}; "
-            f"{self._revocation_summary(current_roles - desired_roles, users_missing_from(current_users, desired_users))}"
+            "update" if changes else "present",
+            "; ".join(["share is available", *(changes or ["include pattern and grants already match"]), *notes]),
         )
+
+    @staticmethod
+    def _desired_include_pattern(share: dict[str, object]) -> list[str] | None:
+        value = share.get("includePattern")
+        if value is None:
+            return None
+        assert isinstance(value, list)
+        return split_include_pattern(", ".join(str(item) for item in value))
+
+    def _live_include_pattern(self, name: str) -> list[str] | None:
+        """The share's stored include pattern: None when unfiltered, [] when it includes nothing."""
+        rows = self._query_rows(
+            f"SELECT include_pattern FROM MD_LIST_DATABASE_SHARES() WHERE name = {sql_string(name)}"
+        )
+        if not rows or rows[0][0] is None:
+            return None
+        value = rows[0][0]
+        if not isinstance(value, (list, tuple)):
+            raise CommandError(f"Unexpected include_pattern for share {name}: {value!r}")
+        return [str(item) for item in value]
+
+    def _access_token_problem(self, token_name: str, label: str) -> str | None:
+        """Why MotherDuck would refuse a Flight's accessTokenName, or None. Warns when it expires soon."""
+        # A Flight is created and updated by its owner, the deployment identity, so its token is one of
+        # this identity's tokens. MotherDuck uses the newest token with the name and refuses an expired one.
+        if self._access_tokens is None:
+            try:
+                rows = self._query_rows(
+                    "SELECT token_name, CASE WHEN expire_at IS NULL THEN 'never' "
+                    "WHEN expire_at < now() THEN 'expired' "
+                    f"WHEN expire_at < now() + INTERVAL {ACCESS_TOKEN_WARNING_DAYS} DAY THEN 'soon' ELSE 'later' END, "
+                    "CAST(expire_at AS VARCHAR) FROM md_access_tokens() "
+                    "QUALIFY row_number() OVER (PARTITION BY token_name ORDER BY created_ts DESC) = 1"
+                )
+            except CommandError as exc:
+                print(
+                    f"warning: could not list access tokens ({exc}); skipping the accessTokenName check, "
+                    "so a missing or expired token fails when its Flight is created or updated.",
+                    file=sys.stderr,
+                )
+                self._access_tokens = False
+                return None
+            self._access_tokens = {str(row[0]): (str(row[1]), str(row[2] or "")) for row in rows}
+        if not isinstance(self._access_tokens, dict):
+            return None
+        if token_name not in self._access_tokens:
+            return (
+                f"accessTokenName {token_name!r} is not an access token of the deployment identity. "
+                "Next: create it for the identity that deploys this target, or fix the name"
+            )
+        state, expire_at = self._access_tokens[token_name]
+        if state == "expired":
+            return (
+                f"access token {token_name!r} expired at {expire_at}, so MotherDuck refuses this Flight. "
+                "Next: create a new token with the same name for the deployment identity"
+            )
+        if state == "soon" and token_name not in self._warned_tokens:
+            self._warned_tokens.add(token_name)
+            print(
+                f"warning: access token {token_name!r} used by Flight {label} expires at {expire_at}; "
+                "runs fail after that. Create a new token with the same name before then.",
+                file=sys.stderr,
+            )
+        return None
 
     def _org_users(self) -> dict[str, bool] | None:
         """Lowercased username -> deprovisioned, or None when the organization's users cannot be listed."""
@@ -1920,15 +2077,18 @@ class Deployer:
     def _reconcile_share(self, share: dict[str, object]) -> None:
         name = str(share["name"])
         if "includePattern" in share:
-            include_pattern = share["includePattern"]
-            if include_pattern is None:
+            desired = self._desired_include_pattern(share)
+            if desired is None:
+                # Clients that predate filtered shares also read NULL, so always reset.
                 self._sql(f"ALTER SHARE {quote_name(name)} RESET INCLUDE_PATTERN;")
             else:
-                assert isinstance(include_pattern, list)
-                pattern = ", ".join(str(value) for value in include_pattern)
-                self._sql(
-                    f"ALTER SHARE {quote_name(name)} SET INCLUDE_PATTERN {sql_string(pattern)};"
-                )
+                try:
+                    unchanged = self._live_include_pattern(name) == desired
+                except CommandError:
+                    unchanged = False
+                if not unchanged:
+                    pattern = sql_string(", ".join(desired))
+                    self._sql(f"ALTER SHARE {quote_name(name)} SET INCLUDE_PATTERN {pattern};")
 
         grants = share.get("grants")
         if not isinstance(grants, dict):
@@ -2250,14 +2410,12 @@ class Deployer:
                 "For the legacy Python backend, install md-blueprints[deploy]."
             ) from exc
 
-        connection = None
         try:
-            connection = duckdb.connect("md:", config=self.sql_env)
-            result = connection.execute(statement)
-            rows = result.fetchall()
+            if self._connection is None:
+                self._connection = duckdb.connect("md:", config=self.sql_env)
+            rows: list[tuple[object, ...]] = self._connection.execute(statement).fetchall()
+            return rows
         except duckdb.Error as exc:
+            # Reconnect for the next statement in case the failure left the connection unusable.
+            self.close()
             raise CommandError(f"MotherDuck SQL failed: {exc}") from exc
-        finally:
-            if connection is not None:
-                connection.close()
-        return rows

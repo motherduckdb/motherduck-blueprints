@@ -42,7 +42,7 @@ Pull overwrites local files. Use `--version` to select a version. The native met
 
 ## Command map
 
-Checked against the installed `v1.5.5-2026-09-35` help on 2026-09-09. Run `motherduck <group> <command> --help` for current flags and examples.
+Checked against the installed `v1.5.6-2026-10-404` help on 2026-10-16. Run `motherduck <group> <command> --help` for current flags and examples.
 
 | Area | Commands | Use |
 | --- | --- | --- |
@@ -53,12 +53,12 @@ Checked against the installed `v1.5.5-2026-09-35` help on 2026-09-09. Run `mothe
 | Dive authoring | `dive guide`, `dive init`, `dive watch` | Read the runtime guide, scaffold locally, and preview with reload. |
 | Dive operations | `dive list`, `dive list-versions`, `dive pull`, `dive push`, `dive delete` | Inspect, fetch, publish a new version, or delete a Dive. |
 | Flight authoring | `flight guide`, `flight init` | Read the runtime guide and scaffold locally. |
-| Flight operations | `flight list`, `flight list-versions`, `flight pull`, `flight push`, `flight delete` | Inspect, fetch, publish, or delete a Flight. |
+| Flight operations | `flight list`, `flight list-versions`, `flight pull`, `flight push`, `flight delete` | Inspect, fetch, publish, or delete a Flight. `push --instance-type` sets the runner size. |
 | Flight runs | `flight run`, `flight cancel`, `flight list-runs`, `flight logs` | Start, cancel, inspect, and diagnose runs. |
 | Flight secrets | `flight create-secret`, `flight list-secrets`, `flight delete-secret` | Manage runtime secrets. Listing exposes names and structure, not values. |
 | Guides | `guide init`, `guide list`, `guide list-versions`, `guide pull`, `guide push`, `guide delete` | Work with Markdown guidance, access settings, and object references. |
 
-`dive watch` in CLI `v1.5.5` builds, including the version Blueprints installs, shows a blank preview. Production Dives stopped sending cross-origin isolation headers, and the older dev server still requires them. Use `make preview NAME=<blueprint-name>` until a newer CLI is published; the Blueprints preview sends no isolation headers, matching production.
+`dive watch` in CLI `v1.5.5` builds shows a blank preview, because its dev server still sends cross-origin isolation headers that production Dives dropped. The CLI Blueprints installs no longer sends them. For a repository package, `make preview NAME=<blueprint-name>` previews the Dive with the mounts its manifest declares.
 
 Read `dive guide` or `flight guide` before authoring source. `init` writes local files. `push`, run controls, deletes, and secret changes mutate MotherDuck. After adopting a package, make managed changes through its repository workflow so its identity checks and target policies apply.
 
@@ -70,6 +70,6 @@ Environment tokens stay in the process environment. CI uses an isolated `MOTHERD
 
 Local Blueprints commands automatically prefer the native CLI when available. The existing Python runtime remains a compatibility fallback when it is absent. Set `MD_BLUEPRINTS_SQL_BACKEND=duckdb` to select that backend explicitly after installing `md-blueprints[deploy]`. CI import and `make export` explicitly select the native CLI. Other CI live operations select the Python backend.
 
-The native CLI embeds DuckDB 1.5.5, so imports through it do not read a Flight's instance size, and deployments that set `instanceType` need the Python backend. The native version is managed inside the Blueprints release. `make install-deploy` installs that tested version. `motherduck upgrade` can update your local installation independently.
+The native CLI embeds DuckDB 1.5.6, like the Python backend, so imports through it record a Flight's instance size and either backend can deploy `instanceType`. CLI builds before `v1.5.6-2026-10-169` embed DuckDB 1.5.5 and cannot. The native version is managed inside the Blueprints release. `make install-deploy` installs that tested version. `motherduck upgrade` can update your local installation independently.
 
 See the official [CLI overview](https://motherduck.com/docs/getting-started/interfaces/motherduck-cli/), [installation guide](https://motherduck.com/docs/getting-started/interfaces/motherduck-cli/install/), and [command reference](https://motherduck.com/docs/sql-reference/motherduck-cli/).

@@ -7,11 +7,12 @@
     "build": "vite build"
   },
   "dependencies": {
-    "react": "~19.3.0",
-    "react-dom": "~19.3.0",
     "@motherduck/wasm-client": "^0.8.0",
-    "recharts": "~3.7.0",
-    "lucide-react": "^1.52.0"
+    "d3": "7.9.0",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "3.7.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",

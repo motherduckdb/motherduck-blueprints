@@ -10,7 +10,7 @@ from typing import NoReturn
 
 from .deploy import Deployer, PlanFormatter
 from .diagnostics import report_error, validation_warnings
-from .init import run_init
+from .init import run_init, run_sync_preview
 from .guides import run_guides
 from .importer import run_import
 from .maintenance import run_check_updates, run_doctor
@@ -39,6 +39,7 @@ COMMANDS: dict[str, str] = {
     "doctor": "Check CLI, schema, workflow, and pin health",
     "check-updates": "Compare the installed CLI with the latest release",
     "upgrade": "Update the Makefile CLI pin and workflow action pins together",
+    "sync-preview": "Replace the local Dive preview support files with this release's copies",
     "migrate": "Preview or write schemaVersion migrations",
 }
 
@@ -229,6 +230,10 @@ def build_parser() -> _Parser:
     sub.add_argument("--dry-run", action="store_true", help="Print the diff only, even when --write is passed")
     sub.add_argument("--offline", action="store_true", help="Never contact GitHub; requires --to X.Y.Z")
 
+    sub = command("sync-preview")
+    _root(sub)
+    sub.add_argument("--write", action="store_true", help="Replace the files (default: list them only)")
+
     sub = command("migrate")
     _root(sub)
     sub.add_argument("--from", dest="from_version", type=int, metavar="N", help="Expected current schemaVersion")
@@ -351,6 +356,10 @@ def _doctor(options: argparse.Namespace) -> None:
 
 def _check_updates(options: argparse.Namespace) -> None:
     run_check_updates(offline=options.offline, output_format=options.format)
+
+
+def _sync_preview(options: argparse.Namespace) -> None:
+    run_sync_preview(Path(options.root), write=options.write)
 
 
 def _migrate(options: argparse.Namespace) -> None:
@@ -501,4 +510,5 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "check-updates": _check_updates,
     "upgrade": _upgrade,
     "migrate": _migrate,
+    "sync-preview": _sync_preview,
 }

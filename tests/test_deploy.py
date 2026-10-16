@@ -219,6 +219,16 @@ def test_plan_rejects_members_and_grantees_missing_from_the_organization(
     assert "deprovisioned user(s) are still declared as members or share grantees: bob" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(("name", "problem"), [
+    ("finance", None), ("data_team_2", None), ("Équipe", None), ("a" * 255, None),
+    ("finance-team", "may contain only letters, digits, and underscores"),
+    ("_analysts", "must start with a letter"), ("27", "must start with a letter"),
+    ("", "must be 1 to 255 characters long"), ("a" * 256, "must be 1 to 255 characters long"),
+])
+def test_role_name_problem_matches_motherduck_rules(name: str, problem: str | None) -> None:
+    assert deploy_module.role_name_problem(name) == problem
+
+
 def test_plan_skips_username_check_when_users_cannot_be_listed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1004,3 +1014,108 @@ def test_preview_dive_row_escapes_pipes_in_titles(monkeypatch: pytest.MonkeyPatc
     row = deployer._deploy_dive(dive, {}, {}, "preview", plan)
 
     assert row == r"| Ops \| Revenue:feat-x (Preview) | draft | [Open Dive](https://app.motherduck.com/dives/dive-id) |"
+
+
+@pytest.mark.parametrize(("pattern", "parts"), [
+    ("reporting.*, finance.salaries", ["reporting.*", "finance.salaries"]),
+    ('reporting."a,b", main.t', ['reporting."a,b"', "main.t"]),
+    (" , ,", []),
+    ("", []),
+])
+def test_split_include_pattern_matches_motherduck(pattern: str, parts: list[str]) -> None:
+    assert deploy_module.split_include_pattern(pattern) == parts
+
+
+@pytest.mark.parametrize(("declared", "live", "action"), [
+    (None, None, "present"),
+    ([], [], "present"),
+    ([], None, "update"),
+    (["reporting.*"], ["reporting.*"], "present"),
+    (['reporting."a,b"'], ['reporting."a,b"'], "present"),
+    (["reporting.*"], None, "update"),
+])
+def test_share_plan_compares_the_live_include_pattern(
+    monkeypatch: pytest.MonkeyPatch, declared: list[str] | None, live: list[str] | None, action: str,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_live_include_pattern", lambda name: live)
+    assert deployer._managed_share_plan({"name": "events", "includePattern": declared})[0] == action
+
+
+def test_share_plan_keeps_the_authoritative_warning_when_state_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+
+    def unreadable(name: str) -> tuple[set[str], set[str]]:
+        raise CommandError("permission denied")
+
+    monkeypatch.setattr(deployer, "_current_share_grantees", unreadable)
+    action, notes = deployer._managed_share_plan({"name": "events", "grants": {"roles": [], "mode": "authoritative"}})
+    assert action == "update"
+    assert "current state could not be read at plan time" in notes
+    assert deploy_module.AUTHORITATIVE_NOTE in notes
+
+
+def test_access_token_check_treats_an_empty_list_as_missing_and_an_unreadable_one_as_unknown(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [])
+    assert "is not an access token of the deployment identity" in str(deployer._access_token_problem("ci", "a.b"))
+
+    deployer = Deployer(Project(FIXTURES / "complex"))
+
+    def unreadable(statement: str) -> list[tuple[object, ...]]:
+        raise CommandError("md_access_tokens failed")
+
+    monkeypatch.setattr(deployer, "_query_rows", unreadable)
+    assert deployer._access_token_problem("ci", "a.b") is None
+    assert "skipping the accessTokenName check" in capsys.readouterr().err
+
+
+def test_python_backend_reuses_one_connection_and_reconnects_after_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    import types
+
+    class FakeError(Exception):
+        pass
+
+    connects: list[object] = []
+
+    class Connection:
+        closed = False
+
+        def execute(self, statement: str) -> "Connection":
+            if statement == "fail":
+                raise FakeError("boom")
+            return self
+
+        def fetchall(self) -> list[tuple[object, ...]]:
+            return [(1,)]
+
+        def close(self) -> None:
+            self.closed = True
+
+    def connect(database: str, *, config: dict[str, object]) -> Connection:
+        connection = Connection()
+        connects.append(connection)
+        return connection
+
+    monkeypatch.setitem(sys.modules, "duckdb", types.SimpleNamespace(connect=connect, Error=FakeError))
+    monkeypatch.setattr(deploy_module, "sql_backend", lambda: "duckdb")
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.sql_env = {"motherduck_token": "token"}
+
+    assert deployer._query_rows("SELECT 1") == [(1,)]
+    assert deployer._query_rows("SELECT 2") == [(1,)]
+    assert len(connects) == 1
+    with pytest.raises(CommandError, match="boom"):
+        deployer._query_rows("fail")
+    assert getattr(connects[0], "closed")
+    deployer._query_rows("SELECT 3")
+    assert len(connects) == 2
+    deployer.close()
+    assert getattr(connects[1], "closed")

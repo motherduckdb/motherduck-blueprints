@@ -134,6 +134,10 @@ doctor: $(CLI) ## Check installed CLI, schema status, and upgrade guidance witho
 upgrade: $(CLI) ## Write CLI and action pins for a release and print the diff (VERSION=x.y.z optional)
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) upgrade --to "$(or $(VERSION),latest)" --write
 
+.PHONY: sync-preview
+sync-preview: $(CLI) ## Replace .dive-preview/ support files with the pinned release's copies
+	PYTHONDONTWRITEBYTECODE=1 $(CLI) sync-preview --write
+
 .PHONY: migrate
 migrate: $(CLI) ## Dry-run schema migration to the latest supported version
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) migrate --to latest
