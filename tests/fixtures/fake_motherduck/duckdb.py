@@ -196,6 +196,12 @@ class MockConnection:
         if "MD_ALL_DATABASES()" in query:
             name = _string(query, r"lower\(alias\) = lower\(")
             return MockResult([(db,) for db in state["databases"] if db.lower() == name.lower()])
+        if "FROM md_access_tokens()" in query:
+            # Seed as [[name, "never" | "expired" | "soon" | "later", expire_at], ...]. Unseeded, the list
+            # is unreadable, so Blueprints skips the accessTokenName check.
+            if "access_tokens" not in state:
+                raise Error("md_access_tokens is not available in the fake account")
+            return MockResult([tuple(row) for row in state["access_tokens"]])
         if "pragma_version()" in query:
             return MockResult([(state.get("duckdb_version", "v1.5.6"),)])
 
@@ -342,10 +348,17 @@ class MockConnection:
         name = _string(query, r"WHERE name = ")
         shares = state.get("shares")
         if isinstance(shares, dict):
-            return MockResult([(shares[name],)] if name in shares else [])
-        if os.environ.get("MOCK_SHARE_MISSING", "false") == "true":
+            url = shares.get(name)
+        elif os.environ.get("MOCK_SHARE_MISSING", "false") == "true":
+            url = None
+        else:
+            url = SHARE_URL
+        if url is None:
             return MockResult([])
-        return MockResult([(SHARE_URL,)])
+        if query.startswith("SELECT include_pattern "):
+            pattern = state["share_patterns"].get(name)
+            return MockResult([(None if pattern is None else [p.strip() for p in pattern.split(",") if p.strip()],)])
+        return MockResult([(url,)])
 
     @staticmethod
     def _flight(state: dict[str, Any], flight_id: str) -> dict[str, Any]:

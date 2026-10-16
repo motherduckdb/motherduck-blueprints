@@ -12,7 +12,7 @@ from urllib.request import urlopen
 from .project import CommandError
 
 
-SUPPORTED_VERSION = "v1.5.5-2026-09-35"
+SUPPORTED_VERSION = "v1.5.6-2026-10-404"
 
 
 def executable() -> str | None:

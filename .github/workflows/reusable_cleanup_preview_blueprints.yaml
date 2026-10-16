@@ -45,7 +45,7 @@ jobs:
 
       - name: Validate base deployment configuration
         id: validate
-        uses: motherduckdb/motherduck-blueprints@v0.8.1
+        uses: motherduckdb/motherduck-blueprints@v0.9.0
         with:
           python-version: ${{ inputs.python-version }}
           command: validate
@@ -152,7 +152,7 @@ jobs:
       - name: Cleanup preview blueprints from the branch manifest
         id: cleanup-branch-manifest
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.8.1
+        uses: motherduckdb/motherduck-blueprints@v0.9.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -170,7 +170,7 @@ jobs:
 
       - name: Cleanup preview blueprints from the base manifest
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.8.1
+        uses: motherduckdb/motherduck-blueprints@v0.9.0
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

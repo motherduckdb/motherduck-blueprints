@@ -9,8 +9,12 @@ updates:
       - dependency-name: motherduckdb/motherduck-blueprints
   - package-ecosystem: npm
     directory: /.dive-preview
-    groups:
-      react:
-        patterns: [react, react-dom]
     schedule:
       interval: weekly
+    ignore:
+      # Pinned to the versions production Dives load; update them only when MotherDuck does.
+      - dependency-name: react
+      - dependency-name: react-dom
+      - dependency-name: d3
+      - dependency-name: lucide-react
+      - dependency-name: recharts

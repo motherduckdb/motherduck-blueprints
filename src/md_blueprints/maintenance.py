@@ -14,6 +14,7 @@ from packaging.version import InvalidVersion, Version
 from . import __version__
 from .assets import schema_root
 from .diagnostics import validation_warnings
+from .init import PREVIEW_ROOT, preview_drift
 from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
 
@@ -231,6 +232,13 @@ def run_doctor(
         lines.append("schema status: latest supported schema")
 
     lines.append(f"repo schema mirror: {schema_mirror_status(root)}")
+    if (root / PREVIEW_ROOT).is_dir():
+        drift = preview_drift(root)
+        lines.append(
+            f"info: local Dive preview differs from md-blueprints {__version__} ({', '.join(drift)}). "
+            "Run md-blueprints sync-preview --write after upgrading so make preview builds Dives like MotherDuck"
+            if drift else "local Dive preview: in sync with packaged files"
+        )
     pin_status, pin_mismatch = tooling_pin_status(root)
     lines.append(f"tooling pins: {pin_status}")
 

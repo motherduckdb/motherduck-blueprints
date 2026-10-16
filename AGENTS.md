@@ -40,7 +40,7 @@ When changing layout, commands, target behavior, or resource semantics, update t
 
 ## MotherDuck CLI
 
-Use `make install-deploy` to install the MotherDuck CLI version tested by Blueprints. CI import uses its JSON query interface. Deployment, planning, verification, and cleanup use the Python runtime to avoid a process per query. Keep native runtime installation in the action, not customer workflows. `make cli-smoke` checks the real binary's help and local scaffolds without credentials.
+Use `make install-deploy` to install the MotherDuck CLI version tested by Blueprints. CI import uses its JSON query interface. Deployment, planning, verification, and cleanup use the Python runtime to avoid a process per query, and keep one connection per command. Keep native runtime installation in the action, not customer workflows. `make cli-smoke` checks the real binary's help and local scaffolds without credentials.
 
 `make export` runs the read-only importer through the CLI and writes disabled packages for every visible Flight, Dive, and Guide. Individual native pulls do not include all adoption metadata. Preserve the importer's owner, schedule, pagination, and version checks. Local import alone may use `motherduck login`; CI and other live commands require the target token.
 
@@ -50,12 +50,14 @@ Use `make install-deploy` to install the MotherDuck CLI version tested by Bluepr
 
 Declare resources in `blueprint.yml`:
 
-- `resources.shares` names produced data products and their preview cleanup behavior.
-- `resources.flights` deploys MotherDuck Flights from Python source and requirements files. `instanceType` (`F4`, `F16`, `F32`) needs DuckDB 1.5.6; omitting it keeps the live size, or the plan default for a new Flight.
+- `resources.shares` names produced data products and their preview cleanup behavior. `plan` compares the live `include_pattern` and grantees, reports `present` when they match, and deploy skips an unchanged `SET INCLUDE_PATTERN`. Secure views on shares are not managed yet: they are behind an experimental client flag and off in production.
+- `resources.flights` deploys MotherDuck Flights from Python source and requirements files. `instanceType` (`F4`, `F16`, `F32`) needs DuckDB 1.5.6, which both the pinned CLI and the Python backend embed; omitting it keeps the live size, or the plan default for a new Flight. `accessTokenName` is checked against `md_access_tokens()` at plan time: a missing or expired token is a plan error, one expiring within 14 days a warning, and an unreadable list skips the check.
 - `resources.dives` deploys Dives and required resources.
 - `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.
-- `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled. Role `members` and share `grants.users` are checked against `GET /v1/users` at plan time; keep that check non-blocking when the user list cannot be read.
+- `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled. Role `members` and share `grants.users` are checked against `GET /v1/users` at plan time; keep that check non-blocking when the user list cannot be read. A role that does not exist yet must have a name MotherDuck accepts (a letter, then letters, digits, or underscores); existing roles are not checked. `make new-role` turns slug hyphens into underscores.
 - `resources.context` is deprecated and validation-only; plan, validate, and `doctor` point to `resources.guides`.
+
+The local Dive preview mirrors the production Dive runtime. `.dive-preview/src/md-sdk.tsx` re-exports only the production v1 API from `md-sdk-runtime.tsx`, and `package.json` pins React, d3, lucide-react, and recharts to the versions in mono's `ts/packages/dashboard-sandbox/vendor.config.json`. Update both when that runtime changes. Customer repositories refresh these files with `md-blueprints sync-preview --write`; `doctor` reports drift.
 
 For Dives, the deploy engine strips `export const REQUIRED_DATABASES = ...` (single- or multi-line, parsed as a static JSON5 array) and passes rendered `requiredResources` from `blueprint.yml`.
 

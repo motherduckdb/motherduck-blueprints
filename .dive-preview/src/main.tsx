@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import type { ReactNode } from "react";
-import { MotherDuckSDKProvider, useConnectionStatus } from "./md-sdk";
+import { MotherDuckSDKProvider, useConnectionStatus } from "./md-sdk-runtime";
 import { Loader2, AlertCircle } from "lucide-react";
 import Dive, { REQUIRED_DATABASES } from "./dive";
 
@@ -27,8 +27,9 @@ if (!token) {
   document.getElementById("root")!.innerHTML =
     '<p style="padding:2rem;color:red">Missing VITE_MOTHERDUCK_TOKEN in .env</p>';
 } else {
+  // The local developer previews as the Dive's owner, who may run Flights in production.
   createRoot(document.getElementById("root")!).render(
-    <MotherDuckSDKProvider token={token} requiredDatabases={REQUIRED_DATABASES}>
+    <MotherDuckSDKProvider token={token} requiredDatabases={REQUIRED_DATABASES} allowedFlights="any">
       <ConnectionGate>
         <Dive />
       </ConnectionGate>

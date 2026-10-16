@@ -6,6 +6,18 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+Minor release. Existing repositories pin exact versions and need `make upgrade VERSION=0.9.0`, then `.venv/bin/md-blueprints sync-preview --write` to refresh the local Dive preview. See [breaking changes](docs/breaking-changes.md#v090).
+
+- Install MotherDuck CLI `v1.5.6-2026-10-404`, which embeds DuckDB 1.5.6. Exports through `make export` now record each Flight's `instanceType`, local deploys can set `instanceType` through the native CLI, and `motherduck dive watch` previews again because the CLI stopped sending cross-origin isolation headers.
+- Check each Flight's `accessTokenName` against the deployment identity's tokens with `md_access_tokens()` before any write. A missing or expired token stops `plan` and `deploy`; MotherDuck refuses the Flight in both cases, and before this a deploy failed partway, after earlier writes. A token that expires within 14 days prints a warning. If the tokens cannot be listed, Blueprints warns and skips the check. `verify` does not check tokens.
+- Stop `plan` before any write when a role it would create has a name MotherDuck refuses. Role names start with a letter and contain only letters, digits, and underscores. `make new-role finance-team` now declares the role `finance_team` instead of `finance-team`, which failed at `CREATE ROLE`. Existing roles are not checked.
+- `plan` reports what will change on shares with a managed `includePattern` or `grants`, and `present` when nothing differs. Deploy no longer reissues an unchanged `SET INCLUDE_PATTERN`. See [share-plan-reports-changes](docs/breaking-changes.md#share-plan-reports-changes).
+- Reuse one MotherDuck connection for each `plan`, `deploy`, `verify`, and `cleanup` command on the Python backend. Each statement opened a new connection before, which added about 0.7 seconds per statement.
+- The local Dive preview matches the production Dive runtime: it adds `useRunFlight`, `useFlightRun`, `quoteSqlIdentifier`, `quoteSqlString`, and d3, exports nothing production lacks, and pins React 18.3.1, lucide-react 0.468.0, recharts 3.7.0, d3 7.9.0, and Tailwind CSS 3.4.17. Dependabot no longer bumps those libraries. See [preview-matches-dive-runtime](docs/breaking-changes.md#preview-matches-dive-runtime).
+- Add `md-blueprints sync-preview` and `make sync-preview`, which replace `.dive-preview/` support files with the installed release's copies. `make upgrade` never updated them. `doctor` reports when they differ.
+- Document role assignment under SCIM provisioning, include-pattern plan requirements, running Flights from Dives, and troubleshooting rows for the new plan errors.
+- Bump the package and action pins to 0.9.0.
+
 ## v0.8.1 - 2026-10-11
 
 - Add `docs/breaking-changes.md`, shipped in the template. It lists every backward-incompatible change from v0.7.8 on, with the exact symptom, how to find affected files, the fix, and the code that implements it. Errors added by those changes now end with `see docs/breaking-changes.md#<entry>`, and the template `AGENTS.md` tells agents to read the entries before upgrading.

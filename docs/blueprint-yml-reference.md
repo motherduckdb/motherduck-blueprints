@@ -132,7 +132,7 @@ Required fields are `name` and `database`. `access` is `ORGANIZATION`, `RESTRICT
 
 A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug` as a whole `_`-separated part, such as `events_preview_feature_x`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
 
-`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations. `grants.users` are MotherDuck usernames in the share owner's organization; see the username check under [roles](#roles).
+`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations. `grants.users` are MotherDuck usernames in the share owner's organization; see the username check under [roles](#roles). `plan` reads the share's live include pattern and grants, lists what deploy will change, and reports `present` when nothing differs. Deploy skips `SET INCLUDE_PATTERN` when the live pattern already matches. Include patterns need a Business or Free Trial organization and a native, not DuckLake, database.
 
 ## Flights
 
@@ -158,6 +158,8 @@ resources:
 
 Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
 
+`accessTokenName` names an access token of the deployment identity, which owns the Flight and runs it with that token. MotherDuck uses the newest token with the name and refuses to create or update a Flight whose token is missing or expired. `plan` and `deploy` read the identity's tokens with `md_access_tokens()` and stop before any write in either case. A token that expires within 14 days prints a warning, because runs fail once it expires. When the tokens cannot be listed, Blueprints warns and skips the check. `verify` does not check tokens.
+
 `instanceType` sets the Flight's instance size: `F4` (0.5 vCPU, 4 GB), `F16` (2 vCPU, 16 GB), or `F32` (4 vCPU, 32 GB). Your plan decides which sizes are allowed:
 
 | Plan | Allowed | Default |
@@ -166,7 +168,7 @@ Required fields are `name`, `source`, and `requirements`. Optional fields includ
 | Lite | `F4`, `F16` | `F16` |
 | Free | `F4` | `F4` |
 
-Without `instanceType`, a new Flight gets the plan default and an existing Flight keeps its current size. Removing the field does not reset the size; set it to the size you want. MotherDuck rejects a size your plan does not allow when the Flight is created or updated. Sending a size needs DuckDB 1.5.6 or newer. The Blueprints action already uses it. Locally, `plan` and `deploy` stop before any write when the SQL backend is older; install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`, because the pinned MotherDuck CLI ships DuckDB 1.5.5.
+Without `instanceType`, a new Flight gets the plan default and an existing Flight keeps its current size. Removing the field does not reset the size; set it to the size you want. MotherDuck rejects a size your plan does not allow when the Flight is created or updated. Sending a size needs DuckDB 1.5.6 or newer. The Blueprints action and the MotherDuck CLI that `make install-deploy` installs both use it. With an older backend, such as a MotherDuck CLI before `v1.5.6-2026-10-169`, `plan` and `deploy` stop before any write; run `make install-deploy`, or install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 
@@ -239,6 +241,8 @@ resources:
 ```
 
 Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `plan` and `deploy` look up every declared username with the MotherDuck [`GET /v1/users`](https://motherduck.com/docs/sql-reference/rest-api/users-list/) endpoint, without regard to case, and stop before any write when one is not a user in the organization. A deprovisioned user prints a warning. When the user list cannot be read, for example because the deployment identity lacks the `member_management.view_all_members` privilege, Blueprints prints a warning and skips the check, so an unknown username fails at its `GRANT` instead. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them. Blueprints never delete roles automatically.
+
+MotherDuck role names start with a letter and contain only letters, digits, and underscores, up to 255 characters. Package slugs use hyphens, so `make new-role finance-team` declares the role `finance_team`. `plan` stops before any write when a role it would create has a name MotherDuck refuses. Roles that already exist are not checked, so a role created under older naming rules keeps working. When the organization assigns user roles through SCIM provisioning from its identity provider, MotherDuck refuses role assignments to users; keep `members` empty or list only service accounts, and keep `includedRoles` for role-to-role inheritance.
 
 ## Adopting existing resources (0.4.3+)
 

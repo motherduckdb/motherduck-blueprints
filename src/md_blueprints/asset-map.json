@@ -6,6 +6,7 @@
   "template_repo/.dive-preview/package-lock.json": ".dive-preview/package-lock.json",
   "template_repo/.dive-preview/package.json": ".dive-preview/package.json",
   "template_repo/.dive-preview/src/main.tsx": ".dive-preview/src/main.tsx",
+  "template_repo/.dive-preview/src/md-sdk-runtime.tsx": ".dive-preview/src/md-sdk-runtime.tsx",
   "template_repo/.dive-preview/src/md-sdk.tsx": ".dive-preview/src/md-sdk.tsx",
   "template_repo/.dive-preview/vite.config.ts": ".dive-preview/vite.config.ts",
   "template_repo/.gitignore": ".gitignore",

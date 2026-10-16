@@ -24,7 +24,7 @@ Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints wo
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.8.1
+- uses: motherduckdb/motherduck-blueprints@v0.9.0
   with:
     command: validate
 ```
@@ -33,7 +33,7 @@ The action installs Blueprints from the pinned action checkout. Import also inst
 
 ## Customer Upgrade Loop
 
-Blueprints maintains third-party actions inside its reusable workflows. The template keeps Dependabot enabled for any customer-added GitHub Actions and the local preview dependencies. Blueprints Doctor coordinates Blueprints upgrades because workflow and local CLI pins must move together.
+Blueprints maintains third-party actions inside its reusable workflows. The template keeps Dependabot enabled for any customer-added GitHub Actions and the local preview's build tools. It ignores React, d3, lucide-react, and recharts, which stay at the versions production Dives load. Blueprints Doctor coordinates Blueprints upgrades because workflow and local CLI pins must move together.
 
 For local checks around a bump:
 
@@ -41,8 +41,11 @@ For local checks around a bump:
 .venv/bin/md-blueprints doctor --check-updates
 .venv/bin/md-blueprints migrate --to latest
 make validate
+.venv/bin/md-blueprints sync-preview --write
 make preview-smoke <blueprint-name>
 ```
+
+`make upgrade` changes pins only. `sync-preview` replaces the support files under `.dive-preview/` with the installed release's copies, so the local preview builds Dives against the same runtime API and library versions as MotherDuck. It never touches `.dive-preview/.env` or Dive sources. `doctor` reports when they differ. Repositories generated from v0.9.0 also have `make sync-preview`.
 
 The scheduled `Blueprints Doctor` workflow runs `doctor --check-updates` and opens or updates one tracking issue when a release is stale, action and CLI pins drift, or the project schema needs migration.
 

@@ -319,6 +319,7 @@ resources:
 
 
 def _role_manifest(name: str) -> str:
+    # MotherDuck role names allow letters, digits, and underscores, but package slugs use hyphens.
     return f"""schemaVersion: 1
 name: {_yaml_string(name)}
 title: {_yaml_string(_title(name))}
@@ -327,7 +328,7 @@ description: Version-controlled MotherDuck role and membership assignments.
 resources:
   roles:
     role:
-      name: {_yaml_string(name)}
+      name: {_yaml_string(name.replace("-", "_"))}
       includedRoles: []
       members: []
       mode: additive
