@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.9.1 - 2026-10-22
+
+Patch release that also tightens validation. Existing repositories pin exact versions and require `make upgrade VERSION=0.9.1`, followed by `make sync-preview` to refresh the local Dive preview. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v091) and the [v0.9.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.1).
+
 - Rewrite the release notes for every published release, and the v0.9.0 changelog entry, in a formal register, and remove internal details and verification sections from them.
 - Bump the package and action pins to 0.9.1.
 - `plan`, `deploy`, `verify`, and `render` with `--branch` and no `--target` use the `preview` target. Previously, they used `prod`, so `deploy --branch feature/x` deployed to production. `--branch` with any other target is now an error. Refer to [branch-selects-preview](docs/breaking-changes.md#branch-selects-preview).

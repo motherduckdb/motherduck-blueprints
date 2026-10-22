@@ -1,65 +1,70 @@
 ## Highlights
 
-- This release aligns Blueprints with the MotherDuck releases of October 2026. It installs MotherDuck CLI `v1.5.6-2026-10-484`, which embeds DuckDB 1.5.6, and `plan` now detects missing or expired Flight access tokens and invalid role names before any write. Previously, these conditions caused a deployment to fail partway through. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141), [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- The local Dive preview now matches the production Dive runtime: the same SDK exports, the same library versions, the same DuckDB 1.5.6 client, and the same read-only attachment of required databases. The new `make sync-preview` command refreshes the preview after an upgrade. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141), [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- `make export` and `md-blueprints import --all` now complete reliably in organizations with many Dives, including while those Dives are being modified. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
+- A deployment that names a branch can no longer reach a stable target. `plan`, `deploy`, `verify`, and `render` with `--branch` and no `--target` now use the `preview` target instead of `prod`, and `--branch` with any other target is rejected. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- `make validate` now detects manifests that previously deployed something other than what they declared, and every validation error names the file, and where relevant the target, that caused it. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- The local Dive preview resolves shares that are shared with the user, stops with an explanation instead of loading indefinitely, and reports a Dive that fails to render instead of displaying a blank page. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
 
-## Upgrading from v0.8.1
+## Upgrading from v0.9.0
 
-v0.9.0 is a minor release. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically but still require step 3.
+v0.9.1 is a patch release that also tightens validation. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically, including the stricter validation, and still require step 3.
 
-1. Review the [v0.9.0 breaking-change entries](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.0/docs/breaking-changes.md#v090).
-2. Run `make upgrade VERSION=0.9.0`.
-3. Run `make sync-preview` (or `.venv/bin/md-blueprints sync-preview --write`) to replace the files in `.dive-preview/`. `make upgrade` does not update these files, and `make doctor` reports when they differ from the installed release.
-4. Run `make preview-smoke NAME` for each Dive. Then open a pull request and review the preview plan before merging, paying particular attention to share rows that now report changes and to new access token or role name errors.
-5. Update any remaining `motherduckdb/motherduck-blueprints@v0.8.1` references to `@v0.9.0`.
+1. Review the [v0.9.1 breaking-change entries](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#v091).
+2. Run `make upgrade VERSION=0.9.1`.
+3. Run `make sync-preview` (or `.venv/bin/md-blueprints sync-preview --write`) to apply the Dive preview changes in `.dive-preview/`.
+4. Run `make validate` and correct any manifest that it now rejects. Then open a pull request and review the preview plan before merging, paying particular attention to Flight `config` values and resource names that are built from boolean, empty, or list variables.
+5. Update any scripts or workflows that pass `--branch` together with a stable `--target`.
 
 Changes to review:
 
-- [The Dive preview builds against the production runtime](#compatibility)
-- [The Dive preview attaches only required databases](#compatibility)
-- [Share plans report include-pattern and grant changes](#compatibility)
+- [`--branch` selects the preview target](#compatibility)
+- [Variables render as JSON text](#compatibility)
+- [Stricter manifest validation](#compatibility)
 
 ## Features
 
-- Blueprints installs MotherDuck CLI `v1.5.6-2026-10-484`, which embeds DuckDB 1.5.6. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141), [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-  - `make export` records the `instanceType` of each Flight, and local deployments can set it.
-  - `motherduck dive watch` previews Dives correctly.
-  - Commands no longer print a "New MotherDuck CLI available" notice.
-- `plan` validates the `accessTokenName` of each Flight against `md_access_tokens()`. A missing or expired token stops `plan` and `deploy` before any write, and a token that expires within 14 days produces a warning. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
-- `plan` stops before any write when a role it would create has a name that MotherDuck does not accept. `make new-role finance-team` now declares the role `finance_team`. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
-- `plan` reports the pending changes for shares with a managed `includePattern` or `grants`, and `deploy` no longer reissues an unchanged `SET INCLUDE_PATTERN`. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
-- Flights created by `make new-flight`, and the starter Flight, open only their own database with `md:<database>?attach_mode=single`. This reduces connection time by approximately half in workspaces with many databases. On the first run, before the database exists, the Flight opens the full workspace to create it. A Flight that reads additional databases must attach them with `ATTACH 'md:<name>'`. Existing Flight source code is not modified. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- The Dive preview supports `useRunFlight`, `useFlightRun`, `quoteSqlIdentifier`, `quoteSqlString`, and d3. The new `make sync-preview` and `md-blueprints sync-preview` commands refresh `.dive-preview/`. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
-- The Python backend reuses a single MotherDuck connection for each command, which saves approximately 0.7 seconds per statement. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
+- `validate` and `doctor` issue warnings for the following conditions, without failing validation. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+  - A manifest named `blueprint.yaml`, or `blueprint.yml` with different letter case, which Linux CI runners do not read.
+  - A role name that MotherDuck does not accept. Previously, this was detected only by `plan`.
+  - A `REQUIRED_DATABASES` export that is not a static array, which stops `plan` and `deploy`.
+  - `REQUIRED_DATABASES` aliases that differ from the `requiredResources` of the Dive, which cause the local preview and the deployed Dive to attach different databases.
+- New repositories created with `md-blueprints init` receive next steps, and `init --force` reports version pins only for the files it wrote. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- The CLI suggests the closest command when a command name is mistyped, lists all commands when it is run without one, and suggests the repository root when it is run from a subdirectory. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
 
 ## Bug Fixes
 
-- `make export`, `md-blueprints import --all`, and the name lookups in `plan` and `deploy` failed with "Catalog changed or pagination repeated an ID" when a Dive, Flight, or Guide was modified during the scan. This occurred consistently in organizations with many frequently updated Dives. These commands now repeat the scan up to three times before reporting the error, and the importer reads 1,000 resources per page instead of 100. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- The owner of the database behind a Dive's share could not preview that Dive locally and received the error "Share alias cannot be the same as an existing database name". The preview now attaches required databases in the same way as MotherDuck. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- The "Article totals" chart in the Wikipedia starter Dive displayed no bars, both locally and in MotherDuck, because the chart library cannot plot BIGINT values. The chart now displays correctly. Repositories created before this release retain the previous Dive source. To apply the fix, copy `dives/wikipedia-pageviews/src/dive.tsx` from the [v0.9.0 template](https://github.com/motherduckdb/blueprints-template), or convert the totals with `Number()`. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- `make preview` uses vite 8.3.5, which resolves three launch-editor security advisories in vite 8.3.2 that affect Windows. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
+- When MotherDuck rejected the deployment token, some share lookups reported the rejection as a warning and the command continued. `plan`, `deploy`, `verify`, `cleanup`, and `import` now stop and name the token variable, the target, and the GitHub Environment that holds the secret. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- Verification reported only the first problem it found. It now reports every problem across the checked resources, and after `deploy` it states that the deployment was applied and that no rollback was attempted. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- Schema errors, such as an unknown or missing field, did not name the file. Errors now begin with the path of the `blueprint.yml` or `motherduck.yml`, and a file that is not UTF-8 text is reported as such. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- Duplicate-name errors reported one duplicate at a time and did not name the packages involved. They now list every duplicated name with the resources that use it, and explain the placeholder branch that `validate` uses for preview names. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- `make upgrade VERSION=<version>` accepted a version that had not been released and wrote the pins, after which every `make` target failed, including `make upgrade`. `upgrade` now refuses a version newer than the latest release before it writes any pin, issues a warning before a downgrade, and `make upgrade` runs with the installed CLI so that it can correct an unusable pin. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- The generated Makefile ignored `PYTHON=` once `.venv` existed, and reported only a pip error when Python was older than 3.10. It now reports the Python version and the corrective step, both before it creates `.venv` and when an existing `.venv` is too old. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- `make preview` and `make preview-smoke` built against previously installed packages after `package-lock.json` changed. They now reinstall the preview dependencies when the lock file changes. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- `md-blueprints init --force` in an existing repository re-created starter packages that had been removed. It now leaves them out. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- `make new-role` with a name that starts with a digit produced a role name that MotherDuck does not accept. It now prefixes the name, for example `role_2025_analysts`. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- The local Dive preview had the following defects. Run `make sync-preview` to apply the corrections. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+  - It found only shares that the user owns, so a share created by the CI service account was reported as unresolved. It now also searches the shares that are shared with the user.
+  - It used the placeholder token from `.env.example` and loaded indefinitely when MotherDuck could not be reached. It now treats the placeholder as missing, names `.dive-preview/.env` in its token messages, and stops after 60 seconds without a response.
+  - A Dive that failed to render produced a blank page. The preview now displays the error.
+- `changed --base <revision>` selected every package without explanation when the revision could not be compared. It now issues a warning that names the cause. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- A missing token produced only CI guidance during local use, and a variable that differs only in letter case, such as `motherduck_token`, was ignored without notice. The message now gives local guidance outside CI and names the differently cased variable. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- Errors that contained the word "environment" in a path or variable name received GitHub Environments advice, and local file permission errors received MotherDuck permission advice. Hints are now added only when they match the cause. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- An interrupted command printed a Python traceback. It now exits with code 130 and a short message. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
 
 ## Compatibility
 
-- **The Dive preview builds against the production runtime.** `@motherduck/react-sql-query` exports only the production v1 API, and React, lucide-react, recharts, d3, and Tailwind CSS are pinned to the versions that production Dives load. A Dive that imports `useConnection`, or uses a lucide icon newer than the pinned version, now fails `make preview-smoke`, consistent with its behavior in MotherDuck. Refer to [preview-matches-dive-runtime](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.0/docs/breaking-changes.md#preview-matches-dive-runtime). [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
-- **The Dive preview attaches only required databases, in read-only mode.** Declare every database that a Dive reads in both `requiredResources` and `REQUIRED_DATABASES`. Refer to [preview-attaches-required-databases-only](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.0/docs/breaking-changes.md#preview-attaches-required-databases-only). [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-- **Share plans report include-pattern and grant changes.** Automation that parses the plan receives either `present` or a list of changes for these shares. Refer to [share-plan-reports-changes](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.0/docs/breaking-changes.md#share-plan-reports-changes). [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
+- **`--branch` selects the preview target.** `plan`, `deploy`, `verify`, and `render` with `--branch` and no `--target` use `preview`, and `--branch` with any other target is rejected. Remove `--branch` from commands for stable targets. Refer to [branch-selects-preview](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#branch-selects-preview). [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- **Variables render as JSON text.** Variables whose value is a boolean, empty, or a list render as `true`, an empty string, or `["a", "b"]` instead of `True`, `None`, or `['a', 'b']`. Flight code that compares with `"True"`, `"False"`, or `"None"` must compare with `"true"`, `"false"`, or `""`. Refer to [variable-json-values](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#variable-json-values). [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- **Stricter manifest validation.** Run `make validate` and correct each manifest that it rejects. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+  - A top-level `targets.<target>` entry in `blueprint.yml` accepts only `variables`. Refer to [blueprint-target-variables-only](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#blueprint-target-variables-only).
+  - `targets.<target>.mode` in `motherduck.yml` must be `preview` or `production`. Refer to [target-mode-values](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#target-mode-values).
+  - A `${` without its closing `}` is rejected. Refer to [unterminated-template-reference](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#unterminated-template-reference).
+  - Each `scheduleCron` field must use only digits and `* , / -` and stay within its range. Refer to [schedule-cron-fields](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.1/docs/breaking-changes.md#schedule-cron-fields).
+- **Changed error text.** Validation errors begin with the file path, and duplicate-name errors use a new multi-line format. Automation that matches the previous error text must be updated. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
 
 ## Maintenance
 
-- Dependencies are updated. [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-  - The Python lock file, including json5 0.17.3 and ruff 0.17.1.
-  - The pip, setuptools, build, and json5 constraints of the GitHub Action.
-  - `@motherduck/wasm-client` 1.5.6-r.1 in the Dive preview.
-  - The setup-python, setup-node, upload-artifact, and download-artifact action pins.
-  - DuckDB remains at 1.5.6, the version that MotherDuck runs.
-- The documentation covers the following additional topics. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141), [#142](https://github.com/motherduckdb/motherduck-blueprints/pull/142)
-  - Role assignment under SCIM provisioning, which is available on the Enterprise plan.
-  - Requirements for include patterns in plans.
-  - Running Flights from Dives. Until MotherDuck releases Flight `run` grants, only the owner of a Dive can run Flights from it.
-  - Converting BIGINT values in Dives.
-  - Troubleshooting entries for the new plan errors.
-- The package and action pins are updated to 0.9.0. [#141](https://github.com/motherduckdb/motherduck-blueprints/pull/141)
+- The release notes of every published release, and the v0.9.0 changelog entry, are rewritten in a formal register. [#144](https://github.com/motherduckdb/motherduck-blueprints/pull/144)
+- The documentation describes the target selection of `--branch`, the rules for `scheduleCron`, the rendering of non-string variables, and the order of steps for removing the starter packages. [#145](https://github.com/motherduckdb/motherduck-blueprints/pull/145)
+- The package and action pins are updated to 0.9.1. [#144](https://github.com/motherduckdb/motherduck-blueprints/pull/144)
 
-**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.8.1...v0.9.0
+**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.9.0...v0.9.1
