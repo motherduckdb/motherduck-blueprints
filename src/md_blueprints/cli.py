@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import sys
@@ -15,9 +16,9 @@ from .guides import run_guides
 from .importer import run_import
 from .maintenance import run_check_updates, run_doctor
 from .migrations import run_migrate
-from .project import CommandError, Project
+from .project import AuthenticationError, CommandError, Project
 from .scaffold import run_new
-from .schema import ValidationError
+from .schema import ValidationError, breaking_change
 from .upgrade import run_upgrade
 from .motherduck_cli import install_cli
 
@@ -166,14 +167,14 @@ def build_parser() -> _Parser:
 
     sub = command("verify")
     _root(sub)
-    _target(sub, "prod")
+    _target(sub, "prod, or preview with --branch")
     _branch(sub)
     _blueprints(sub)
     _json(sub)
 
     sub = command("render")
     _root(sub)
-    _target(sub, "prod")
+    _target(sub, "prod, or preview with --branch")
     _branch(sub)
     _blueprints(sub)
 
@@ -191,14 +192,14 @@ def build_parser() -> _Parser:
 
     sub = command("plan")
     _root(sub)
-    _target(sub, "prod")
+    _target(sub, "prod, or preview with --branch")
     _branch(sub)
     _blueprints(sub)
     _json(sub)
 
     sub = command("deploy")
     _root(sub)
-    _target(sub, "prod")
+    _target(sub, "prod, or preview with --branch")
     _branch(sub)
     _blueprints(sub)
     sub.add_argument("--verify", dest="verify", action="store_true", default=True, help="Verify live resources after deploying (default)")
@@ -273,8 +274,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _hoist_command(list(sys.argv[1:] if argv is None else argv))
     parser = build_parser()
     if args and not args[0].startswith("-") and args[0] not in COMMANDS:
+        close = difflib.get_close_matches(args[0], COMMANDS, n=1)
+        suggestion = f" Did you mean {close[0]!r}?" if close else ""
         print(
-            f"Error: unknown command {args[0]!r}. Choose one of: {', '.join(COMMANDS)}.\n"
+            f"Error: unknown command {args[0]!r}.{suggestion} Choose one of: {', '.join(COMMANDS)}.\n"
             "Run md-blueprints --help for details.",
             file=sys.stderr,
         )
@@ -299,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
 
     command = options.command
     if not command:
-        parser.print_usage(sys.stderr)
+        parser.print_help(sys.stderr)
         return 2
 
     try:
@@ -316,9 +319,16 @@ def main(argv: list[str] | None = None) -> int:
             "Run md-blueprints validate for details; if validation passes, report this as a Blueprints bug."
         ))
         return 1
-    except (ValidationError, CommandError, ValueError, OSError) as exc:
+    except (ValidationError, CommandError, AuthenticationError, ValueError, OSError) as exc:
         report_error(exc)
         return 1
+    except KeyboardInterrupt:
+        print(
+            f"\nInterrupted: md-blueprints {command} stopped before it finished. "
+            "If it was deploying, run plan for the same target to see what still differs.",
+            file=sys.stderr,
+        )
+        return 130
 
 
 def _init(options: argparse.Namespace) -> None:
@@ -385,6 +395,18 @@ def _import(options: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
+def _resolve_target(options: argparse.Namespace, default: str) -> str:
+    """Return the requested target; --branch alone selects preview and never a stable target."""
+    if not options.target:
+        return "preview" if options.branch else default
+    if options.branch and options.target != "preview":
+        raise UsageError(
+            f"--branch scopes preview resources and cannot be used with target {options.target!r}. "
+            "Remove --branch to use that target, or pass --target preview." + breaking_change("branch-selects-preview")
+        )
+    return str(options.target)
+
+
 def _project(options: argparse.Namespace) -> tuple[Project, list[str] | None]:
     names = parse_blueprints(getattr(options, "blueprints", None))
     project = Project(Path(options.root))
@@ -403,7 +425,7 @@ def _validate(options: argparse.Namespace) -> None:
 
 def _render(options: argparse.Namespace) -> None:
     project, names = _project(options)
-    target = options.target or "prod"
+    target = _resolve_target(options, "prod")
     project.validate(targets=[target], branch=options.branch)
     expanded_names = project.deployment_blueprint_names(target, names)
     rendered = project.render_all(target, branch=options.branch, names=expanded_names)
@@ -431,7 +453,7 @@ def _dive_source(options: argparse.Namespace) -> None:
     else:
         raise ValidationError(
             f"Blueprint {names[0]!r} declares multiple Dives; select one with --dive RESOURCE_KEY "
-            f"({', '.join(dives)})"
+            f"(make preview NAME={names[0]} DIVE=<key>): {', '.join(dives)}"
         )
     print(Path(str(selected_dive["sourcePath"])).relative_to(project.root))
 
@@ -441,7 +463,10 @@ def _changed(options: argparse.Namespace) -> None:
     changed = (
         project.all_blueprint_names()
         if options.all_blueprints
-        else project.changed_blueprints(base=options.base, head=options.head or "HEAD")
+        else project.changed_blueprints(
+            base=options.base, head=options.head or "HEAD",
+            warn=lambda message: print(f"warning: {message}", file=sys.stderr),
+        )
     )
     print(json.dumps(changed) if options.json else "\n".join(changed))
 
@@ -449,7 +474,7 @@ def _changed(options: argparse.Namespace) -> None:
 def _plan(options: argparse.Namespace) -> None:
     project, names = _project(options)
     deployer = Deployer(project)
-    records = deployer.plan(target=options.target or "prod", branch=options.branch, names=names)
+    records = deployer.plan(target=_resolve_target(options, "prod"), branch=options.branch, names=names)
     print(
         json.dumps([record.to_dict() for record in records], indent=2)
         if options.json
@@ -461,13 +486,13 @@ def _plan(options: argparse.Namespace) -> None:
 def _deploy(options: argparse.Namespace) -> None:
     project, names = _project(options)
     Deployer(project).deploy(
-        target=options.target or "prod", branch=options.branch, names=names, verify=options.verify,
+        target=_resolve_target(options, "prod"), branch=options.branch, names=names, verify=options.verify,
     )
 
 
 def _verify(options: argparse.Namespace) -> None:
     project, names = _project(options)
-    records = Deployer(project).verify(target=options.target or "prod", branch=options.branch, names=names)
+    records = Deployer(project).verify(target=_resolve_target(options, "prod"), branch=options.branch, names=names)
     print(
         json.dumps([record.to_dict() for record in records], indent=2)
         if options.json else PlanFormatter.format(records, title="Live Verification", requested=names)

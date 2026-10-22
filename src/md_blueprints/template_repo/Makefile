@@ -40,7 +40,13 @@ endif
 cli:
 	@installed_version="$$( [ -x "$(CLI)" ] && "$(CLI)" --version 2>/dev/null || true )"; \
 	  if [ "$$installed_version" != "$(CLI_VERSION)" ]; then \
-	    { test -x .venv/bin/python || $(PYTHON) -m venv .venv; } >&2 && \
+	    if [ ! -x .venv/bin/python ]; then \
+	      $(PYTHON) -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null || { \
+	        echo "Error: md-blueprints needs Python 3.10+, but $(PYTHON) is $$($(PYTHON) --version 2>&1). Install Python 3.10+ and rerun with PYTHON=<interpreter>, for example PYTHON=python3.12." >&2; exit 1; }; \
+	      $(PYTHON) -m venv .venv >&2 || exit 1; \
+	    elif ! .venv/bin/python -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then \
+	      echo "Error: .venv uses $$(.venv/bin/python --version 2>&1), but md-blueprints needs Python 3.10+. Delete .venv, then rerun with PYTHON=<interpreter>, for example PYTHON=python3.12." >&2; exit 1; \
+	    fi; \
 	    .venv/bin/python -m pip install "md-blueprints @ $(CLI_SOURCE)" >&2; \
 	  fi
 
@@ -53,7 +59,7 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	cd .dive-preview && $(NPM_INSTALL)
 	@test -f .dive-preview/.env || cp .dive-preview/.env.example .dive-preview/.env
 	@echo ""
-	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
+	@echo "Setup complete. make preview-smoke needs no token. For a live make preview, set VITE_MOTHERDUCK_TOKEN in .dive-preview/.env."
 
 .PHONY: install-deploy
 install-deploy: $(CLI) ## Install the supported MotherDuck CLI for export and live commands
@@ -68,7 +74,7 @@ preview: $(CLI) ## Preview a package Dive locally (NAME=wikipedia-pageviews, opt
 	@test -n "$(NAME)" || { echo "Usage: make preview NAME=<blueprint-name> [DIVE=<resource-key>]" >&2; exit 1; }
 	@SOURCE="$$( $(CLI) dive-source --blueprints "$(NAME)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
-	cd .dive-preview && { test -x node_modules/.bin/vite || { $(NPM_INSTALL); }; }
+	cd .dive-preview && { { test -x node_modules/.bin/vite && test node_modules/.package-lock.json -nt package-lock.json; } || { $(NPM_INSTALL); }; }
 	cd .dive-preview && npm run dev
 
 .PHONY: preview-smoke
@@ -76,7 +82,7 @@ preview-smoke: $(CLI) ## Build a package Dive preview without a dev server (NAME
 	@test -n "$(NAME)" || { echo "Usage: make preview-smoke NAME=<blueprint-name> [DIVE=<resource-key>]" >&2; exit 1; }
 	@SOURCE="$$( $(CLI) dive-source --blueprints "$(NAME)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
-	cd .dive-preview && { test -x node_modules/.bin/vite || { $(NPM_INSTALL); }; }
+	cd .dive-preview && { { test -x node_modules/.bin/vite && test node_modules/.package-lock.json -nt package-lock.json; } || { $(NPM_INSTALL); }; }
 	cd .dive-preview && npm run build
 
 
@@ -131,7 +137,9 @@ doctor: $(CLI) ## Check installed CLI, schema status, and upgrade guidance witho
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) doctor --offline
 
 .PHONY: upgrade
-upgrade: $(CLI) ## Write CLI and action pins for a release and print the diff (VERSION=x.y.z optional)
+upgrade: ## Write CLI and action pins for a release and print the diff (VERSION=x.y.z optional)
+	@# Use any installed CLI, so a pin to a version that cannot be installed can still be corrected.
+	@test -x "$(CLI)" || $(MAKE) --no-print-directory cli
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) upgrade --to "$(or $(VERSION),latest)" --write
 
 .PHONY: sync-preview
@@ -144,4 +152,5 @@ migrate: $(CLI) ## Dry-run schema migration to the latest supported version
 
 .PHONY: help
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@if [ -t 1 ] && [ -z "$$NO_COLOR" ]; then on='\033[36m'; off='\033[0m'; else on=; off=; fi; \
+	  grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk -v on="$$on" -v off="$$off" 'BEGIN {FS = ":.*?## "}; {printf "  %s%-16s%s %s\n", on, $$1, off, $$2}'

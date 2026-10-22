@@ -75,7 +75,11 @@ def load_yaml(path: Path) -> object:
             return yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     except yaml.YAMLError as exc:
         hint = breaking_change("duplicate-yaml-keys") if "duplicate key" in str(exc) else ""
+        if "while scanning an alias" in str(exc):
+            hint = '\nNext: quote values that start with *, for example scheduleCron: "*/15 * * * *".'
         raise ValidationError(f"Invalid YAML in {path}: {exc}.{hint}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"Could not read {path}: the file is not UTF-8 text. Save it with UTF-8 encoding.") from exc
     except OSError as exc:
         raise ValidationError(f"Could not read YAML file {path}: {exc}") from exc
 
@@ -102,7 +106,7 @@ def validate_required_cli_version(value: object, *, path: Path) -> None:
     if current not in specifier:
         raise ValidationError(
             f"this project requires md-blueprints {value}, you have {__version__} - "
-            "bump the action or package pin."
+            "run make upgrade, or bump the action or package pin."
         )
 
 

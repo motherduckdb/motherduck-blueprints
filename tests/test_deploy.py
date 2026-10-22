@@ -12,7 +12,7 @@ import pytest
 
 from md_blueprints import deploy as deploy_module
 from md_blueprints.deploy import OTHER_BRANCH_PREVIEW, Deployer, PlanRecord, quote_ident
-from md_blueprints.project import CommandError, Project, RenderedBlueprint, branch_slug
+from md_blueprints.project import AuthenticationError, CommandError, Project, RenderedBlueprint, branch_slug
 from md_blueprints.schema import ValidationError
 
 
@@ -199,11 +199,17 @@ def _access_blueprint(members: list[str], grant_users: list[str]) -> RenderedBlu
     )
 
 
+def _unreadable_grantees(name: str) -> tuple[set[str], set[str]]:
+    raise CommandError("share grantees cannot be read in this test")
+
+
 def test_plan_rejects_members_and_grantees_missing_from_the_organization(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     deployer.sql_env = {"motherduck_token": "token"}
+    deployer._access_tokens = False  # Skip the live accessTokenName check; these tests never reach MotherDuck.
+    monkeypatch.setattr(deployer, "_current_share_grantees", _unreadable_grantees)
     monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
     monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
     monkeypatch.setattr(deploy_module, "list_org_users", lambda token: {"Alice": False, "bob": True})
@@ -234,6 +240,8 @@ def test_plan_skips_username_check_when_users_cannot_be_listed(
 ) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     deployer.sql_env = {"motherduck_token": "token"}
+    deployer._access_tokens = False  # Skip the live accessTokenName check; these tests never reach MotherDuck.
+    monkeypatch.setattr(deployer, "_current_share_grantees", _unreadable_grantees)
     monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
     monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
 
@@ -251,6 +259,8 @@ def test_plan_skips_username_check_when_users_cannot_be_listed(
 def test_plan_lists_users_only_when_usernames_are_declared(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     deployer.sql_env = {"motherduck_token": "token"}
+    deployer._access_tokens = False  # Skip the live accessTokenName check; these tests never reach MotherDuck.
+    monkeypatch.setattr(deployer, "_current_share_grantees", _unreadable_grantees)
     monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance-team"})
     monkeypatch.setattr(deployer, "_find_share_url", lambda name: "md:_share/example/id")
 
@@ -1132,3 +1142,47 @@ def test_python_backend_reuses_one_connection_and_reconnects_after_an_error(
     assert len(connects) == 2
     deployer.close()
     assert getattr(connects[1], "closed")
+
+
+@pytest.mark.parametrize("backend", ["motherduck", "duckdb"])
+def test_rejected_token_says_which_secret_to_replace(backend: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "expired")
+    monkeypatch.setenv("MD_BLUEPRINTS_SQL_BACKEND", backend)
+    deployer._prepare_live_command("prod", "plan")
+    rejected = "Invalid or expired MOTHERDUCK_TOKEN. Please create a new token or unset it to login in manually."
+    if backend == "motherduck":
+        def fail(statement: str, *, token: str | None) -> list[tuple[object, ...]]:
+            raise CommandError(f"MotherDuck SQL failed: {rejected}")
+
+        monkeypatch.setattr(deploy_module, "cli_query_rows", fail)
+    else:
+        import duckdb
+
+        def connect(database: str, *, config: dict[str, object]) -> object:
+            raise duckdb.InvalidInputException(rejected)
+
+        monkeypatch.setattr(duckdb, "connect", connect)
+    environment = deployer.project.target_config("prod").get("environment", "prod")
+
+    with pytest.raises(AuthenticationError) as raised:
+        deployer._query_rows("SELECT 1")
+    message = str(raised.value)
+    assert "MotherDuck rejected MOTHERDUCK_TOKEN for target prod" in message
+    assert f"Environments > {environment}" in message
+    assert "login" not in message
+
+
+def test_other_sql_errors_are_not_reported_as_a_rejected_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "valid")
+    monkeypatch.setenv("MD_BLUEPRINTS_SQL_BACKEND", "motherduck")
+    deployer._prepare_live_command("prod", "plan")
+
+    def fail(statement: str, *, token: str | None) -> list[tuple[object, ...]]:
+        # A Flight's own access token is a different failure from the deployment token.
+        raise CommandError("MotherDuck SQL failed: the token the version names is missing or expired")
+
+    monkeypatch.setattr(deploy_module, "cli_query_rows", fail)
+    with pytest.raises(CommandError, match="missing or expired"):
+        deployer._query_rows("SELECT 1")

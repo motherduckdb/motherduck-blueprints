@@ -119,6 +119,15 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
+STARTER_ROOTS = ("flights", "dives")
+
+
+def _starter_package(relative: str) -> str | None:
+    """flights/<name> or dives/<name> for a file inside a starter package; None for root READMEs."""
+    parts = relative.split("/")
+    return "/".join(parts[:2]) if len(parts) > 2 and parts[0] in STARTER_ROOTS else None
+
+
 def run_init(target: Path, *, force: bool = False) -> None:
     target = target.expanduser().resolve()
     if target.exists() and any(target.iterdir()) and not force:
@@ -126,10 +135,13 @@ def run_init(target: Path, *, force: bool = False) -> None:
             f"{target} is not empty. Pass --force to add only missing template files; existing files are "
             "never overwritten. To review the full template first, run init in an empty directory."
         )
+    # In an existing repository a missing starter package was most likely removed on purpose.
+    existing_repository = (target / "motherduck.yml").is_file()
     target.mkdir(parents=True, exist_ok=True)
 
-    written = 0
+    written: list[str] = []
     skipped: list[str] = []
+    omitted_starters: set[str] = set()
     planned = [
         (relative, resource, safe_destination(target, relative))
         for relative, resource in sorted(template_assets().items())
@@ -139,16 +151,27 @@ def run_init(target: Path, *, force: bool = False) -> None:
         if destination.exists() or destination.is_symlink():
             skipped.append(relative)
             continue
+        starter = _starter_package(relative)
+        if existing_repository and starter and not (target / starter).exists():
+            omitted_starters.add(starter)
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         if is_text_file(relative):
             destination.write_text(render_template_text(resource.read_text(encoding="utf-8")), encoding="utf-8")
         else:
             destination.write_bytes(resource.read_bytes())
-        written += 1
+        written.append(relative)
 
-    print(f"Initialized MotherDuck Blueprints template in {target} ({written} files).")
-    print(f"CLI version pinned in Makefile: {__version__}")
-    print(f"Action tag pinned in workflows: {action_tag()}")
+    print(f"Initialized MotherDuck Blueprints template in {target} ({len(written)} files).")
+    if "Makefile" in written:
+        print(f"CLI version pinned in Makefile: {__version__}")
+    if any(relative.startswith(".github/workflows/") for relative in written):
+        print(f"Action tag pinned in workflows: {action_tag()}")
+    if omitted_starters:
+        print(
+            "Did not re-create starter package(s) " + ", ".join(sorted(omitted_starters))
+            + " because motherduck.yml already exists. Run init in an empty directory to get a copy."
+        )
     if skipped:
         print(f"Kept {len(skipped)} existing file(s) unchanged:")
         for relative in skipped:
@@ -156,6 +179,13 @@ def run_init(target: Path, *, force: bool = False) -> None:
             print(f"  {relative}" + (f" ({guidance})" if guidance else ""))
         print(
             "Compare them with a fresh `md-blueprints init` in an empty directory and merge what you need."
+        )
+    if not existing_repository:
+        location = "" if target == Path.cwd().resolve() else f"cd {target}\n  "
+        print(
+            f"Next steps:\n  {location}make validate\n"
+            "  make setup && make preview-smoke wikipedia-pageviews  (needs Node.js 22+)\n"
+            "  Read README.md to connect GitHub Environments before the first deployment."
         )
 
 

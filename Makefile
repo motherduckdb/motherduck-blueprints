@@ -46,7 +46,7 @@ setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from ex
 	cd .dive-preview && $(NPM_INSTALL)
 	@test -f .dive-preview/.env || cp .dive-preview/.env.example .dive-preview/.env
 	@echo ""
-	@echo "Setup complete. Edit .dive-preview/.env with your MotherDuck token."
+	@echo "Setup complete. make preview-smoke needs no token. For a live make preview, set VITE_MOTHERDUCK_TOKEN in .dive-preview/.env."
 
 .PHONY: install-deploy
 install-deploy: $(CLI) ## Install the supported MotherDuck CLI for export and live commands
@@ -61,7 +61,7 @@ preview: $(CLI) ## Preview a package Dive locally (NAME=wikipedia-pageviews, opt
 	@test -n "$(NAME)" || { echo "Usage: make preview NAME=<blueprint-name> [DIVE=<resource-key>]" >&2; exit 1; }
 	@SOURCE="$$( $(CLI) dive-source --blueprints "$(NAME)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
-	cd .dive-preview && { test -x node_modules/.bin/vite || { $(NPM_INSTALL); }; }
+	cd .dive-preview && { { test -x node_modules/.bin/vite && test node_modules/.package-lock.json -nt package-lock.json; } || { $(NPM_INSTALL); }; }
 	cd .dive-preview && npm run dev
 
 .PHONY: preview-smoke
@@ -69,7 +69,7 @@ preview-smoke: $(CLI) ## Build a package Dive preview without a dev server (NAME
 	@test -n "$(NAME)" || { echo "Usage: make preview-smoke NAME=<blueprint-name> [DIVE=<resource-key>]" >&2; exit 1; }
 	@SOURCE="$$( $(CLI) dive-source --blueprints "$(NAME)" $(if $(DIVE),--dive "$(DIVE)") )" && \
 	  echo "export { default, REQUIRED_DATABASES } from \"../../$${SOURCE%.tsx}\";" > .dive-preview/src/dive.tsx
-	cd .dive-preview && { test -x node_modules/.bin/vite || { $(NPM_INSTALL); }; }
+	cd .dive-preview && { { test -x node_modules/.bin/vite && test node_modules/.package-lock.json -nt package-lock.json; } || { $(NPM_INSTALL); }; }
 	cd .dive-preview && npm run build
 
 # -- Scaffolding --------------------------------------------------------------
@@ -160,4 +160,5 @@ sync-workflows: ## Regenerate repository workflow jobs from reusable providers
 
 .PHONY: help
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@if [ -t 1 ] && [ -z "$$NO_COLOR" ]; then on='\033[36m'; off='\033[0m'; else on=; off=; fi; \
+	  grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk -v on="$$on" -v off="$$off" 'BEGIN {FS = ":.*?## "}; {printf "  %s%-16s%s %s\n", on, $$1, off, $$2}'

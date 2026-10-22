@@ -10,6 +10,71 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.9.1
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.9.1`. Run `make validate` after the upgrade. Every change below either rejects a manifest that previously deployed something other than what it declared, or changes a value that was rendered incorrectly.
+
+### branch-selects-preview
+
+- **Changed in:** v0.9.1
+- **What changed:** `--branch` scopes preview resources only.
+  - `plan`, `deploy`, `verify`, and `render` with `--branch` and no `--target` use the `preview` target. Before, they used `prod`, so `deploy --branch feature/x` deployed to production.
+  - `--branch` with any target other than `preview` is an error.
+  - `cleanup` is unchanged.
+- **Symptom:** `--branch scopes preview resources and cannot be used with target 'prod'`.
+- **Find:** search scripts and workflows for `--branch` next to `--target prod` or `--target staging`.
+- **Fix:** remove `--branch` for stable targets, or pass `--target preview`.
+- **Implemented in:** `md_blueprints.cli._resolve_target`.
+
+### variable-json-values
+
+- **Changed in:** v0.9.1
+- **What changed:** variables whose value is a boolean, empty, or a list render as JSON text, as Flight `config` values have since [flight-config-json-values](#flight-config-json-values). Before, they rendered as Python reprs.
+  - `default: true` rendered as `True`. It is now `true`.
+  - An empty `default:` rendered as `None`. It is now an empty string.
+  - A list rendered as `['a', 'b']`. It is now `["a", "b"]`.
+  - Strings and numbers are unchanged.
+- **Symptom:** no error. A Flight `config` value or a resource name built from such a variable changes on the next deploy.
+- **Find:** look for `variables` and `targets.<target>.variables` entries in `motherduck.yml` and `blueprint.yml` whose value is not a string or number, then run `make render-preview NAME` and `.venv/bin/md-blueprints render --target prod` to compare.
+- **Fix:** none for Flight code that already expects JSON-style values. Code that compares with `"True"`, `"False"`, or `"None"` must compare with `"true"`, `"false"`, or `""`.
+- **Implemented in:** `md_blueprints.template.as_text`.
+
+### blueprint-target-variables-only
+
+- **Changed in:** v0.9.1
+- **What changed:** a top-level `targets.<target>` entry in `blueprint.yml` accepts only `variables`. Before, any other field was accepted and ignored, so a typo such as `varibles` silently kept the default values.
+- **Symptom:** `make validate` fails with `<file>: Unknown field '<field>' at $.targets.<target>`.
+- **Find:** `make validate`.
+- **Fix:** correct the field name to `variables`. Resource overrides belong under `resources.<group>.<key>.targets.<target>`.
+- **Implemented in:** `schemas/v1/blueprint.schema.json` (`blueprintTarget`).
+
+### target-mode-values
+
+- **Changed in:** v0.9.1
+- **What changed:** `targets.<target>.mode` in `motherduck.yml` must be `preview` or `production`. Before, any string was accepted, and a typo such as `prodution` made `make export` refuse the target as a preview target.
+- **Symptom:** `make validate` fails with `motherduck.yml: $.targets.<target>.mode must be one of 'preview', 'production'`.
+- **Find:** `make validate`.
+- **Fix:** set `mode: production` for stable targets and `mode: preview` for the preview target.
+- **Implemented in:** `schemas/v1/motherduck-root.schema.json`.
+
+### unterminated-template-reference
+
+- **Changed in:** v0.9.1
+- **What changed:** a `${` without its closing `}` fails validation. Before, it was deployed literally, for example as a share named `${var.share`.
+- **Symptom:** `make validate` fails with `Unterminated template reference in '<value>'`.
+- **Find:** `make validate`.
+- **Fix:** add the closing `}`, or write `\${` for a literal `${`.
+- **Implemented in:** `md_blueprints.template.Template.render`.
+
+### schedule-cron-fields
+
+- **Changed in:** v0.9.1
+- **What changed:** `scheduleCron` is checked field by field, as the MotherDuck CLI checks it. Each field uses digits and `* , / -` only, without names such as `MON`, and stays within its range: minute 0-59, hour 0-23, day of month 1-31, month 1-12, and day of week 0-7. Before, only the number of fields was checked, so an invalid schedule failed at deploy time.
+- **Symptom:** `make validate` fails with `flights.<key>.scheduleCron '<value>' is not a valid 5-field UTC cron expression`.
+- **Find:** `make validate`.
+- **Fix:** correct the field the message names, for example `0 6 * * 1` instead of `0 6 * * MON`.
+- **Implemented in:** `md_blueprints.project.cron_problem`.
+
 ## v0.9.0
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.9.0`, except the preview change, which also needs `.venv/bin/md-blueprints sync-preview --write`. Workflows on the floating `@v0` tag pick up the plan change automatically. Release notes: [v0.9.0](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.0).

@@ -25,7 +25,7 @@ resources:
           alias: wikipedia_pageviews
 ```
 
-Required top-level fields are `schemaVersion`, `name`, `title`, and `resources`. Optional fields are `description`, `variables`, `targets`, `inputs`, and `outputs`.
+Required top-level fields are `schemaVersion`, `name`, `title`, and `resources`. Optional fields are `description`, `variables`, `targets`, `inputs`, and `outputs`. A top-level `targets.<target>` entry accepts only `variables`; any other field fails validation.
 
 `name` must match `^[a-z0-9][a-z0-9-]*$`. In canonical typed roots, it must also equal the package's immediate parent directory.
 
@@ -46,7 +46,7 @@ All `source` and `requirements` paths must stay inside the package, including af
 
 ## Rendering
 
-Strings can contain `${path.to.value}`. Escape a literal placeholder as `\${path.to.value}`.
+Strings can contain `${path.to.value}`. Escape a literal placeholder as `\${path.to.value}`. A `${` without its closing `}` fails validation. Booleans, empty values, and lists in variables render as JSON text (`true`, an empty string, `["a", "b"]`), as Flight `config` values do.
 
 Available template roots are:
 
@@ -156,7 +156,7 @@ resources:
           scheduleCron: ""
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `scheduleCron` is a 5-field UTC cron expression (minute, hour, day of month, month, day of week) that uses digits and `* , / -` only, without names such as `MON`; validation checks each field's range. Quote a schedule that starts with `*`, for example `"*/15 * * * *"`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
 
 `accessTokenName` names an access token of the deployment identity, which owns the Flight and runs it with that token. MotherDuck uses the newest token with the name and refuses to create or update a Flight whose token is missing or expired. `plan` and `deploy` read the identity's tokens with `md_access_tokens()` and stop before any write in either case. A token that expires within 14 days prints a warning, because runs fail once it expires. When the tokens cannot be listed, Blueprints warns and skips the check. `verify` does not check tokens.
 

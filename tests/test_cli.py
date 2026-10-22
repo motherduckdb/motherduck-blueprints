@@ -35,6 +35,31 @@ def test_commands_reject_flags_they_do_not_support(
     assert not (tmp_path / "init-target").exists()
 
 
+
+@pytest.mark.parametrize("command", ["plan", "deploy", "verify", "render"])
+def test_branch_never_reaches_a_stable_target(command: str, capsys: pytest.CaptureFixture[str]) -> None:
+    root = ["--root", str(FIXTURES / "simple")]
+    assert cli.main([command, *root, "--target", "prod", "--branch", "feature/x"]) == 2
+    assert "--branch scopes preview resources and cannot be used with target 'prod'" in capsys.readouterr().err
+
+
+def test_branch_without_target_selects_preview(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["render", "--root", str(FIXTURES / "simple"), "--branch", "feature/x"]) == 0
+    assert "Simple Dive:feature/x (Preview)" in capsys.readouterr().out
+
+
+def test_schema_errors_name_the_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    (tmp_path / "blueprints/simple-dive/blueprint.yml").write_text("", encoding="utf-8")
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 1
+    assert "Error: blueprints/simple-dive/blueprint.yml: $.schemaVersion is required" in capsys.readouterr().err
+
+    (tmp_path / "blueprints/simple-dive/blueprint.yml").write_bytes("name: caf\u00e9".encode("utf-16"))
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 1
+    assert "the file is not UTF-8 text" in capsys.readouterr().err
+
 def test_new_rejects_dry_run_without_writing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "motherduck.yml").write_text(
         'schemaVersion: 1\nrepository: {name: cli-new}\ninclude: ["flights/**/blueprint.yml"]\n'
@@ -100,3 +125,91 @@ def test_validate_warns_about_legacy_context_and_undiscovered_packages(
 
     assert cli.main(["validate", "--root", str(FIXTURES / "complex")]) == 0
     assert "warning: resources.context is supported for compatibility" in capsys.readouterr().err
+
+
+def test_validate_warns_about_misnamed_manifests(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    stray = tmp_path / "blueprints/yaml-dive"
+    shutil.copytree(tmp_path / "blueprints/simple-dive", stray)
+    (stray / "blueprint.yml").rename(stray / "blueprint.yaml")
+
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 0
+
+    assert (
+        "warning: blueprints/yaml-dive/blueprint.yaml is not read: Blueprints reads only files named exactly "
+        "blueprint.yml"
+    ) in capsys.readouterr().err
+
+
+def test_changed_explains_why_an_unknown_base_selects_every_package(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    import shutil
+    import subprocess
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert cli.main(["changed", "--root", str(tmp_path), "--base", "nope"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.split() == ["simple-dive"]
+    assert "warning: could not compare nope...HEAD (ambiguous argument 'nope...HEAD'" in captured.err
+
+
+def test_unknown_command_suggests_the_closest_one(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["valdate"]) == 2
+    assert "unknown command 'valdate'. Did you mean 'validate'?" in capsys.readouterr().err
+
+
+def test_bare_invocation_lists_the_commands(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main([]) == 2
+    assert "validate" in capsys.readouterr().err
+
+
+def test_interrupt_exits_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    def interrupt(options: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setitem(cli.HANDLERS, "validate", interrupt)
+    assert cli.main(["validate", "--root", str(FIXTURES / "simple")]) == 130
+    assert "Interrupted: md-blueprints validate stopped before it finished" in capsys.readouterr().err
+
+
+def test_duplicate_names_list_every_owner(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    copy = tmp_path / "blueprints/other-dive"
+    shutil.copytree(tmp_path / "blueprints/simple-dive", copy)
+    manifest = copy / "blueprint.yml"
+    manifest.write_text(manifest.read_text().replace("name: simple-dive", "name: other-dive"))
+
+    assert cli.main(["validate", "--root", str(tmp_path), "--target", "prod"]) == 1
+    err = capsys.readouterr().err
+    assert "Duplicate names in target prod:\n- Dive title 'Simple Dive' is used by other-dive.dives.example and " \
+        "simple-dive.dives.example" in err
+    assert "placeholder branch" not in err
+
+    assert cli.main(["validate", "--root", str(tmp_path), "--target", "preview"]) == 1
+    assert "rendered with the placeholder branch feature/mock-test" in capsys.readouterr().err
+
+
+def test_validate_warns_about_required_databases_problems(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "simple", tmp_path, dirs_exist_ok=True)
+    source = tmp_path / "blueprints/simple-dive/src/dive.tsx"
+    original = source.read_text()
+    source.write_text(original.replace('alias: "simple"', 'alias: "wiki"'))
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 0
+    assert (
+        "warning: blueprints/simple-dive/src/dive.tsx: REQUIRED_DATABASES aliases (wiki) differ from "
+        "requiredResources in simple-dive.dives.example (simple)"
+    ) in capsys.readouterr().err
+
+    source.write_text(original.replace('[{ alias: "simple"', '[{ alias: ALIAS'))
+    assert cli.main(["validate", "--root", str(tmp_path)]) == 0
+    assert "REQUIRED_DATABASES must be a static array, so plan and deploy stop" in capsys.readouterr().err

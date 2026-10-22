@@ -18,6 +18,7 @@ import json5
 
 from . import __version__
 from .project import (
+    AuthenticationError,
     CommandError,
     Project,
     RenderedBlueprint,
@@ -142,6 +143,10 @@ FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
 ACCESS_TOKEN_WARNING_DAYS = 14
 LIST_PAGE_SIZE = 1000
 LIST_SCAN_ATTEMPTS = 3
+# MotherDuck's wording when it refuses the token itself, not a resource the token cannot reach.
+REJECTED_TOKEN = re.compile(
+    r"invalid or expired motherduck_token|request is not authenticated|jwt is not in the form", re.IGNORECASE,
+)
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 AUTHORITATIVE_NOTE = (
     "mode: authoritative revokes every grant not declared here, including grants created outside "
@@ -362,6 +367,8 @@ class Deployer:
     def __init__(self, project: Project) -> None:
         self.project = project
         self.sql_env: dict[str, DuckDBConfigValue] | None = None
+        # (token variable, target, GitHub Environment) of the live token, for authentication errors.
+        self._token_source: tuple[str, str, str] | None = None
         # One Python-backend connection per command: each new md: connection costs a round of
         # MotherDuck setup, and a deploy issues dozens of statements.
         self._connection: Any = None
@@ -433,24 +440,34 @@ class Deployer:
         self.ensure_plan_succeeds(actual)
         baseline = self._index_by_resource(expected or [])
         observed = self._index_by_resource(actual)
+        # Report every mismatch at once, so one run shows everything that needs attention.
+        problems: list[str] = []
         for key, previous in baseline.items():
             if previous.action not in {"validated_only", "skipped"} and key not in observed:
-                raise ValidationError(f"Verification omitted resource {'.'.join(key)}")
+                problems.append(f"Verification omitted resource {'.'.join(key)}")
         for record in actual:
             if record.action in {"validated_only", "skipped"}:
                 continue
+            label = f"{record.blueprint}.{record.type}.{record.key}"
             if record.action not in {"update", "present"} or not record.id:
-                raise ValidationError(f"{record.blueprint}.{record.type}.{record.key} is not present after verification")
+                problems.append(f"{label} is not present after verification")
+                continue
             before = baseline.get((record.blueprint, record.type, record.key))
             if before and before.id and record.type in {"flight", "dive", "guide"} and before.id != record.id:
-                raise ValidationError(f"{record.blueprint}.{record.type}.{record.key} changed identity: {before.id} -> {record.id}")
+                problems.append(f"{label} changed identity: {before.id} -> {record.id}")
             desired_status = record.desired_status
             if before and record.type == "dive" and desired_status is None:
                 desired_status = before.current_status or ("draft" if before.action == "create" else None)
             if desired_status and record.current_status != desired_status:
-                raise ValidationError(
-                    f"{record.blueprint}.{record.key} status is {record.current_status}, expected {desired_status}"
-                )
+                problems.append(f"{record.blueprint}.{record.key} status is {record.current_status}, expected {desired_status}")
+        if problems:
+            checked = sum(record.action not in {"validated_only", "skipped"} for record in actual)
+            raise ValidationError(
+                f"Verification found {PlanFormatter._count(len(problems), 'problem')} "
+                f"across {PlanFormatter._count(checked, 'checked resource')}:\n"
+                + "\n".join(f"- {problem}" for problem in problems)
+                + "\nNext: run plan for the same target to see what deploy would change, then deploy or update the manifests."
+            )
         return [
             replace(record, action="verified", notes="live identity and dependencies verified")
             if record.action not in {"validated_only", "skipped"} else record
@@ -484,7 +501,7 @@ class Deployer:
                     verified = self._verify_rendered(rendered, records)
                 except (ValidationError, CommandError) as exc:
                     raise CommandError(
-                        f"Deployment applied, but verification failed: {exc}. No rollback was attempted."
+                        f"Deployment applied, but verification failed. No rollback was attempted.\n{exc}"
                     ) from exc
         except BaseException:
             # Keep links to the packages that did deploy in the log.
@@ -642,14 +659,27 @@ class Deployer:
                 self.sql_env = {}
                 return
             environment = self.project.target_config(target).get("environment", target)
+            # Names differ only in case, e.g. motherduck_token for MOTHERDUCK_TOKEN: say which one is read.
+            near = sorted(name for name in os.environ if name != token_env_var and name.lower() == token_env_var.lower())
+            ci_next = (
+                f"in GitHub Settings > Environments > {environment}, add the {token_env_var} secret using a "
+                "service-account read/write token. Ensure the job selects that environment."
+            )
+            local_next = f"set {token_env_var} in your shell, for example through your secret manager."
+            in_ci = bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
             raise ValidationError(
-                f"{token_env_var} is required to {operation} target {target}.\n"
-                f"Next: in GitHub Settings > Environments > {environment}, add the {token_env_var} "
-                "secret using a service-account read/write token. Ensure the job selects that environment. "
-                f"For local commands, provide {token_env_var} through your secret manager."
+                f"{token_env_var} is required to {operation} target {target}."
+                + (
+                    f" {', '.join(near)} is set, but target {target} reads {token_env_var} "
+                    "(deployment.tokenEnvVar in motherduck.yml); environment variable names are case-sensitive."
+                    if near else ""
+                )
+                + f"\nNext: {ci_next if in_ci else local_next}"
+                + ("" if in_ci else f" In CI, {ci_next[0].lower()}{ci_next[1:]}")
             )
         self.close()
         self.sql_env = {"motherduck_token": token}
+        self._token_source = (token_env_var, target, str(self.project.target_config(target).get("environment", target)))
 
     def close(self) -> None:
         """Close the Python-backend connection, if one is open."""
@@ -2407,7 +2437,11 @@ class Deployer:
             raise ValidationError("MotherDuck token was not prepared for live command")
         if sql_backend() == "motherduck":
             token = self.sql_env.get("motherduck_token")
-            return cli_query_rows(statement, token=str(token) if token is not None else None)
+            try:
+                return cli_query_rows(statement, token=str(token) if token is not None else None)
+            except CommandError as exc:
+                self._raise_if_rejected_token(str(exc))
+                raise
         try:
             import duckdb
             # Timestamp decoding can otherwise fail after a mutating query ran.
@@ -2426,4 +2460,17 @@ class Deployer:
         except duckdb.Error as exc:
             # Reconnect for the next statement in case the failure left the connection unusable.
             self.close()
+            self._raise_if_rejected_token(str(exc))
             raise CommandError(f"MotherDuck SQL failed: {exc}") from exc
+
+    def _raise_if_rejected_token(self, message: str) -> None:
+        """Replace MotherDuck's interactive-login advice with what to fix in CI or a secret manager."""
+        if not REJECTED_TOKEN.search(message):
+            return
+        token_env_var, target, environment = self._token_source or ("MOTHERDUCK_TOKEN", "the selected target", "the target's environment")
+        raise AuthenticationError(
+            f"MotherDuck rejected {token_env_var} for target {target}: the token is invalid, expired, or revoked.\n"
+            f"Next: create a new read/write token for the service account in MotherDuck, then replace the "
+            f"{token_env_var} secret in GitHub Settings > Environments > {environment}. "
+            f"For local commands, update {token_env_var} in your secret manager."
+        )

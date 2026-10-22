@@ -51,7 +51,7 @@ def test_postcheck_fails_cd_after_wrong_or_missing_state(
     monkeypatch: pytest.MonkeyPatch, after: list[PlanRecord], expected_message: str,
 ) -> None:
     deployer, writes = deployment(monkeypatch, [record(kind=after[0].type if after else "flight")], after)
-    with pytest.raises(CommandError, match=f"Deployment applied, but verification failed:.*{expected_message}"):
+    with pytest.raises(CommandError, match=f"(?s)Deployment applied, but verification failed.*{expected_message}"):
         deployer.deploy(target="prod", branch=None, names=None)
     assert writes == ["apply"]
 

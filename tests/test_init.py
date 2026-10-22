@@ -43,6 +43,29 @@ def test_force_init_does_not_delete_existing_optional_roots(tmp_path: Path) -> N
     assert customer_file.read_text() == "Keep existing customer work.\n"
 
 
+
+def test_force_init_in_an_existing_repository_does_not_restore_removed_starters(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    import shutil
+
+    run_init(tmp_path)
+    shutil.rmtree(tmp_path / "flights/wikipedia-pageviews-ingest")
+    shutil.rmtree(tmp_path / "dives/wikipedia-pageviews")
+    (tmp_path / "Makefile").unlink()
+    capsys.readouterr()
+
+    run_init(tmp_path, force=True)
+
+    out = capsys.readouterr().out
+    assert not (tmp_path / "flights/wikipedia-pageviews-ingest").exists()
+    assert not (tmp_path / "dives/wikipedia-pageviews").exists()
+    assert (tmp_path / "Makefile").is_file()
+    assert "Did not re-create starter package(s) dives/wikipedia-pageviews, flights/wikipedia-pageviews-ingest" in out
+    assert "CLI version pinned in Makefile" in out
+    assert "Action tag pinned in workflows" not in out
+    assert "Next steps" not in out
+
 def test_init_writes_customer_template_with_stamped_versions(tmp_path: Path) -> None:
     target = tmp_path / "customer-blueprints"
 
@@ -219,3 +242,21 @@ def test_init_force_writes_nothing_when_a_destination_escapes_the_target(tmp_pat
         run_init(target, force=True)
     assert [path.name for path in target.iterdir()] == ["docs"]
     assert not any(outside.iterdir())
+
+
+def test_role_scaffold_names_start_with_a_letter(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from md_blueprints.diagnostics import validation_warnings
+
+    run_init(tmp_path)
+    run_new(tmp_path, "role", "2025-analysts")
+    manifest = (tmp_path / "roles/2025-analysts/blueprint.yml").read_text()
+    assert 'name: "role_2025_analysts"' in manifest
+    assert validation_warnings(Project(tmp_path)) == []
+
+    (tmp_path / "roles/2025-analysts/blueprint.yml").write_text(
+        manifest.replace('name: "role_2025_analysts"', 'name: "2025_analysts"')
+    )
+    assert validation_warnings(Project(tmp_path)) == [
+        "roles/2025-analysts/blueprint.yml: roles.role.name '2025_analysts' must start with a letter, so plan "
+        "stops before creating it unless the role already exists"
+    ]

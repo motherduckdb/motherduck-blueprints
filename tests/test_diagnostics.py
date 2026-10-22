@@ -21,3 +21,14 @@ def test_errors_have_safe_actionable_summaries(
     assert advice in stderr
     assert "private-test-token" not in stderr + summary.read_text()
     assert "<script>" not in summary.read_text()
+
+
+@pytest.mark.parametrize("message", [
+    "Unknown template reference ${var.environment}",
+    "Required file not found: dives/environment-report/src/dive.tsx",
+    "[Errno 13] Permission denied: 'dives/report/blueprint.yml'",
+    "MotherDuck rejected MOTHERDUCK_TOKEN.\nNext: create a new token. Permission denied.",
+])
+def test_unrelated_errors_get_no_generic_hint(capsys: pytest.CaptureFixture[str], message: str) -> None:
+    report_error(ValueError(message))
+    assert capsys.readouterr().err.count("Next:") == message.count("Next:")

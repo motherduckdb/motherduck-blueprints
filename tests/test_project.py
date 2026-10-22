@@ -620,6 +620,26 @@ def test_flight_config_values_render_as_json_strings(tmp_path: Path) -> None:
     }
 
 
+
+def test_non_string_variable_defaults_render_as_json_text(tmp_path: Path) -> None:
+    path = write_override_project(
+        tmp_path,
+        "          config:\n            flag: ${var.flag}\n            missing: ${var.missing}\n"
+        "            names: ${var.names}\n            label: run_${var.flag}",
+    )
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'variables:\n  runtime: "900"\n',
+            'variables:\n  runtime: "900"\n  flag: {default: true}\n  missing: {default: }\n'
+            "  names: {default: [DuckDB, MotherDuck]}\n",
+        ),
+        encoding="utf-8",
+    )
+
+    config = Project(tmp_path).render_all("prod")[0].flights["loader"]["config"]
+
+    assert config == {"flag": "true", "missing": "", "names": '["DuckDB", "MotherDuck"]', "label": "run_true"}
+
 def test_override_for_an_unknown_target_is_rejected(tmp_path: Path) -> None:
     write_override_project(
         tmp_path,
@@ -642,3 +662,39 @@ def test_staging_overrides_are_allowed_before_staging_is_declared(tmp_path: Path
     write_override_project(tmp_path, "          name: loader\n        staging:\n          name: loader-staging")
 
     assert Project(tmp_path).render_all("prod")[0].flights["loader"]["name"] == "loader"
+
+
+def test_unterminated_template_reference_is_rejected(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          config:\n            share: ${var.runtime")
+    with pytest.raises(ValidationError, match=r"Unterminated template reference in '\$\{var.runtime'"):
+        Project(tmp_path).render_all("prod")
+
+
+def test_blueprint_target_variables_reject_unknown_fields(tmp_path: Path) -> None:
+    path = write_override_project(tmp_path, "          name: loader")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'variables:\n  runtime: "900"\n', 'variables:\n  runtime: "900"\ntargets:\n  prod:\n    varibles: {runtime: "60"}\n',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match=r"blueprints/loader/blueprint.yml: Unknown field 'varibles'"):
+        Project(tmp_path)
+
+
+def test_target_mode_must_be_preview_or_production(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          name: loader")
+    root = tmp_path / "motherduck.yml"
+    root.write_text(root.read_text(encoding="utf-8").replace("mode: production", "mode: prodution"), encoding="utf-8")
+    with pytest.raises(ValidationError, match=r"motherduck.yml: .*mode must be one of 'preview', 'production'"):
+        Project(tmp_path)
+
+
+@pytest.mark.parametrize(("schedule", "accepted"), [
+    ("17 6 * * *", True), ("*/15 * * * *", True), ("0 9-17/2 * * 1-5", True), ("0 0 1,15 * 7", True),
+    ("0 6 * *", False), ("99 99 * * *", False), ("0 6 * * MON", False), ("0 6 * * 1-2-3", False),
+])
+def test_schedule_cron_is_checked_field_by_field(schedule: str, accepted: bool) -> None:
+    from md_blueprints.project import cron_problem
+
+    assert (cron_problem(schedule) is None) is accepted
