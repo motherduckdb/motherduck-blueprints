@@ -39,7 +39,7 @@ jobs:
 
       - name: Gather repository and dbt context
         id: context
-        uses: motherduckdb/motherduck-blueprints@v0.9.0
+        uses: motherduckdb/motherduck-blueprints@v0.9.1
         with:
           python-version: ${{ inputs.python-version }}
           command: guides
