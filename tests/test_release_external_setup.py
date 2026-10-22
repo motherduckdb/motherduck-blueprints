@@ -133,7 +133,7 @@ def test_release_workflow_pins_ci_artifact_actions_and_keeps_token_out_of_urls()
     uploads = {line.split("uses: ", 1)[1] for line in release.splitlines() if "actions/upload-artifact@" in line}
     downloads = {line.split("uses: ", 1)[1] for line in release.splitlines() if "actions/download-artifact@" in line}
     assert uploads == {upload}
-    assert downloads == {"actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0"}
+    assert downloads == {"actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2"}
     assert "x-access-token:${TEMPLATE_PUSH_TOKEN}@" not in release
     assert 'GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"' in release
     assert 'echo "::add-mask::${auth}"' in release

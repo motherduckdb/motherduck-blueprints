@@ -70,6 +70,21 @@ def sql_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def connect(database: str) -> duckdb.DuckDBPyConnection:
+    """Attach only this Flight's database, which starts faster than the whole workspace.
+
+    Attach any other database the Flight reads with ATTACH 'md:<name>'. The first run
+    creates the database, so it opens the workspace when the database is missing.
+    """
+    quote_ident(database)
+    try:
+        return duckdb.connect(f"md:{database}?attach_mode=single")
+    except duckdb.Error as exc:
+        if "no database/share named" not in str(exc):
+            raise
+    return duckdb.connect("md:")
+
+
 def load_starter_data(con: duckdb.DuckDBPyConnection, database: str, schema: str) -> None:
     database_ident = quote_ident(database)
     schema_ident = quote_ident(schema)
@@ -155,7 +170,7 @@ def main() -> None:
     schema = setting("schema")
     share = setting("share")
 
-    con = duckdb.connect("md:")
+    con = connect(database)
     load_starter_data(con, database, schema)
     share_url = publish_share(con, database, share)
 

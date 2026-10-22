@@ -21,7 +21,8 @@ from .project import Project, require_within
 from .schema import ValidationError
 
 KINDS = {"flight": "flights", "dive": "dives", "guide": "guides"}
-PAGE_SIZE = 100
+PAGE_SIZE = 1000
+SCAN_ATTEMPTS = 3
 IMPORT_VERSION = "0.4.3"
 FLIGHT_INSTANCE_TYPES = ("F4", "F16", "F32")
 
@@ -113,23 +114,27 @@ class ImportReader:
         return result
 
     def inventory(self, kind: str) -> list[str]:
-        result: list[str] = []
-        seen: set[str] = set()
-        offset = 0
-        while True:
-            extra = ", include_org_shares := true" if kind == "dive" else ""
-            page = self.rows(
-                f'MD_LIST_{KINDS[kind].upper()}("limit" := {PAGE_SIZE}::UINTEGER, '
-                f'"offset" := {offset}::UINTEGER{extra})'
-            )
-            if not page:
-                return result
-            ids = [checked_uuid(item["flight_id" if kind == "flight" else "id"]) for item in page]
-            if seen.intersection(ids) or len(ids) != len(set(ids)):
-                raise ValidationError("Catalog changed or pagination repeated an ID; retry the import")
-            result.extend(ids)
-            seen.update(ids)
-            offset += len(page)
+        # Lists are ordered by last update, so a resource updated mid-scan shifts later pages and
+        # can be skipped. A repeated ID shows that happened; scan again from the start.
+        extra = ", include_org_shares := true" if kind == "dive" else ""
+        for _ in range(SCAN_ATTEMPTS):
+            result: list[str] = []
+            seen: set[str] = set()
+            offset = 0
+            while True:
+                page = self.rows(
+                    f'MD_LIST_{KINDS[kind].upper()}("limit" := {PAGE_SIZE}::UINTEGER, '
+                    f'"offset" := {offset}::UINTEGER{extra})'
+                )
+                if not page:
+                    return result
+                ids = [checked_uuid(item["flight_id" if kind == "flight" else "id"]) for item in page]
+                if seen.intersection(ids) or len(ids) != len(set(ids)):
+                    break
+                result.extend(ids)
+                seen.update(ids)
+                offset += len(page)
+        raise ValidationError("Catalog changed or pagination repeated an ID; retry the import")
 
     def snapshot(self, kind: str, resource_id: str) -> dict[str, Any]:
         argument = "flight_id" if kind == "flight" else "id"

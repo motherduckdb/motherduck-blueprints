@@ -105,6 +105,8 @@ export default function WikipediaPageviewsDive() {
   const daily = dailyQuery.data ?? [];
   const trend = transformDaily(daily);
   const articles = summary.map((row) => row.article);
+  // BIGINT columns are not JavaScript numbers, and recharts cannot plot them.
+  const totals = summary.map((row) => ({ article: row.article, total_views: asNumber(row.total_views) }));
   const totalViews = summary.reduce((sum, row) => sum + asNumber(row.total_views), 0);
   const last7 = summary.reduce((sum, row) => sum + asNumber(row.views_last_7_days), 0);
   const leadingArticle = summary[0];
@@ -190,7 +192,7 @@ export default function WikipediaPageviewsDive() {
           ) : (
             <div style={styles.chart}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={summary} layout="vertical" margin={{ top: 8, right: 24, bottom: 0, left: 32 }}>
+                <BarChart data={totals} layout="vertical" margin={{ top: 8, right: 24, bottom: 0, left: 32 }}>
                   <CartesianGrid stroke="#e5e7eb" horizontal={false} />
                   <XAxis type="number" tickFormatter={formatCompact} tick={{ fontSize: 11 }} />
                   <YAxis type="category" dataKey="article" width={92} tick={{ fontSize: 11 }} />

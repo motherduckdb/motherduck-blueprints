@@ -966,6 +966,19 @@ def test_name_lookups_read_every_page(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+def test_name_lookup_rescans_when_an_update_shifts_the_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    # The first scan sees "loader" move to the first page after it was read; the rescan finds it.
+    pages: list[list[tuple[object, ...]]] = [
+        [("f1", "other"), ("f2", "other")], [("f2", "other")],
+        [("f3", "loader"), ("f1", "other")], [("f2", "other")], [],
+    ]
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: pages.pop(0))
+
+    assert deployer._list_flight_ids("loader") == ["f3"]
+    assert pages == []
+
+
 def test_name_lookup_rejects_pages_that_repeat_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     # A server that ignores "offset" would otherwise loop forever.

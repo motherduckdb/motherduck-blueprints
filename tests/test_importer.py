@@ -81,6 +81,18 @@ def test_pagination_continues_past_short_pages_and_1000(tmp_path: Path, monkeypa
     assert '"offset" := 75' in calls[1]
 
 
+def test_inventory_rescans_when_an_update_shifts_the_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project, _ = setup(tmp_path)
+    reader = ImportReader(Deployer(project))
+    first, second, third = (str(UUID(int=i)) for i in (1, 2, 3))
+    # The first scan sees a Dive move up a page; the rescan reads a stable catalog.
+    pages = [[{"id": first}, {"id": second}], [{"id": second}],
+             [{"id": first}, {"id": second}], [{"id": third}], []]
+    monkeypatch.setattr(reader, "rows", lambda statement: pages.pop(0))
+    assert reader.inventory("dive") == [first, second, third]
+    assert pages == []
+
+
 def test_repeated_catalog_page_is_an_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project, _ = setup(tmp_path)
     reader = ImportReader(Deployer(project))

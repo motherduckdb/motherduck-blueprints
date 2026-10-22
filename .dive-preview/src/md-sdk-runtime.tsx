@@ -178,7 +178,7 @@ async function attachRequiredDatabases(
   for (const database of requiredDatabases) {
     const path = await resolveDatabasePath(connection, database);
     const result = await connection.safeEvaluateQuery(
-      `ATTACH IF NOT EXISTS ${sqlString(path)} AS ${sqlIdentifier(database.alias)}`,
+      `ATTACH IF NOT EXISTS ${sqlString(path)} AS ${sqlIdentifier(database.alias)} (READ_ONLY)`,
     );
     if (result.status === "error") throw result.err;
   }
@@ -212,7 +212,13 @@ export function MotherDuckSDKProvider(
     (async () => {
       setState({ status: "connecting" });
       try {
-        conn = MDConnection.create({ mdToken: token, useDuckDBWasmCOI: false });
+        // Like production, a Dive with required databases sees only those, so a share alias
+        // cannot collide with one of the viewer's own databases.
+        conn = MDConnection.create({
+          mdToken: token,
+          useDuckDBWasmCOI: false,
+          ...(requiredDatabases.length > 0 && { attachMode: "single" as const, skipWelcomePack: true }),
+        });
         await conn.isInitialized();
         await attachRequiredDatabases(conn, requiredDatabases);
         if (!cancelled) setState({ status: "connected", connection: conn });
