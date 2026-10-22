@@ -42,7 +42,7 @@ Pull overwrites local files. Use `--version` to select a version. The native met
 
 ## Command map
 
-Checked against the installed `v1.5.6-2026-10-404` help on 2026-10-16. Run `motherduck <group> <command> --help` for current flags and examples.
+Checked against the installed `v1.5.6-2026-10-484` help on 2026-10-22. Run `motherduck <group> <command> --help` for current flags and examples.
 
 | Area | Commands | Use |
 | --- | --- | --- |

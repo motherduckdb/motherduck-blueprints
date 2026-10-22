@@ -26,6 +26,15 @@ Generated repositories pick up these changes with `make upgrade VERSION=0.9.0`, 
 - **Fix:** read data with `useSQLQuery`, and replace icons added after lucide-react 0.468.0 with ones that exist in it. Keep `.dive-preview/package.json` at the pinned versions.
 - **Implemented in:** `.dive-preview/src/md-sdk.tsx`, `.dive-preview/package.json`, and `md_blueprints.init.run_sync_preview`.
 
+### preview-attaches-required-databases-only
+
+- **Changed in:** v0.9.0
+- **What changed:** when a Dive exports `REQUIRED_DATABASES`, the local preview attaches only those databases, read-only, as MotherDuck does. Before, it attached your whole workspace and the required databases read-write.
+- **Symptom:** `make preview NAME` shows `Catalog "<name>" does not exist` for a database the Dive queries but does not declare, or a write error on a required database. Those Dives already failed when MotherDuck rendered them. In return, the owner of a share's source database can now preview a Dive that requires the share under the same name.
+- **Find:** compare the databases each Dive queries with its `REQUIRED_DATABASES` export and the `requiredResources` in its `blueprint.yml`.
+- **Fix:** declare every database the Dive reads in `requiredResources` and `REQUIRED_DATABASES`, and keep Dive queries read-only. Run `make sync-preview` after `make upgrade` to get the new preview files.
+- **Implemented in:** `.dive-preview/src/md-sdk-runtime.tsx` (`MotherDuckSDKProvider` and `attachRequiredDatabases`).
+
 ### share-plan-reports-changes
 
 - **Changed in:** v0.9.0

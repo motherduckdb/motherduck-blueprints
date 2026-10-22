@@ -51,6 +51,7 @@ Use `make install-deploy` to install the MotherDuck CLI version tested by Bluepr
 Declare resources in `blueprint.yml`:
 
 - `resources.shares` names produced data products and their preview cleanup behavior. `plan` compares the live `include_pattern` and grantees, reports `present` when they match, and deploy skips an unchanged `SET INCLUDE_PATTERN`. Secure views on shares are not managed yet: they are behind an experimental client flag and off in production.
+- `resources.flights` does not manage Flight `run` grants yet. `GRANT RUN ON FLIGHT` and running another user's Flight from a Dive are on MotherDuck's main branch but not in release `v1.5.6-2026-10-484`; until they ship, only a Dive's owner can run Flights from it.
 - `resources.flights` deploys MotherDuck Flights from Python source and requirements files. `instanceType` (`F4`, `F16`, `F32`) needs DuckDB 1.5.6, which both the pinned CLI and the Python backend embed; omitting it keeps the live size, or the plan default for a new Flight. `accessTokenName` is checked against `md_access_tokens()` at plan time: a missing or expired token is a plan error, one expiring within 14 days a warning, and an unreadable list skips the check.
 - `resources.dives` deploys Dives and required resources.
 - `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.

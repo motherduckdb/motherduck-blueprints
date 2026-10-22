@@ -118,6 +118,21 @@ def sql_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def connect(database: str) -> duckdb.DuckDBPyConnection:
+    """Attach only this Flight's database, which starts faster than the whole workspace.
+
+    Attach any other database the Flight reads with ATTACH 'md:<name>'. The first run
+    creates the database, so it opens the workspace when the database is missing.
+    """
+    quote_ident(database)
+    try:
+        return duckdb.connect(f"md:{database}?attach_mode=single")
+    except duckdb.Error as exc:
+        if "no database/share named" not in str(exc):
+            raise
+    return duckdb.connect("md:")
+
+
 def fetch_json(url: str, user_agent: str, retries: int = 4) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
@@ -497,7 +512,7 @@ def main() -> None:
         stage_rows(fields_path, fields)
         stage_rows(reserves_path, reserves)
 
-        con = duckdb.connect("md:")
+        con = connect(database)
         try:
             con.execute("SET TimeZone = 'UTC'")
             field_count, reserve_count, latest_version = load_tables(

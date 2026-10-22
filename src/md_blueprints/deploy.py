@@ -141,6 +141,7 @@ OTHER_BRANCH_PREVIEW = "other-branch preview"
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
 ACCESS_TOKEN_WARNING_DAYS = 14
 LIST_PAGE_SIZE = 1000
+LIST_SCAN_ATTEMPTS = 3
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 AUTHORITATIVE_NOTE = (
     "mode: authoritative revokes every grant not declared here, including grants created outside "
@@ -2345,23 +2346,30 @@ class Deployer:
             print(f"Skipping {label}; it was already removed by another cleanup run")
 
     def _list_all(self, function: str, columns: str, extra_args: str = "") -> list[tuple[object, ...]]:
-        """Read every page of an MD_LIST_* function; a single call returns only one page."""
-        rows: list[tuple[object, ...]] = []
-        seen: set[str] = set()
-        offset = 0
-        while True:
-            page = self._query_rows(
-                f'SELECT {columns} FROM {function}("limit" := {LIST_PAGE_SIZE}::UINTEGER, '
-                f'"offset" := {offset}::UINTEGER{extra_args})'
-            )
-            if not page:
-                return rows
-            ids = {str(row[0]) for row in page}
-            if len(ids) != len(page) or seen.intersection(ids):
-                raise CommandError(f"{function} repeated an ID while paging; the catalog changed, so retry")
-            seen.update(ids)
-            rows.extend(page)
-            offset += len(page)
+        """Read every page of an MD_LIST_* function; a single call returns only one page.
+
+        MotherDuck orders these lists by last update, so a resource updated mid-scan moves to the
+        first page and shifts the rest. A repeated ID means a resource may have been skipped, so
+        the scan starts over.
+        """
+        for _ in range(LIST_SCAN_ATTEMPTS):
+            rows: list[tuple[object, ...]] = []
+            seen: set[str] = set()
+            offset = 0
+            while True:
+                page = self._query_rows(
+                    f'SELECT {columns} FROM {function}("limit" := {LIST_PAGE_SIZE}::UINTEGER, '
+                    f'"offset" := {offset}::UINTEGER{extra_args})'
+                )
+                if not page:
+                    return rows
+                ids = {str(row[0]) for row in page}
+                if len(ids) != len(page) or seen.intersection(ids):
+                    break
+                seen.update(ids)
+                rows.extend(page)
+                offset += len(page)
+        raise CommandError(f"{function} repeated an ID while paging; the catalog changed, so retry")
 
     def _list_flight_ids(self, name: str) -> list[str]:
         return [

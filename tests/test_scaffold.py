@@ -298,6 +298,44 @@ def test_starter_flight_reads_config_from_environment_variables(
     assert namespace["setting"]("database") == "loader_preview_feature_x"
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "flights/wikipedia-pageviews-ingest/src/flight.py",
+        "examples/ncs-field-recovery/src/flight.py",
+        "src/md_blueprints/template_repo/templates/blueprint/flight.py",
+    ],
+)
+def test_flights_attach_only_their_database(source: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    import runpy
+    import sys
+    import types
+
+    class Error(Exception):
+        pass
+
+    def connect(target: str) -> str:
+        if target == "md:missing_db?attach_mode=single":
+            raise Error('Failed to attach \'missing_db\': no database/share named "missing_db" found')
+        if target == "md:denied_db?attach_mode=single":
+            raise Error("Your request is not authenticated. Please check your MotherDuck token.")
+        return target
+
+    duckdb = types.ModuleType("duckdb")
+    duckdb.Error = Error  # type: ignore[attr-defined]
+    duckdb.connect = connect  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "duckdb", duckdb)
+    flight_connect = runpy.run_path(str(Path(__file__).resolve().parents[1] / source))["connect"]
+
+    assert flight_connect("analytics") == "md:analytics?attach_mode=single"
+    # The first run creates the database, which single attach cannot open yet.
+    assert flight_connect("missing_db") == "md:"
+    with pytest.raises(Error, match="not authenticated"):
+        flight_connect("denied_db")
+    with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+        flight_connect("analytics?attach_mode=workspace")
+
+
 def test_scaffolded_guide_validates_once_deploy_is_enabled(tmp_path: Path) -> None:
     from md_blueprints.init import run_init
 
