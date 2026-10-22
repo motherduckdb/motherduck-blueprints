@@ -14,7 +14,7 @@
     },
     "targets": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/targetOverride" }
+      "additionalProperties": { "$ref": "#/$defs/blueprintTarget" }
     },
     "inputs": {
       "type": "object",
@@ -71,6 +71,16 @@
           "additionalProperties": false
         }
       ]
+    },
+    "blueprintTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "variables": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/variable" }
+        }
+      }
     },
     "targetOverride": {
       "type": "object",

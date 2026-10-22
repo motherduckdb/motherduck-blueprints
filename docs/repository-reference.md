@@ -166,7 +166,7 @@ make sync-preview
 make doctor
 ```
 
-Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
+Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `plan`, `deploy`, `verify`, and `render` use `prod` unless `--target` is given; `--branch` alone selects `preview`, and `--branch` with any other target is an error, so a branch name never reaches a stable target. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
 
 Commands that take a name accept it as the second word or as `NAME=`, for example `make new-flight NAME=events-ingest`. Names are lowercase slugs without spaces. `make new-blueprint NAME` is deprecated: it still works as an alias for `make new-project NAME` and prints a notice. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 

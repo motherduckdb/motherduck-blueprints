@@ -115,7 +115,8 @@ def run_new(
 
     if kind == "dive":
         if bool(input_ref) == bool(share_url):
-            raise ValidationError("new dive requires exactly one of --input BLUEPRINT.OUTPUT or --url SHARE_URL")
+            raise ValidationError("new dive requires exactly one of --input BLUEPRINT.OUTPUT or --url SHARE_URL "
+                "(make new-dive NAME=<name> INPUT=<blueprint>.<output> or URL=<share-url>)")
         required_database = _required_database(
             root,
             resource_alias,
@@ -320,6 +321,10 @@ resources:
 
 def _role_manifest(name: str) -> str:
     # MotherDuck role names allow letters, digits, and underscores, but package slugs use hyphens.
+    # They must also start with a letter, which a package slug need not.
+    role_name = name.replace("-", "_")
+    if not role_name[0].isalpha():
+        role_name = f"role_{role_name}"
     return f"""schemaVersion: 1
 name: {_yaml_string(name)}
 title: {_yaml_string(_title(name))}
@@ -328,7 +333,7 @@ description: Version-controlled MotherDuck role and membership assignments.
 resources:
   roles:
     role:
-      name: {_yaml_string(name.replace("-", "_"))}
+      name: {_yaml_string(role_name)}
       includedRoles: []
       members: []
       mode: additive

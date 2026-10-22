@@ -157,18 +157,27 @@ async function resolveDatabasePath(connection: MDConnection, database: RequiredD
     throw new Error(`Required database ${database.alias} must declare path or shareName`);
   }
 
-  const result = await connection.safeEvaluateQuery(
-    `SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = ${sqlString(database.shareName)}`,
+  // Shares you own come first; a share created by the CI service account is shared with you instead.
+  const name = sqlString(database.shareName);
+  for (const sql of [
+    `SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = ${name}`,
+    `SELECT url FROM MD_INFORMATION_SCHEMA.SHARED_WITH_ME WHERE name = ${name}`,
+  ]) {
+    const result = await connection.safeEvaluateQuery(sql);
+    if (result.status === "error") throw result.err;
+    const urls = result.result.data.toRows().map((row) => row.url).filter((url) => typeof url === "string" && url);
+    if (urls.length > 1) {
+      throw new Error(
+        `Several shares named ${database.shareName} are shared with you. ` +
+          `Set path to the share URL in REQUIRED_DATABASES for ${database.alias}.`,
+      );
+    }
+    if (urls.length === 1) return String(urls[0]);
+  }
+  throw new Error(
+    `Could not find share ${database.shareName}, which ${database.alias} requires, among the shares you own ` +
+      "or that are shared with you. Deploy it first, or check that the share name and your token's user are correct.",
   );
-  if (result.status === "error") throw result.err;
-  if (result.result.data.rowCount !== 1) {
-    throw new Error(`Could not resolve share ${database.shareName}`);
-  }
-  const url = result.result.data.singleValue();
-  if (typeof url !== "string" || !url) {
-    throw new Error(`Share ${database.shareName} did not return a valid URL`);
-  }
-  return url;
 }
 
 async function attachRequiredDatabases(
@@ -189,6 +198,8 @@ function useSDKContext() {
   if (!ctx) throw new Error("Must be used within MotherDuckSDKProvider");
   return ctx;
 }
+
+const CONNECT_TIMEOUT_MS = 60_000;
 
 export function MotherDuckSDKProvider(
   {
@@ -219,8 +230,26 @@ export function MotherDuckSDKProvider(
           useDuckDBWasmCOI: false,
           ...(requiredDatabases.length > 0 && { attachMode: "single" as const, skipWelcomePack: true }),
         });
-        await conn.isInitialized();
-        await attachRequiredDatabases(conn, requiredDatabases);
+        const connection = conn;
+        // A blocked network or a failed worker never settles, so give up instead of spinning forever.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(
+            `No response from MotherDuck after ${CONNECT_TIMEOUT_MS / 1000} seconds. ` +
+              "Check your network, proxy, or VPN, and the browser console for worker errors.",
+          )), CONNECT_TIMEOUT_MS);
+        });
+        try {
+          await Promise.race([
+            (async () => {
+              await connection.isInitialized();
+              await attachRequiredDatabases(connection, requiredDatabases);
+            })(),
+            timeout,
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
         if (!cancelled) setState({ status: "connected", connection: conn });
       } catch (err) {
         if (!cancelled) setState({

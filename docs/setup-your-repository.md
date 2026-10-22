@@ -34,7 +34,7 @@ The Wikipedia Flight has a daily schedule (`scheduleCron: 17 6 * * *`) in produc
 
 ### Remove the example
 
-When you no longer need the starter, delete `flights/wikipedia-pageviews-ingest/` and `dives/wikipedia-pageviews/` in a pull request. Removing source files never deletes deployed production resources. If the example already reached production, delete the **Wikipedia Pageviews** Dive, the `wikipedia-pageviews` Flight, and the `wikipedia_pageviews` share and database in MotherDuck yourself. Check the exact names in the package manifests first.
+When you no longer need the starter, add your own package first (`make new-project NAME`), because a repository without packages fails `make validate`. Then delete `flights/wikipedia-pageviews-ingest/` and `dives/wikipedia-pageviews/` in a pull request. `md-blueprints init --force` does not re-create them. Removing source files never deletes deployed production resources. If the example already reached production, delete the **Wikipedia Pageviews** Dive, the `wikipedia-pageviews` Flight, and the `wikipedia_pageviews` share and database in MotherDuck yourself. Check the exact names in the package manifests first.
 
 ## Work locally (optional)
 

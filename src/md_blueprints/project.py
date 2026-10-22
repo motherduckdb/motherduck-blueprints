@@ -3,18 +3,17 @@ from __future__ import annotations
 import ast
 import hashlib
 import heapq
-import json
 import os
 import re
 import subprocess
-from collections import Counter, deque
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Callable, cast
 from uuid import UUID
 
 from .schema import SchemaValidator, ValidationError, breaking_change, load_yaml, validate_required_cli_version
-from .template import Template
+from .template import Template, as_text
 
 
 DIVE_STATUSES = {"draft", "ready", "endorsed", "archived"}
@@ -36,6 +35,10 @@ RESOURCE_DEFINITIONS = {
 
 class CommandError(Exception):
     pass
+
+
+class AuthenticationError(Exception):
+    """MotherDuck rejected the deployment token. Not a CommandError, so no caller downgrades it to a warning."""
 
 
 def included_manifest_paths(root: Path, include: object) -> list[Path]:
@@ -170,7 +173,12 @@ class Project:
         self.root = Path(root).expanduser().resolve()
         self.manifest_path = self.root / "motherduck.yml"
         if not self.manifest_path.is_file():
-            raise ValidationError(f"motherduck.yml not found in {self.root}")
+            parent = next((path for path in self.root.parents if (path / "motherduck.yml").is_file()), None)
+            hint = (
+                f" Run the command from the repository root {parent}, or pass --root {parent}."
+                if parent else " Pass --root with the repository directory, or run md-blueprints init to create one."
+            )
+            raise ValidationError(f"motherduck.yml not found in {self.root}.{hint}")
 
         self.schema = SchemaValidator()
         manifest = load_yaml(self.manifest_path)
@@ -178,7 +186,10 @@ class Project:
             raise ValidationError(f"{self.manifest_path} must be an object")
         self.manifest: dict[str, object] = manifest
         validate_required_cli_version(self.manifest.get("requiredCliVersion"), path=self.manifest_path)
-        self.schema.validate(self.manifest, "motherduck-root.schema.json")
+        try:
+            self.schema.validate(self.manifest, "motherduck-root.schema.json")
+        except ValidationError as exc:
+            raise ValidationError(f"motherduck.yml: {exc}") from exc
         self.blueprints = self._load_blueprints()
         self._blueprints_by_name = {blueprint.name: blueprint for blueprint in self.blueprints}
         self._validate_deployment_topology()
@@ -188,15 +199,24 @@ class Project:
     def validate(self, targets: list[str] | None = None, *, branch: str | None = None) -> bool:
         target_names = targets or self.target_names()
         if not self.blueprints:
-            raise ValidationError("No blueprints found from include globs")
+            raise ValidationError(
+                "No blueprints found from the include patterns in motherduck.yml.\nNext: create a package with "
+                "make new-project NAME=<name> (md-blueprints new project <name>), or check the include patterns."
+            )
 
         for target in target_names:
             rendered_branch = (branch or "feature/mock-test") if target == "preview" else None
             rendered = self.render_all(target, branch=rendered_branch)
-            self._validate_uniqueness(target, rendered)
+            self._validate_uniqueness(
+                target, rendered, placeholder_branch=rendered_branch if target == "preview" and not branch else None,
+            )
             self._validate_role_graph(rendered)
             for blueprint in rendered:
-                self._validate_rendered_blueprint(target, rendered_branch, blueprint)
+                try:
+                    self._validate_rendered_blueprint(target, rendered_branch, blueprint)
+                except ValidationError as exc:
+                    path = self._blueprints_by_name[blueprint.name].path.relative_to(self.root).as_posix()
+                    raise ValidationError(f"{path} (target {target}): {exc}") from exc
             self._validate_guide_reference_targets(rendered)
             if target == "preview":
                 stable_target = self.preview_stable_target()
@@ -295,14 +315,24 @@ class Project:
                     queue.append(candidate)
         return reached
 
-    def changed_blueprints(self, *, base: str | None, head: str | None) -> list[str]:
+    def changed_blueprints(
+        self, *, base: str | None, head: str | None, warn: Callable[[str], None] | None = None,
+    ) -> list[str]:
         all_names = self.all_blueprint_names()
         if not base or re.fullmatch(r"0+", base):
             return all_names
 
+        revisions = f"{base}...{head or 'HEAD'}"
         try:
-            diff = run_command(["git", "-C", str(self.root), "diff", "--name-only", f"{base}...{head or 'HEAD'}"])
-        except CommandError:
+            diff = run_command(["git", "-C", str(self.root), "diff", "--name-only", revisions])
+        except CommandError as exc:
+            # Selecting everything is the safe fallback, but say why so a mistyped --base is noticed.
+            if warn:
+                reason = str(exc).split(" failed: ", 1)[-1].strip().removeprefix("fatal: ").splitlines()[0]
+                warn(
+                    f"could not compare {revisions} ({reason}); selecting every package. Check that both "
+                    "revisions exist locally; in GitHub Actions, check out with fetch-depth: 0."
+                )
             return all_names
 
         repo_files = [line.strip() for line in diff.splitlines() if line.strip()]
@@ -388,7 +418,10 @@ class Project:
             raw = load_yaml(path)
             if not isinstance(raw, dict):
                 raise ValidationError(f"{path} must be an object")
-            self.schema.validate(raw, "blueprint.schema.json")
+            try:
+                self.schema.validate(raw, "blueprint.schema.json")
+            except ValidationError as exc:
+                raise ValidationError(f"{path.relative_to(self.root).as_posix()}: {exc}") from exc
             name = str(raw["name"])
             if name in blueprint_paths:
                 raise ValidationError(
@@ -898,29 +931,52 @@ class Project:
             )
         return stringify_map(rendered)
 
-    def _validate_uniqueness(self, target: str, rendered_blueprints: list[RenderedBlueprint]) -> None:
-        checks: dict[str, list[object]] = {
+    def _validate_uniqueness(
+        self, target: str, rendered_blueprints: list[RenderedBlueprint], *, placeholder_branch: str | None = None,
+    ) -> None:
+        checks: dict[str, list[tuple[object, str]]] = {
             "Flight name": [
-                flight.get("id", flight["name"]) for bp in rendered_blueprints for flight in bp.flights.values()
+                (flight.get("id", flight["name"]), f"{bp.name}.flights.{key}")
+                for bp in rendered_blueprints for key, flight in bp.flights.items()
                 if flight.get("deploy") is not False
             ],
             "Dive title": [
-                dive.get("id", dive["title"]) for bp in rendered_blueprints for dive in bp.dives.values()
+                (dive.get("id", dive["title"]), f"{bp.name}.dives.{key}")
+                for bp in rendered_blueprints for key, dive in bp.dives.items()
                 if dive.get("deploy") is not False
             ],
-            "Share name": [share["name"] for bp in rendered_blueprints for share in bp.shares.values()],
-            "Role name": [role["name"] for bp in rendered_blueprints for role in bp.roles.values()],
+            "Share name": [
+                (share["name"], f"{bp.name}.shares.{key}") for bp in rendered_blueprints for key, share in bp.shares.items()
+            ],
+            "Role name": [
+                (role["name"], f"{bp.name}.roles.{key}") for bp in rendered_blueprints for key, role in bp.roles.items()
+            ],
             "Guide topic/title": [
-                guide.get("id", f"{guide.get('topic', '')}\0{guide['title']}")
+                (guide.get("id", f"{guide.get('topic', '')}\0{guide['title']}"), f"{bp.name}.guides.{key}")
                 for bp in rendered_blueprints
-                for guide in bp.guides.values()
+                for key, guide in bp.guides.items()
                 if guide.get("deploy")
             ],
         }
+        problems: list[str] = []
         for label, values in checks.items():
-            duplicates = sorted(value for value, count in Counter(map(str, values)).items() if count > 1)
-            if duplicates:
-                raise ValidationError(f"{label} duplicates in {target}: {', '.join(duplicates)}")
+            owners: dict[str, list[str]] = {}
+            for value, owner in values:
+                owners.setdefault(str(value), []).append(owner)
+            problems.extend(
+                f"- {label} {value.replace(chr(0), ' / ')!r} is used by {' and '.join(users)}"
+                for value, users in sorted(owners.items()) if len(users) > 1
+            )
+        if problems:
+            note = (
+                f"\nPreview names are rendered with the placeholder branch {placeholder_branch}; "
+                "use ${target.branch} or ${target.branch_slug} to keep them branch-specific."
+                if placeholder_branch else ""
+            )
+            raise ValidationError(
+                f"Duplicate names in target {target}:\n" + "\n".join(problems)
+                + "\nNext: give each resource its own name, for example by including the package name." + note
+            )
 
     def _validate_role_graph(self, rendered_blueprints: list[RenderedBlueprint]) -> None:
         managed_names = {
@@ -1027,8 +1083,11 @@ class Project:
             require_file(Path(str(flight["requirementsPath"])))
             validate_python(Path(str(flight["sourcePath"])))
             schedule = str(flight.get("scheduleCron", ""))
-            if schedule and len(schedule.split()) != 5:
-                raise ValidationError(f"flights.{key}.scheduleCron must be a 5-field UTC cron expression")
+            if schedule and (problem := cron_problem(schedule)):
+                raise ValidationError(
+                    f"flights.{key}.scheduleCron {schedule!r} is not a valid 5-field UTC cron expression: {problem}."
+                    + breaking_change("schedule-cron-fields")
+                )
             if (
                 target == "preview"
                 and isinstance(target_policies, dict)
@@ -1305,6 +1364,28 @@ class Project:
                             f"{producer_name}.{resource_key}; set deploy: true or configure its id"
                         )
 
+CRON_FIELDS = (("minute", 0, 59), ("hour", 0, 23), ("day of month", 1, 31), ("month", 1, 12), ("day of week", 0, 7))
+
+
+def cron_problem(expression: str) -> str | None:
+    """Why MotherDuck would refuse this schedule, or None. It takes digits and * , / - but no names like MON."""
+    fields = expression.split()
+    if len(fields) != len(CRON_FIELDS):
+        return f"expected 5 fields (minute hour day-of-month month day-of-week), got {len(fields)}"
+    for field_text, (label, low, high) in zip(fields, CRON_FIELDS):
+        for part in field_text.split(","):
+            base, _, step = part.partition("/")
+            bounds = [] if base == "*" else base.split("-")
+            if (
+                not part or len(bounds) > 2 or (step and not step.isdigit())
+                or not all(bound.isdigit() for bound in bounds)
+            ):
+                return f"{label} field {field_text!r} may use only digits and * , / -"
+            if any(not low <= int(bound) <= high for bound in bounds):
+                return f"{label} field {field_text!r} must stay within {low}-{high}"
+    return None
+
+
 def nested_dict(node: object, *path: str) -> object | None:
     current = node
     for segment in path:
@@ -1317,17 +1398,11 @@ def nested_dict(node: object, *path: str) -> object | None:
 
 def config_value(value: object) -> str:
     """Flight config values are strings; render YAML booleans, nulls, and nested values as JSON, not Python reprs."""
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return ""
-    if isinstance(value, (bool, dict, list)):
-        return json.dumps(value)
-    return str(value)
+    return as_text(value)
 
 
 def stringify_map(values: dict[str, object]) -> dict[str, str]:
-    return {str(key): str(value) for key, value in values.items()}
+    return {str(key): as_text(value) for key, value in values.items()}
 
 
 def includes_branch_scope(value: str, branch: str | None) -> bool:

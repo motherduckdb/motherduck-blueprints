@@ -9,6 +9,12 @@ from md_blueprints.schema import ValidationError
 from md_blueprints.upgrade import add_token_secrets, run_upgrade, update_action_pins
 
 
+@pytest.fixture(autouse=True)
+def latest_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit versions are checked against the latest release; keep these tests off the network."""
+    monkeypatch.setenv("MD_BLUEPRINTS_LATEST_VERSION", "1.2.4")
+
+
 def test_upgrade_preserves_reusable_workflow_paths_and_unrelated_actions() -> None:
     text = (
         "jobs:\n  deploy:\n"
@@ -207,3 +213,17 @@ def test_upgrade_updates_the_makefile_without_blueprints_workflows(tmp_path: Pat
     run_upgrade(tmp_path, to_version="1.2.3", write=True)
 
     assert "CLI_VERSION := 1.2.3" in (tmp_path / "Makefile").read_text()
+
+
+def test_upgrade_refuses_an_unreleased_version_before_any_write(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_init(tmp_path)
+    original = (tmp_path / "Makefile").read_bytes()
+    with pytest.raises(ValidationError, match="md-blueprints 9.9.9 is not released; the latest release is 1.2.4"):
+        run_upgrade(tmp_path, to_version="9.9.9", write=True)
+    assert (tmp_path / "Makefile").read_bytes() == original
+
+    run_upgrade(tmp_path, to_version="1.2.4", write=True)
+    run_upgrade(tmp_path, to_version="1.2.3", write=True)
+    assert "warning: 1.2.3 is older than the current CLI_VERSION 1.2.4" in capsys.readouterr().out

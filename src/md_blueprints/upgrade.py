@@ -101,6 +101,20 @@ def update_action_pins(text: str, version: str) -> tuple[str, int]:
     return text, len(edits)
 
 
+def _require_released(version: str, *, offline: bool) -> None:
+    """Refuse a pin newer than the latest release: every make target would then fail to install the CLI."""
+    try:
+        latest = fetch_latest_version(offline=offline)
+    except ValidationError as exc:
+        print(f"warning: could not confirm that {version} is released ({exc})\n")
+        return
+    if latest is not None and Version(version) > Version(latest):
+        raise ValidationError(
+            f"md-blueprints {version} is not released; the latest release is {latest}. No pins were changed. "
+            "Releases: https://github.com/motherduckdb/motherduck-blueprints/releases"
+        )
+
+
 def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, offline: bool = False) -> None:
     root = root.expanduser().resolve()
     if to_version == "latest":
@@ -115,7 +129,11 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
     else:
         version = to_version.removeprefix("v")
     if not version or not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        raise ValidationError("Choose a stable release with --to X.Y.Z, or use --to latest.")
+        raise ValidationError(
+            "Choose a stable release with --to X.Y.Z (make upgrade VERSION=X.Y.Z), or use --to latest."
+        )
+    if to_version != "latest":
+        _require_released(version, offline=offline)
     makefile = require_within(root / "Makefile", root, "Makefile")
     if not makefile.is_file():
         raise ValidationError("No Makefile found. Run upgrade from your generated customer repository.")
@@ -130,6 +148,8 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
     if to_version == "latest" and ahead:
         print(f"CLI_VERSION {current} is ahead of the latest release {version}; no pins were changed.")
         return
+    if ahead:
+        print(f"warning: {version} is older than the current CLI_VERSION {current}; this downgrades the pins.\n")
     updates = [(makefile, original, CLI_PIN.sub(lambda match: match[1] + version, original))]
     action_count = 0
     secret_count = 0
