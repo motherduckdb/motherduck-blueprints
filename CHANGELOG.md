@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.9.2 - 2026-11-02
+
+Patch release that also rejects one invalid `scheduleCron` form. Existing repositories pin exact versions and require `make upgrade VERSION=0.9.2`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v092) and the [v0.9.2 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.2).
+
 - Validation rejects a `scheduleCron` step of `0`, such as `*/0 * * * *`. Previously, the manifest passed validation and the Flight failed at deploy time. Refer to [schedule-cron-zero-step](docs/breaking-changes.md#schedule-cron-zero-step).
 - An unknown field in a manifest and an unknown `${...}` template reference name the closest valid name, for example `Did you mean 'scheduleCron'?`. Errors raised while rendering a manifest name the file relative to the repository root instead of an absolute path.
 - `plan`, `deploy`, `verify`, and `cleanup` read each Flight, Dive, and Guide list once per plan instead of once per resource, which reduces the number of MotherDuck queries for organizations with many resources.
