@@ -183,6 +183,9 @@ def run_upgrade(root: Path, *, to_version: str = "latest", write: bool = False, 
         for path, _, after in changed:
             path.write_text(after, encoding="utf-8")
         print("\nUpdated tooling pins. Run make validate, review git diff, and open a pull request.")
+        if (root / ".dive-preview").is_dir():
+            # The next make command installs the new CLI, which carries the matching preview runtime.
+            print("Then run make sync-preview so the local Dive preview matches the new release.")
     else:
         print("\nDry run. Add --write to update the pins together.")
     print(f"Release notes: https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v{version}")

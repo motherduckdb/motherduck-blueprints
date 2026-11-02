@@ -117,6 +117,7 @@ def test_upgrade_previews_then_updates_only_tooling_pins(tmp_path: Path, capsys:
     assert {path: path.read_bytes() for path in before} == before
     assert "+CLI_VERSION := 1.2.3" in capsys.readouterr().out
     run_upgrade(tmp_path, to_version="1.2.3", write=True)
+    assert "make sync-preview" in capsys.readouterr().out
     assert workflow.read_text() == (
         "steps:\n  - uses: 'motherduckdb/motherduck-blueprints@v1.2.3' # pinned\n"
         "    with:\n      blueprints: revenue\n  - uses: actions/checkout@v7\n"

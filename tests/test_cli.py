@@ -213,3 +213,9 @@ def test_validate_warns_about_required_databases_problems(tmp_path: Path, capsys
     source.write_text(original.replace('[{ alias: "simple"', '[{ alias: ALIAS'))
     assert cli.main(["validate", "--root", str(tmp_path)]) == 0
     assert "REQUIRED_DATABASES must be a static array, so plan and deploy stop" in capsys.readouterr().err
+
+
+def test_dive_source_names_the_packages_that_have_a_dive(capsys: pytest.CaptureFixture[str]) -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert cli.main(["dive-source", "--root", str(root), "--blueprints", "wikipedia-pageviews-ingest"]) == 1
+    assert "Packages with a Dive: wikipedia-pageviews" in capsys.readouterr().err

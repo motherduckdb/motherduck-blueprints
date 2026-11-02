@@ -10,6 +10,8 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -66,6 +68,21 @@ def list_org_users(token: str) -> dict[str, bool]:
             raise ValueError("GET /v1/users repeated a page token")
         seen_tokens.add(str(next_token))
         query["page_token"] = str(next_token)
+
+
+def env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    """An integer setting from the environment, with an error that names the variable."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = None
+    if value is None or (minimum is not None and value < minimum):
+        floor = f" of at least {minimum}" if minimum is not None else ""
+        raise ValidationError(f"{name} must be a whole number{floor}; got {raw!r}")
+    return value
 
 
 def sql_string(value: object) -> str:
@@ -380,6 +397,9 @@ class Deployer:
         self._warned_tokens: set[str] = set()
         self.rendered_by_name: dict[str, RenderedBlueprint] = {}
         self.target: str | None = None
+        # MD_LIST_* pages read while a plan is built. Plans never write, so one scan per list serves every
+        # resource; None outside plan building, so lookups after a write always read live state.
+        self._catalog: dict[str, list[tuple[object, ...]]] | None = None
 
     def plan(self, *, target: str, branch: str | None, names: list[str] | None) -> list[PlanRecord]:
         rendered = self._validate_and_render(target, branch, names)
@@ -624,8 +644,12 @@ class Deployer:
         errors = [record for record in records if record.action == "error"]
         if not errors:
             return
-        details = "; ".join(f"{record.blueprint}.{record.type}.{record.key}: {record.notes}" for record in errors)
-        raise ValidationError(f"Plan contains errors: {details}")
+        # One line per resource, so several problems stay readable in logs and the job summary.
+        details = "\n".join(f"- {record.blueprint}.{record.type}.{record.key}: {record.notes}" for record in errors)
+        raise ValidationError(
+            f"Plan contains errors: {PlanFormatter._count(len(errors), 'resource')} cannot be applied, so nothing "
+            f"was changed.\n{details}"
+        )
 
     def _validate_and_render(
         self,
@@ -687,7 +711,23 @@ class Deployer:
         if connection is not None:
             connection.close()
 
+    @contextmanager
+    def _catalog_snapshot(self) -> Iterator[None]:
+        """Reuse MD_LIST_* results within a read-only plan instead of rescanning them for every resource."""
+        if self._catalog is not None:
+            yield
+            return
+        self._catalog = {}
+        try:
+            yield
+        finally:
+            self._catalog = None
+
     def _build_deploy_plan(self, rendered: list[RenderedBlueprint]) -> list[PlanRecord]:
+        with self._catalog_snapshot():
+            return self._deploy_plan_records(rendered)
+
+    def _deploy_plan_records(self, rendered: list[RenderedBlueprint]) -> list[PlanRecord]:
         self.rendered_by_name.update({blueprint.name: blueprint for blueprint in rendered})
         records: list[PlanRecord] = []
         selected_names = {blueprint.name for blueprint in rendered}
@@ -967,6 +1007,22 @@ class Deployer:
         production: dict[str, RenderedBlueprint] | None = None,
         stable_target: str = "prod",
         stable_renders: dict[str, dict[str, RenderedBlueprint]] | None = None,
+    ) -> list[PlanRecord]:
+        with self._catalog_snapshot():
+            return self._cleanup_plan_records(
+                rendered, rendered_branch_slug, branch=branch, production=production,
+                stable_target=stable_target, stable_renders=stable_renders,
+            )
+
+    def _cleanup_plan_records(
+        self,
+        rendered: list[RenderedBlueprint],
+        rendered_branch_slug: str,
+        *,
+        branch: str | None,
+        production: dict[str, RenderedBlueprint] | None,
+        stable_target: str,
+        stable_renders: dict[str, dict[str, RenderedBlueprint]] | None,
     ) -> list[PlanRecord]:
         if stable_renders is None:
             stable_renders = {stable_target: production} if production else {}
@@ -1628,9 +1684,8 @@ class Deployer:
 
     @staticmethod
     def _flight_run_poll_attempts(sleep_seconds: int, max_runtime_sec: int | None) -> int:
-        override = os.environ.get("FLIGHT_RUN_POLL_ATTEMPTS")
-        if override is not None:
-            return max(1, int(override))
+        if os.environ.get("FLIGHT_RUN_POLL_ATTEMPTS") is not None:
+            return max(1, env_int("FLIGHT_RUN_POLL_ATTEMPTS", 1))
         attempts = FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS
         if max_runtime_sec and max_runtime_sec > 0:
             # Allow the Flight's own runtime cap plus time to queue and start.
@@ -1646,7 +1701,7 @@ class Deployer:
         max_runtime_sec: int | None = None,
         name: str | None = None,
     ) -> None:
-        sleep_seconds = int(os.environ.get("FLIGHT_RUN_POLL_SLEEP_SECONDS", "10"))
+        sleep_seconds = env_int("FLIGHT_RUN_POLL_SLEEP_SECONDS", 10, minimum=0)
         attempts = self._flight_run_poll_attempts(sleep_seconds, max_runtime_sec)
 
         for index in range(attempts):
@@ -1684,8 +1739,8 @@ class Deployer:
         )
 
     def _wait_for_share(self, share_name: str) -> str:
-        attempts = max(1, int(os.environ.get("SHARE_RESOLVE_ATTEMPTS", "18")))
-        sleep_seconds = int(os.environ.get("SHARE_RESOLVE_SLEEP_SECONDS", "10"))
+        attempts = max(1, env_int("SHARE_RESOLVE_ATTEMPTS", 18))
+        sleep_seconds = env_int("SHARE_RESOLVE_SLEEP_SECONDS", 10, minimum=0)
 
         for index in range(attempts):
             url = self._sql(f"SELECT url FROM MD_LIST_DATABASE_SHARES() WHERE name = {sql_string(share_name)}").strip()
@@ -1695,7 +1750,13 @@ class Deployer:
                 print(f"  Waiting for share '{share_name}' ({index + 1}/{attempts})...", file=sys.stderr)
                 time.sleep(sleep_seconds)
 
-        raise CommandError(f"Timed out waiting for share '{share_name}'")
+        waited = (attempts - 1) * sleep_seconds
+        raise CommandError(
+            f"Timed out after about {waited}s waiting for share '{share_name}'. Resources deployed before "
+            "this point stay applied. Next: check that the Flight that creates the share ran and succeeded "
+            "(set waitForRun: success on it so the deploy waits for the run), then rerun the deployment. "
+            "To wait longer, raise SHARE_RESOLVE_ATTEMPTS or SHARE_RESOLVE_SLEEP_SECONDS."
+        )
 
     def _deploy_dive(
         self,
@@ -2382,6 +2443,15 @@ class Deployer:
         first page and shifts the rest. A repeated ID means a resource may have been skipped, so
         the scan starts over.
         """
+        cache_key = f"{function}({columns}{extra_args})"
+        if self._catalog is not None and cache_key in self._catalog:
+            return self._catalog[cache_key]
+        rows = self._scan_all(function, columns, extra_args)
+        if self._catalog is not None:
+            self._catalog[cache_key] = rows
+        return rows
+
+    def _scan_all(self, function: str, columns: str, extra_args: str) -> list[tuple[object, ...]]:
         for _ in range(LIST_SCAN_ATTEMPTS):
             rows: list[tuple[object, ...]] = []
             seen: set[str] = set()

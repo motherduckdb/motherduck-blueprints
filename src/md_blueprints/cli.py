@@ -449,7 +449,11 @@ def _dive_source(options: argparse.Namespace) -> None:
     elif len(dives) == 1:
         selected_dive = next(iter(dives.values()))
     elif not dives:
-        raise ValidationError(f"Blueprint {names[0]!r} does not declare a Dive")
+        with_dives = [blueprint.name for blueprint in project.render_all("prod") if blueprint.dives]
+        raise ValidationError(
+            f"Blueprint {names[0]!r} does not declare a Dive. "
+            f"Packages with a Dive: {', '.join(with_dives) or 'none'}"
+        )
     else:
         raise ValidationError(
             f"Blueprint {names[0]!r} declares multiple Dives; select one with --dive RESOURCE_KEY "

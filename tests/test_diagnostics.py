@@ -32,3 +32,12 @@ def test_errors_have_safe_actionable_summaries(
 def test_unrelated_errors_get_no_generic_hint(capsys: pytest.CaptureFixture[str], message: str) -> None:
     report_error(ValueError(message))
     assert capsys.readouterr().err.count("Next:") == message.count("Next:")
+
+
+def test_short_settings_are_not_redacted(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("TOKENIZERS_PARALLELISM", "false")
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "private-test-token")
+    report_error(ValueError("runOnDeploy must be boolean; got false with private-test-token"))
+    stderr = capsys.readouterr().err
+    assert "got false" in stderr
+    assert "private-test-token" not in stderr

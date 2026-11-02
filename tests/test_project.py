@@ -438,7 +438,8 @@ def test_target_overrides_are_validated_against_the_resource_schema(
         Project(tmp_path).validate(targets=["prod"])
 
     message = str(exc.value)
-    assert str(path) in message
+    assert path.relative_to(tmp_path).as_posix() in message
+    assert str(tmp_path) not in message
     assert "resources.flights.loader" in message
     assert "target 'prod'" in message
 
@@ -543,7 +544,8 @@ def test_template_errors_name_the_blueprint_file_and_resource(tmp_path: Path) ->
         Project(tmp_path).validate(targets=["prod"])
 
     message = str(exc.value)
-    assert str(path) in message
+    assert path.relative_to(tmp_path).as_posix() in message
+    assert str(tmp_path) not in message
     assert "resources.flights.loader" in message
     assert "Unknown template reference ${var.missing}" in message
 
@@ -693,8 +695,21 @@ def test_target_mode_must_be_preview_or_production(tmp_path: Path) -> None:
 @pytest.mark.parametrize(("schedule", "accepted"), [
     ("17 6 * * *", True), ("*/15 * * * *", True), ("0 9-17/2 * * 1-5", True), ("0 0 1,15 * 7", True),
     ("0 6 * *", False), ("99 99 * * *", False), ("0 6 * * MON", False), ("0 6 * * 1-2-3", False),
+    ("*/0 * * * *", False), ("0 9-17/0 * * *", False),
 ])
 def test_schedule_cron_is_checked_field_by_field(schedule: str, accepted: bool) -> None:
     from md_blueprints.project import cron_problem
 
     assert (cron_problem(schedule) is None) is accepted
+
+
+def test_unknown_fields_suggest_the_closest_name(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          scheduelCron: 0 6 * * *")
+    with pytest.raises(ValidationError, match=r"Unknown field 'scheduelCron' .*Did you mean 'scheduleCron'\?"):
+        Project(tmp_path).validate(targets=["prod"])
+
+
+def test_unknown_template_references_suggest_the_closest_name(tmp_path: Path) -> None:
+    write_override_project(tmp_path, "          maxRuntimeSec: ${var.runtme}")
+    with pytest.raises(ValidationError, match=r"\$\{var.runtme\}. Did you mean \$\{var.runtime\}\?"):
+        Project(tmp_path).validate(targets=["prod"])

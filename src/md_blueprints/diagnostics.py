@@ -12,6 +12,7 @@ from .schema import ValidationError
 
 PACKAGE_ROOTS = ("flights", "dives", "guides", "roles", "projects", "blueprints")
 SKIP_DIRS = {"node_modules", "__pycache__", "dist", "build"}
+REDACT_MIN_LENGTH = 8
 ENVIRONMENT_ERROR = re.compile(r"targets\.[\w-]+\.environment\b|github environment|environment must match|declare environment")
 
 
@@ -142,7 +143,11 @@ def validation_warnings(project: Project) -> list[str]:
 def report_error(error: Exception) -> None:
     message = str(error)
     for key, value in os.environ.items():
-        if value and any(part in key.upper() for part in ("TOKEN", "PASSWORD", "SECRET", "API_KEY")):
+        # Short values such as TOKENIZERS_PARALLELISM=false are settings, not secrets; replacing them
+        # would garble every "false" or "1" in the message.
+        if len(value) >= REDACT_MIN_LENGTH and any(
+            part in key.upper() for part in ("TOKEN", "PASSWORD", "SECRET", "API_KEY")
+        ):
             message = message.replace(value, "[redacted]")
     lower = message.lower()
     # Add a hint only when the error carries none and clearly matches its cause. A bare word such as
