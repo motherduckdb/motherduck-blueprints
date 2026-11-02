@@ -344,3 +344,11 @@ def test_scaffolded_guide_validates_once_deploy_is_enabled(tmp_path: Path) -> No
     manifest.write_text(manifest.read_text().replace("deploy: false", "deploy: true"))
 
     Project(tmp_path).validate(targets=["preview", "prod"], branch="feature/docs")
+
+
+@pytest.mark.parametrize("name", ["events-", "events--ingest", "-events", "Events"])
+def test_new_rejects_names_that_render_broken_titles(tmp_path: Path, name: str) -> None:
+    write_root(tmp_path)
+    with pytest.raises(ValidationError, match="single hyphens between words"):
+        run_new(tmp_path, "flight", name)
+    assert not (tmp_path / "flights").exists()

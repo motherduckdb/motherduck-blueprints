@@ -10,6 +10,19 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## Unreleased
+
+These changes ship in the next release. Run `make validate` after the upgrade.
+
+### schedule-cron-zero-step
+
+- **Changed in:** Unreleased
+- **What changed:** a `scheduleCron` step of `0`, such as `*/0 * * * *`, is rejected at validation. Before, it passed validation and the Flight create or update failed at deploy time, after earlier resources in the deployment were applied.
+- **Symptom:** `make validate` fails with `flights.<key>.scheduleCron '<value>' is not a valid 5-field UTC cron expression: <field> field '<value>' must use a step of 1 or more`.
+- **Find:** search `blueprint.yml` files for `/0` in `scheduleCron`.
+- **Fix:** use a step of 1 or more, for example `*/15 * * * *`, or remove the step.
+- **Implemented in:** `md_blueprints.project.cron_problem`.
+
 ## v0.9.1
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.9.1`. Run `make validate` after the upgrade. Every change below either rejects a manifest that previously deployed something other than what it declared, or changes a value that was rendered incorrectly.

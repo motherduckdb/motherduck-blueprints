@@ -168,7 +168,7 @@ make doctor
 
 Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `plan`, `deploy`, `verify`, and `render` use `prod` unless `--target` is given; `--branch` alone selects `preview`, and `--branch` with any other target is an error, so a branch name never reaches a stable target. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
 
-Commands that take a name accept it as the second word or as `NAME=`, for example `make new-flight NAME=events-ingest`. Names are lowercase slugs without spaces. `make new-blueprint NAME` is deprecated: it still works as an alias for `make new-project NAME` and prints a notice. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
+Commands that take a name accept it as the second word or as `NAME=`, for example `make new-flight NAME=events-ingest`. Names are lowercase slugs that use `a-z`, `0-9`, and single hyphens between words, for example `events-ingest`. `make new-blueprint NAME` is deprecated: it still works as an alias for `make new-project NAME` and prints a notice. For a Dive backed by another repository, use `make new-dive NAME URL=md:_share/...`. If a package declares several Dives, pass `DIVE=<resource-key>` to preview commands.
 
 `make guides` prints a read-only context brief for an agent to author Markdown Guides. Pass `DBT="/path/to/project"` to add dbt YAML documentation and relationship hints. `make init-guides` and `make update-guides` select the corresponding agent task, with the same discovery and no file writes. See [Guides as code](guides-as-code.md).
 
@@ -194,7 +194,7 @@ Declare custom roles under `resources.roles` or scaffold a role package with `ma
 
 ## CI/CD
 
-Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with the selected packages, any packages the dependency graph added, and preview links. The verified resource table is folded in the comment, and the full plan is in the workflow run summary. Without staging, pushes to `main` expand changes downstream and deploy production. With staging, pushes to `main` deploy staging and a published non-prerelease GitHub Release verifies and deploys the exact tagged commit to production. Closing a PR or deleting a branch triggers dependency-safe preview cleanup through the preview target's GitHub Environment.
+Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with the selected packages, any packages the dependency graph added, and preview links. The verified resource table is folded in the comment, and the full plan is in the workflow run summary, also when the plan fails. Without staging, pushes to `main` expand changes downstream and deploy production. With staging, pushes to `main` deploy staging and a published non-prerelease GitHub Release verifies and deploys the exact tagged commit to production. Closing a PR or deleting a branch triggers dependency-safe preview cleanup through the preview target's GitHub Environment.
 
 ## Included examples
 

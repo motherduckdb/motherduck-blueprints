@@ -11,6 +11,8 @@ from .schema import ValidationError
 
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# New packages also avoid a trailing or doubled hyphen, which renders titles such as "Events " or "Events  Ingest".
+NEW_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 KINDS = {"flight": "flights", "dive": "dives", "guide": "guides", "role": "roles", "project": "projects"}
 
 
@@ -78,8 +80,11 @@ def run_new(
     root = root.expanduser().resolve()
     if kind not in KINDS:
         raise ValidationError(f"Unknown blueprint kind {kind!r}; choose flight, dive, guide, role, or project")
-    if not SLUG.fullmatch(name):
-        raise ValidationError("Blueprint name must be a lowercase slug using a-z, 0-9, and hyphens")
+    if not NEW_SLUG.fullmatch(name):
+        raise ValidationError(
+            f"Blueprint name {name!r} must be a lowercase slug using a-z, 0-9, and single hyphens between "
+            "words, for example events-ingest"
+        )
     if not (root / "motherduck.yml").is_file():
         raise ValidationError(f"motherduck.yml not found in {root}")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import re
 
@@ -50,9 +51,15 @@ class Template:
     @staticmethod
     def lookup(path: str, context: dict[str, object]) -> object:
         node: object = context
-        for segment in path.split("."):
+        segments = path.split(".")
+        for index, segment in enumerate(segments):
             if isinstance(node, dict) and segment in node:
                 node = node[segment]
-            else:
-                raise ValidationError(f"Unknown template reference ${{{path}}}")
+                continue
+            hint = ""
+            if isinstance(node, dict):
+                close = difflib.get_close_matches(segment, [str(key) for key in node], n=1)
+                if close:
+                    hint = f". Did you mean ${{{'.'.join([*segments[:index], close[0], *segments[index + 1:]])}}}?"
+            raise ValidationError(f"Unknown template reference ${{{path}}}{hint}")
         return node

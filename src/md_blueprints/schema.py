@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import math
 import re
@@ -321,6 +322,9 @@ class SchemaValidator:
             if key in properties:
                 self._validate_node(value, properties[key], key_path, root_schema)
             elif additional is False:
+                close = difflib.get_close_matches(str(key), [str(name) for name in properties], n=1)
+                if close:
+                    raise ValidationError(f"Unknown field {key!r} at {path}. Did you mean {close[0]!r}?")
                 raise ValidationError(
                     f"Unknown field {key!r} at {path}. Either it is a typo, or it requires a newer "
                     f"md-blueprints than {__version__} - check the field reference for the version "

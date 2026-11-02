@@ -379,6 +379,13 @@ class Project:
                 return "" if prefix == "." else f"{prefix}/"
         return ""
 
+    def _relative(self, path: Path) -> str:
+        """A repository-relative path for messages, so errors read the same locally and in CI."""
+        try:
+            return path.relative_to(self.root).as_posix()
+        except ValueError:
+            return str(path)
+
     def target_config(self, target: str) -> dict[str, object]:
         targets = self.manifest.get("targets")
         target_config = targets.get(target) if isinstance(targets, dict) else None
@@ -425,7 +432,7 @@ class Project:
             name = str(raw["name"])
             if name in blueprint_paths:
                 raise ValidationError(
-                    f"Duplicate blueprint name {name!r}: {blueprint_paths[name]} and {path}"
+                    f"Duplicate blueprint name {name!r}: {self._relative(blueprint_paths[name])} and {self._relative(path)}"
                 )
             blueprint_paths[name] = path
             self._validate_canonical_path(path, name, raw)
@@ -659,7 +666,7 @@ class Project:
             "inputs": rendered_inputs,
         }
 
-        self._check_override_targets(blueprint.raw.get("targets"), f"{blueprint.path}: targets")
+        self._check_override_targets(blueprint.raw.get("targets"), f"{self._relative(blueprint.path)}: targets")
         raw_variables: dict[str, object] = {}
         raw_variables.update(self._extract_variable_values(self.manifest.get("variables", {})))
         raw_variables.update(self._extract_variable_values(target_settings.get("variables", {})))
@@ -673,12 +680,12 @@ class Project:
             context["var"] = self._render_variables(raw_variables, context)
         except ValidationError as exc:
             raise ValidationError(
-                f"{blueprint.path}: variables for target {target!r}: {exc}"
+                f"{self._relative(blueprint.path)}: variables for target {target!r}: {exc}"
             ) from exc
 
         resources_node = blueprint.raw["resources"]
         if not isinstance(resources_node, dict):
-            raise ValidationError(f"{blueprint.path}.resources must be an object")
+            raise ValidationError(f"{self._relative(blueprint.path)}: resources must be an object")
 
         roles = self._render_resources(
             resources_node.get("roles", {}), target, context, blueprint=blueprint, group="roles"
@@ -803,7 +810,7 @@ class Project:
             rendered_title = str(Template.render(blueprint.title, context))
             rendered_description = str(Template.render(blueprint.raw.get("description", ""), context))
         except ValidationError as exc:
-            raise ValidationError(f"{blueprint.path}: title/description for target {target!r}: {exc}") from exc
+            raise ValidationError(f"{self._relative(blueprint.path)}: title/description for target {target!r}: {exc}") from exc
 
         return RenderedBlueprint(
             name=blueprint.name,
@@ -830,7 +837,7 @@ class Project:
     ) -> dict[str, dict[str, object]]:
         if not resources:
             return {}
-        location = f"{blueprint.path}: " if blueprint is not None else ""
+        location = f"{self._relative(blueprint.path)}: " if blueprint is not None else ""
         if not isinstance(resources, dict):
             raise ValidationError(f"{location}resources.{group or '<group>'} entries must be objects")
 
@@ -1084,9 +1091,10 @@ class Project:
             validate_python(Path(str(flight["sourcePath"])))
             schedule = str(flight.get("scheduleCron", ""))
             if schedule and (problem := cron_problem(schedule)):
+                entry = "schedule-cron-zero-step" if problem.endswith(ZERO_STEP_PROBLEM) else "schedule-cron-fields"
                 raise ValidationError(
                     f"flights.{key}.scheduleCron {schedule!r} is not a valid 5-field UTC cron expression: {problem}."
-                    + breaking_change("schedule-cron-fields")
+                    + breaking_change(entry)
                 )
             if (
                 target == "preview"
@@ -1364,6 +1372,7 @@ class Project:
                             f"{producer_name}.{resource_key}; set deploy: true or configure its id"
                         )
 
+ZERO_STEP_PROBLEM = "must use a step of 1 or more"
 CRON_FIELDS = (("minute", 0, 59), ("hour", 0, 23), ("day of month", 1, 31), ("month", 1, 12), ("day of week", 0, 7))
 
 
@@ -1383,6 +1392,8 @@ def cron_problem(expression: str) -> str | None:
                 return f"{label} field {field_text!r} may use only digits and * , / -"
             if any(not low <= int(bound) <= high for bound in bounds):
                 return f"{label} field {field_text!r} must stay within {low}-{high}"
+            if step and int(step) == 0:
+                return f"{label} field {field_text!r} {ZERO_STEP_PROBLEM}"
     return None
 
 

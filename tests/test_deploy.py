@@ -1186,3 +1186,51 @@ def test_other_sql_errors_are_not_reported_as_a_rejected_token(monkeypatch: pyte
     monkeypatch.setattr(deploy_module, "cli_query_rows", fail)
     with pytest.raises(CommandError, match="missing or expired"):
         deployer._query_rows("SELECT 1")
+
+
+def test_plan_scans_each_catalog_list_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    statements: list[str] = []
+
+    def rows(statement: str) -> list[tuple[object, ...]]:
+        statements.append(statement)
+        return [("f1", "loader")] if '"offset" := 0::' in statement else []
+
+    monkeypatch.setattr(deployer, "_query_rows", rows)
+    with deployer._catalog_snapshot():
+        assert deployer._list_flight_ids("loader") == ["f1"]
+        assert deployer._list_flight_ids("other") == []
+    assert len([statement for statement in statements if "MD_LIST_FLIGHTS" in statement]) == 2
+    # Outside a plan every lookup reads live state again, for example after a create.
+    assert deployer._list_flight_ids("loader") == ["f1"]
+    assert len([statement for statement in statements if "MD_LIST_FLIGHTS" in statement]) == 4
+
+
+def test_plan_errors_list_one_resource_per_line() -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    records = [
+        PlanRecord("ops", "share", "data", "data", "error", None, None, "grant role(s) do not exist: a"),
+        PlanRecord("ops", "dive", "dash", "Dash", "error", True, "x,y", "duplicate Dive title"),
+    ]
+    with pytest.raises(ValidationError) as exc:
+        deployer.ensure_plan_succeeds(records)
+    message = str(exc.value)
+    assert message.startswith("Plan contains errors: 2 resources cannot be applied, so nothing was changed.")
+    assert "\n- ops.share.data: grant role(s) do not exist: a\n- ops.dive.dash: duplicate Dive title" in message
+
+
+@pytest.mark.parametrize("value", ["ten", "-1"])
+def test_wait_settings_name_an_invalid_variable(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setenv("SHARE_RESOLVE_SLEEP_SECONDS", value)
+    with pytest.raises(ValidationError, match="SHARE_RESOLVE_SLEEP_SECONDS must be a whole number of at least 0"):
+        deployer._wait_for_share("data")
+
+
+def test_share_timeout_says_what_to_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    monkeypatch.setenv("SHARE_RESOLVE_ATTEMPTS", "2")
+    monkeypatch.setenv("SHARE_RESOLVE_SLEEP_SECONDS", "0")
+    monkeypatch.setattr(deployer, "_query_rows", lambda statement: [])
+    with pytest.raises(CommandError, match=r"waiting for share 'data'\. .*Next: check that the Flight"):
+        deployer._wait_for_share("data")

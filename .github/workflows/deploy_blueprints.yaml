@@ -369,7 +369,8 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Summarize preview plan
-        if: ${{ steps.pr-state.outputs.open == 'true' }}
+        # Also after a failed plan, so the summary shows which resources have errors.
+        if: ${{ !cancelled() && steps.pr-state.outputs.open == 'true' && steps.plan-preview.outcome != 'skipped' }}
         shell: bash
         env:
           PLAN_OUTPUT: ${{ steps.plan-preview.outputs.stdout }}
@@ -475,6 +476,8 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Summarize deployment plan
+        # Also after a failed plan, so the summary shows which resources have errors.
+        if: ${{ !cancelled() && steps.plan-stable.outcome != 'skipped' }}
         shell: bash
         env:
           PLAN_OUTPUT: ${{ steps.plan-stable.outputs.stdout }}
@@ -542,6 +545,8 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Summarize production plan
+        # Also after a failed plan, so the summary shows which resources have errors.
+        if: ${{ !cancelled() && steps.plan-production.outcome != 'skipped' }}
         shell: bash
         env:
           PLAN_OUTPUT: ${{ steps.plan-production.outputs.stdout }}

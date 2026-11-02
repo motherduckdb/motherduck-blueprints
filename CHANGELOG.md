@@ -6,6 +6,16 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Validation rejects a `scheduleCron` step of `0`, such as `*/0 * * * *`. Previously, the manifest passed validation and the Flight failed at deploy time. Refer to [schedule-cron-zero-step](docs/breaking-changes.md#schedule-cron-zero-step).
+- An unknown field in a manifest and an unknown `${...}` template reference name the closest valid name, for example `Did you mean 'scheduleCron'?`. Errors raised while rendering a manifest name the file relative to the repository root instead of an absolute path.
+- `plan`, `deploy`, `verify`, and `cleanup` read each Flight, Dive, and Guide list once per plan instead of once per resource, which reduces the number of MotherDuck queries for organizations with many resources.
+- A plan with errors lists each failing resource on its own line and states that nothing was changed. The deployment workflows add the plan to the job summary when the plan fails, so the summary shows which resources have errors.
+- A timeout while waiting for a share states what to check and how to wait longer. An invalid `SHARE_RESOLVE_ATTEMPTS`, `SHARE_RESOLVE_SLEEP_SECONDS`, `FLIGHT_RUN_POLL_ATTEMPTS`, or `FLIGHT_RUN_POLL_SLEEP_SECONDS` value produces an error that names the variable.
+- Error output no longer replaces short environment values, such as `TOKENIZERS_PARALLELISM=false`, with `[redacted]`. Values of eight or more characters in variables whose names contain `TOKEN`, `PASSWORD`, `SECRET`, or `API_KEY` remain redacted.
+- `make new-*` rejects names with a trailing or doubled hyphen, which produced titles such as `Events ` with a trailing space. Existing packages are unaffected.
+- `make preview` for a package without a Dive lists the packages that declare one. `make upgrade` reminds users to run `make sync-preview` when the repository has a local Dive preview.
+- The package and action pins are updated to 0.9.2.
+
 ## v0.9.1 - 2026-10-22
 
 Patch release that also tightens validation. Existing repositories pin exact versions and require `make upgrade VERSION=0.9.1`, followed by `make sync-preview` to refresh the local Dive preview. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v091) and the [v0.9.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.1).
