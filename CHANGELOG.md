@@ -14,6 +14,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - Error output no longer replaces short environment values, such as `TOKENIZERS_PARALLELISM=false`, with `[redacted]`. Values of eight or more characters in variables whose names contain `TOKEN`, `PASSWORD`, `SECRET`, or `API_KEY` remain redacted.
 - `make new-*` rejects names with a trailing or doubled hyphen, which produced titles such as `Events ` with a trailing space. Existing packages are unaffected.
 - `make preview` for a package without a Dive lists the packages that declare one. `make upgrade` reminds users to run `make sync-preview` when the repository has a local Dive preview.
+- The package and action pins are updated to 0.9.2.
 
 ## v0.9.1 - 2026-10-22
 
