@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.0 - 2026-11-04
+
+Minor release that adds Flight `grants` and `chart` and pins MotherDuck CLI `v1.5.6-2026-11-37`. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.0`, followed by `make install-deploy`, `make sync-preview`, and `duckdb==1.5.6` in the `requirements.txt` of each Flight that `make validate` reports. Refer to the [breaking changes](docs/breaking-changes.md#v0100) and the [v0.10.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.0).
+
 - The starter Flight, the `make new-flight` and `make new-project` scaffolds, and the NCS example list `duckdb==1.5.6` in `requirements.txt`. Since the MotherDuck release of 2026-11-02, the Flight runtime installs only the packages in `requirements.txt`, so a Flight that imports `duckdb` without listing it fails with "No module named 'duckdb'". `make upgrade` does not modify existing packages: repositories created from earlier templates must add `duckdb==1.5.6` to the `requirements.txt` of each such Flight. `validate` and `doctor` now issue a warning for these Flights.
 - Blueprints installs MotherDuck CLI `v1.5.6-2026-11-37`, the MotherDuck release of 2026-11-02. The CLI adds `flight get-run`, `flight explain`, and `--tail`, `--head`, and `--offset` for `flight logs`, which now prints the last 100 lines by default. Refer to [cli-flight-logs-last-100-lines](docs/breaking-changes.md#cli-flight-logs-last-100-lines).
 - Flights accept `grants` with `roles`, `users`, `organization`, and `mode`, so that viewers of a Dive can run the Flights it starts with `useRunFlight`. Since MotherDuck release `v1.5.6-2026-10-707`, any viewer of a Dive can run a Flight that the viewer owns or holds a `run` grant on. `plan` lists the grants that `deploy` will add or revoke and stops before any write when a role or user does not exist. `deploy` grants before any deploy-time run. `mode: authoritative` revokes undeclared grants, and `doctor` warns about it.
@@ -13,6 +17,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - When a deploy-time Flight run fails, the error names the Flight and gives the `motherduck flight logs` command that prints the full log.
 - The documentation explains how Dive viewers run Flights, notes that Dive source cannot yet reference a Flight ID per target, and states that secure views on shares are available in the MotherDuck web app but not managed by Blueprints.
 - The local Dive preview describes the current production rule for running Flights from a Dive. Only comments change; run `make sync-preview` to stop `doctor` from reporting the preview files as out of date.
+- ruff is updated to 0.17.2.
 - The package and action pins are updated to 0.10.0.
 
 ## v0.9.2 - 2026-11-02

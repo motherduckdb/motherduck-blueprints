@@ -1,47 +1,47 @@
 ## Highlights
 
-- Errors identify the cause more precisely. An unknown manifest field or `${...}` reference names the closest valid name, and a plan with errors lists each failing resource and states that nothing was changed. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- `plan`, `deploy`, `verify`, and `cleanup` read each Flight, Dive, and Guide list once per plan instead of once per resource, which reduces the number of MotherDuck queries for organizations with many resources. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- The deployment workflows add the plan to the job summary when the plan fails. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
+- Flights accept `grants`, which give roles, users, or the whole organization the `run` permission. Since the MotherDuck release of 2026-10-22, viewers of a Dive can run a Flight that they own or hold `run` on, so Dives deployed with Blueprints can now run Flights for their viewers. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- The starter Flight, the Flight scaffolds, and the NCS example list `duckdb==1.5.6` in `requirements.txt`. Since the MotherDuck release of 2026-11-02, the Flight runtime installs only the packages in `requirements.txt`, so Flights that import `duckdb` without listing it fail. `validate` and `doctor` identify these Flights. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-37`, the MotherDuck release of 2026-11-02. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
 
-## Upgrading from v0.9.1
+## Upgrading from v0.9.2
 
-v0.9.2 is a patch release that also rejects one invalid `scheduleCron` form. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically. The local Dive preview is unchanged, so `make sync-preview` is not required.
+v0.10.0 is a minor release that adds manifest fields and changes the pinned MotherDuck CLI. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically, but the repository steps below still apply.
 
-1. Review the [v0.9.2 breaking-change entry](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.2/docs/breaking-changes.md#v092).
-2. Run `make upgrade VERSION=0.9.2`.
-3. Run `make validate` and correct any `scheduleCron` value that it now rejects. Then open a pull request and review the preview plan before merging.
+1. Run `make upgrade VERSION=0.10.0`.
+2. Run `make install-deploy` to install MotherDuck CLI `v1.5.6-2026-11-37`, and `make sync-preview` to refresh the local Dive preview.
+3. Run `make validate`. For every Flight that it reports as importing `duckdb` without listing it, add `duckdb==1.5.6` to that Flight's `requirements.txt`. Repositories created from an earlier template carry the starter Flight, which requires this change. `make upgrade` does not modify existing packages.
+4. Open a pull request and review the preview plan before merging.
 
 Changes to review:
 
-- [A `scheduleCron` step of `0` is rejected](#compatibility)
-- [Changed error text](#compatibility)
+- [`motherduck flight logs` prints the last 100 lines by default](#compatibility)
+- [Changed error text for failed Flight runs](#compatibility)
 
 ## Features
 
-- An unknown field in `blueprint.yml` or `motherduck.yml` names the closest valid field, for example `Did you mean 'scheduleCron'?`. An unknown `${...}` template reference names the closest valid reference in the same way. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- `make preview` for a package without a Dive lists the packages that declare one. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- `make upgrade` reminds users to run `make sync-preview` when the repository contains a local Dive preview. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
+- Flights accept `grants` with `roles`, `users`, `organization`, and `mode`. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+  - `plan` reads the live grants, lists the grants that `deploy` will add or revoke, and stops before any write when a role does not exist or a user is not in the organization.
+  - `deploy` issues `GRANT RUN ON FLIGHT` before any deploy-time run. `mode: authoritative` revokes undeclared grants, including grants made outside Blueprints, and `doctor` issues a warning for it.
+  - Grantee names are compared without regard to letter case, as MotherDuck compares them.
+- Flights accept `chart`, a Mermaid file that MotherDuck displays as the run chart in the Flight Explainer. As with `motherduck flight push`, an empty file clears the chart and an omitted field leaves the live chart unchanged. `make export` and `md-blueprints import` write the live chart of a Flight to `chart.mmd`. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- `validate` and `doctor` issue a warning for each Flight that imports `duckdb` while its `requirements.txt` does not list it, and state the version to add. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- MotherDuck CLI `v1.5.6-2026-11-37` adds `motherduck flight get-run`, `motherduck flight explain`, and the `--tail`, `--head`, and `--offset` options for `motherduck flight logs`. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
 
 ## Bug Fixes
 
-- `plan` queried the MotherDuck catalog again for every Flight, Dive, and Guide it checked. It now reads each list once per plan, and `deploy`, `verify`, and `cleanup` benefit from the same change. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- A plan with errors reported the failing resources in a single line. It now lists each failing resource on its own line with its notes and states that nothing was changed. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- When the plan failed, the deployment workflows did not write the plan to the job summary, so the summary did not show which resources had errors. The summary is now written for failed plans as well. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- A timeout while waiting for a share reported only the share name. The message now states that resources deployed before the timeout remain applied, what to check, and which settings extend the wait. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- A non-integer value in `SHARE_RESOLVE_ATTEMPTS`, `SHARE_RESOLVE_SLEEP_SECONDS`, `FLIGHT_RUN_POLL_ATTEMPTS`, or `FLIGHT_RUN_POLL_SLEEP_SECONDS` produced an `invalid literal for int()` error that did not name the variable. It now produces an error that names the variable, and a negative wait is rejected. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- Error output replaced short environment values, such as `false` from `TOKENIZERS_PARALLELISM=false`, with `[redacted]` wherever they appeared in the message. Only values of eight or more characters in variables whose names contain `TOKEN`, `PASSWORD`, `SECRET`, or `API_KEY` are now redacted. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- `make new-*` accepted names with a trailing or doubled hyphen, which produced titles such as `Events ` with a trailing space. These names are now rejected. Existing packages are not affected. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- Errors raised while rendering a manifest named the file by its absolute path. They now name the file relative to the repository root. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
+- The starter Flight failed with "No module named 'duckdb'" after the MotherDuck release of 2026-11-02, because its `requirements.txt` did not list `duckdb`. The starter, the `make new-flight` and `make new-project` scaffolds, and the NCS example now list `duckdb==1.5.6`. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- When a deploy-time Flight run failed, the error identified the run only by its number. It now names the Flight and states the `motherduck flight logs` command that prints the complete log. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
 
 ## Compatibility
 
-- **A `scheduleCron` step of `0` is rejected.** A value such as `*/0 * * * *` previously passed validation, and the Flight then failed at deploy time after earlier resources had been applied. `make validate` now rejects it. Use a step of 1 or more, or remove the step. Refer to [schedule-cron-zero-step](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.9.2/docs/breaking-changes.md#schedule-cron-zero-step). [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- **Changed error text.** Plan errors use a multi-line format, rendering errors use paths relative to the repository root, and unknown-field errors may end with a suggestion. Automation that matches the previous error text must be updated. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
+- **`motherduck flight logs` prints the last 100 lines by default.** The MotherDuck CLI that `make install-deploy` installs no longer prints the complete log. Blueprints does not depend on this command. Scripts and runbooks that read its output must pass `--tail` or `--head` with a larger value and page with `--offset`. Refer to [cli-flight-logs-last-100-lines](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.0/docs/breaking-changes.md#cli-flight-logs-last-100-lines). [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- **Changed error text for failed Flight runs.** The error for a failed deploy-time run begins with the Flight name and spans several lines. The warning for deprovisioned users reads "members or grantees" instead of "members or share grantees". Automation that matches the previous text must be updated. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
 
 ## Maintenance
 
-- The documentation describes the package name rules for `make new-*`, the zero-step rule for `scheduleCron`, and the plan summary for failed plans. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
-- The package and action pins are updated to 0.9.2. [#148](https://github.com/motherduckdb/motherduck-blueprints/pull/148)
+- The documentation describes how viewers of a Dive run Flights, states that Dive source cannot yet reference a Flight ID per target, assigns Flight `run` grants to Blueprints in the Terraform ownership guide, and states that secure views on shares are available in the MotherDuck web application but are not managed by Blueprints. The local Dive preview comments describe the current rule for running Flights. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
+- ruff is updated to 0.17.2. [#147](https://github.com/motherduckdb/motherduck-blueprints/pull/147)
+- The package and action pins are updated to 0.10.0. [#150](https://github.com/motherduckdb/motherduck-blueprints/pull/150)
 
-**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.9.1...v0.9.2
+**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.9.2...v0.10.0
