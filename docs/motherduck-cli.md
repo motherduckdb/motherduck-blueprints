@@ -16,7 +16,7 @@ make validate
 
 Open a new terminal after installation if the `motherduck` command is not on your PATH. For automation, supply `MOTHERDUCK_TOKEN` through your secret manager instead of logging in.
 
-`make export` reads every visible Flight, Dive, and Guide, follows all catalog pages, and writes disabled packages. It preserves IDs, owners, exact source versions, settings, and references. Existing packages are kept. Use `make export TARGET=staging` for a configured staging target. See [adoption](adopt-existing-resources.md) for a dry run and the review required before activation.
+`make export` reads every visible Flight, Dive, and Guide, follows all catalog pages, and writes disabled packages. It preserves IDs, owners, exact source versions, settings, references, and a Flight's run chart as `chart.mmd`. Existing packages are kept. Use `make export TARGET=staging` for a configured staging target. See [adoption](adopt-existing-resources.md) for a dry run and the review required before activation.
 
 “All” covers these three resource types visible to the identity. It does not copy database contents, secret values, shares, roles, or grants. This is a code export, not an account backup or ownership transfer.
 
@@ -42,7 +42,7 @@ Pull overwrites local files. Use `--version` to select a version. The native met
 
 ## Command map
 
-Checked against the installed `v1.5.6-2026-10-484` help on 2026-10-22. Run `motherduck <group> <command> --help` for current flags and examples.
+Checked against the installed `v1.5.6-2026-11-37` help on 2026-11-04. Run `motherduck <group> <command> --help` for current flags and examples.
 
 | Area | Commands | Use |
 | --- | --- | --- |
@@ -52,9 +52,9 @@ Checked against the installed `v1.5.6-2026-10-484` help on 2026-10-22. Run `moth
 | Installation | `upgrade` | Update the local native CLI. |
 | Dive authoring | `dive guide`, `dive init`, `dive watch` | Read the runtime guide, scaffold locally, and preview with reload. |
 | Dive operations | `dive list`, `dive list-versions`, `dive pull`, `dive push`, `dive delete` | Inspect, fetch, publish a new version, or delete a Dive. |
-| Flight authoring | `flight guide`, `flight init` | Read the runtime guide and scaffold locally. |
-| Flight operations | `flight list`, `flight list-versions`, `flight pull`, `flight push`, `flight delete` | Inspect, fetch, publish, or delete a Flight. `push --instance-type` sets the runner size. |
-| Flight runs | `flight run`, `flight cancel`, `flight list-runs`, `flight logs` | Start, cancel, inspect, and diagnose runs. |
+| Flight authoring | `flight guide`, `flight init` | Read the runtime guide and scaffold locally. `guide --explainer` describes the run chart and its log lines, and `init --chart` also writes a starter `chart.mmd`. |
+| Flight operations | `flight list`, `flight list-versions`, `flight pull`, `flight push`, `flight delete` | Inspect, fetch, publish, or delete a Flight. `push --instance-type` sets the runner size. `push` sends `chart.mmd` when it exists, and `pull` writes it. |
+| Flight runs | `flight run`, `flight cancel`, `flight get-run`, `flight list-runs`, `flight logs`, `flight explain` | Start, cancel, inspect, and diagnose runs. `get-run --run <n>` shows one run's status, version, and config. `logs` prints the last 100 lines; use `--tail`, `--head`, and `--offset` for more. `explain` shows each step of a run for a Flight with a chart. `list-runs`, `logs`, and `explain` are for the Flight's owner and organization admins; someone with only a `run` grant can `get-run` the runs they started. |
 | Flight secrets | `flight create-secret`, `flight list-secrets`, `flight delete-secret` | Manage runtime secrets. Listing exposes names and structure, not values. |
 | Guides | `guide init`, `guide list`, `guide list-versions`, `guide pull`, `guide push`, `guide delete` | Work with Markdown guidance, access settings, and object references. |
 

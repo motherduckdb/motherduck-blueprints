@@ -222,7 +222,7 @@ def test_plan_rejects_members_and_grantees_missing_from_the_organization(
     assert role_record.notes == "member(s) are not users in this organization: alcie"
     assert share_record.action == "error"
     assert share_record.notes == "grant user(s) are not users in this organization: carol"
-    assert "deprovisioned user(s) are still declared as members or share grantees: bob" in capsys.readouterr().err
+    assert "deprovisioned user(s) are still declared as members or grantees: bob" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(("name", "problem"), [
@@ -691,7 +691,7 @@ def test_wait_recognizes_current_and_legacy_failure_statuses(
         return [(43, 'SUCCEEDED'), (42, status)]
 
     monkeypatch.setattr(deployer, '_query_rows', rows)
-    with pytest.raises(CommandError, match='Flight run 42 ended with .*test log'):
+    with pytest.raises(CommandError, match='(?s)Flight .* run 42 ended with .*test log.*motherduck flight logs --flight'):
         deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)
     assert len(queries) == 2
 
@@ -720,7 +720,7 @@ def test_log_read_failure_does_not_hide_failed_run(monkeypatch: pytest.MonkeyPat
         raise CommandError('log service unavailable')
 
     monkeypatch.setattr(deployer, '_query_rows', rows)
-    with pytest.raises(CommandError, match='Flight run 42 ended with FAILED.*Logs unavailable'):
+    with pytest.raises(CommandError, match='(?s)Flight .* run 42 ended with FAILED.*Logs unavailable'):
         deployer._wait_for_flight_run_success('00000000-0000-0000-0000-000000000001', 42)
 
 

@@ -6,6 +6,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-37`, the MotherDuck release of 2026-11-02. The CLI adds `flight get-run`, `flight explain`, and `--tail`, `--head`, and `--offset` for `flight logs`, which now prints the last 100 lines by default. Refer to [cli-flight-logs-last-100-lines](docs/breaking-changes.md#cli-flight-logs-last-100-lines).
+- Flights accept `grants` with `roles`, `users`, `organization`, and `mode`, so that viewers of a Dive can run the Flights it starts with `useRunFlight`. Since MotherDuck release `v1.5.6-2026-10-707`, any viewer of a Dive can run a Flight that the viewer owns or holds a `run` grant on. `plan` lists the grants that `deploy` will add or revoke and stops before any write when a role or user does not exist. `deploy` grants before any deploy-time run. `mode: authoritative` revokes undeclared grants, and `doctor` warns about it.
+- Flights accept `chart`, a Mermaid file that MotherDuck shows as the run chart in the Flight Explainer. As with `motherduck flight push`, an empty file clears the chart and an omitted field leaves the live chart unchanged. `make export` and `md-blueprints import` write a Flight's live chart to `chart.mmd`.
+- When a deploy-time Flight run fails, the error names the Flight and gives the `motherduck flight logs` command that prints the full log.
+- The documentation explains how Dive viewers run Flights, notes that Dive source cannot yet reference a Flight ID per target, and states that secure views on shares are available in the MotherDuck web app but not managed by Blueprints.
+- The local Dive preview describes the current production rule for running Flights from a Dive. Only comments change; run `make sync-preview` to stop `doctor` from reporting the preview files as out of date.
+- The package and action pins are updated to 0.10.0.
+
 ## v0.9.2 - 2026-11-02
 
 Patch release that also rejects one invalid `scheduleCron` form. Existing repositories pin exact versions and require `make upgrade VERSION=0.9.2`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v092) and the [v0.9.2 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.9.2).

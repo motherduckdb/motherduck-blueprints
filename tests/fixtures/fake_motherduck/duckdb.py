@@ -101,7 +101,7 @@ class MockConnection:
 
     def _load(self) -> dict[str, Any]:
         state: dict[str, Any] = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
-        for key in ("flights", "dives", "guides", "roles", "share_grantees", "share_patterns", "runs"):
+        for key in ("flights", "dives", "guides", "roles", "share_grantees", "share_patterns", "runs", "flight_grantees"):
             state.setdefault(key, {})
         state.setdefault("databases", [])
         state.setdefault("sequence", 0)
@@ -187,6 +187,25 @@ class MockConnection:
                 rows.append(row)
             if verb == "REVOKE" and row in rows:
                 rows.remove(row)
+            return MockResult([])
+        if "md_list_flight_grantees(" in query:
+            flight_id = _string(query, r"md_list_flight_grantees\(")
+            if flight_id not in state["flights"]:
+                raise Error(f"Catalog Error: Could not find Flight with id '{flight_id}'")
+            return MockResult([(*row, "run") for row in state["flight_grantees"].get(flight_id, [])])
+        flight_grant = re.fullmatch(r"(GRANT|REVOKE) RUN ON FLIGHT '([0-9a-f-]+)' (?:TO|FROM) (.+);", stripped)
+        if flight_grant:
+            verb, flight_id, grantee_list = flight_grant.groups()
+            if flight_id not in state["flights"]:
+                raise Error("Catalog Error: Could not find Flight")
+            rows = state["flight_grantees"].setdefault(flight_id, [])
+            for grantee in re.findall(r'ORGANIZATION|(?:ROLE|USER) "(?:[^"]|"")*"', grantee_list):
+                kind, _, name = grantee.partition(" ")
+                row = [name[1:-1].replace('""', '"') if name else "fake org", kind.lower()]
+                if verb == "GRANT" and row not in rows:
+                    rows.append(row)
+                if verb == "REVOKE" and row in rows:
+                    rows.remove(row)
             return MockResult([])
         if stripped.startswith("ALTER SHARE "):
             share = _ident(query, r"ALTER SHARE ")

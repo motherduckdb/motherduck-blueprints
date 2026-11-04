@@ -143,10 +143,13 @@ resources:
       name: events-ingest
       source: src/flight.py
       requirements: src/requirements.txt
+      chart: src/chart.mmd
       scheduleCron: 17 6 * * *
       maxRuntimeSec: 1800
       runOnDeploy: true
       waitForRun: success
+      grants:
+        roles: [analysts]
       secrets: []
       config:
         database: ${resources.shares.events.database}
@@ -154,9 +157,11 @@ resources:
         preview:
           name: events-ingest:${target.branch} (Preview)
           scheduleCron: ""
+          grants:
+            roles: []
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `secrets`, `config`, and `targets`. `scheduleCron` is a 5-field UTC cron expression (minute, hour, day of month, month, day of week) that uses digits and `* , / -` only, without names such as `MON`; validation checks each field's range and rejects a step of `0`. Quote a schedule that starts with `*`, for example `"*/15 * * * *"`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `chart`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `grants`, `secrets`, `config`, and `targets`. `scheduleCron` is a 5-field UTC cron expression (minute, hour, day of month, month, day of week) that uses digits and `* , / -` only, without names such as `MON`; validation checks each field's range and rejects a step of `0`. Quote a schedule that starts with `*`, for example `"*/15 * * * *"`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
 
 `accessTokenName` names an access token of the deployment identity, which owns the Flight and runs it with that token. MotherDuck uses the newest token with the name and refuses to create or update a Flight whose token is missing or expired. `plan` and `deploy` read the identity's tokens with `md_access_tokens()` and stop before any write in either case. A token that expires within 14 days prints a warning, because runs fail once it expires. When the tokens cannot be listed, Blueprints warns and skips the check. `verify` does not check tokens.
 
@@ -171,6 +176,17 @@ Required fields are `name`, `source`, and `requirements`. Optional fields includ
 Without `instanceType`, a new Flight gets the plan default and an existing Flight keeps its current size. Removing the field does not reset the size; set it to the size you want. MotherDuck rejects a size your plan does not allow when the Flight is created or updated. Sending a size needs DuckDB 1.5.6 or newer. The Blueprints action and the MotherDuck CLI that `make install-deploy` installs both use it. With an older backend, such as a MotherDuck CLI before `v1.5.6-2026-10-169`, `plan` and `deploy` stop before any write; run `make install-deploy`, or install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
+
+`chart` names a Mermaid file, the `chart.mmd` that `motherduck flight init --chart` writes, which MotherDuck shows as the Flight's run chart in the Flight Explainer. Run `motherduck flight guide --explainer` for its format. Like `motherduck flight push`, deploy sends the file when it is declared, an empty file clears the chart, and omitting `chart` leaves the live chart as it is. The file must exist inside the package.
+
+`grants` lets other people run the Flight, for example the viewers of a Dive that starts it with `useRunFlight`. Deploy issues `GRANT RUN ON FLIGHT` before any deploy-time run.
+
+- `roles` and `users` name roles and MotherDuck usernames. `organization: true` grants every member of the organization, including its service accounts. MotherDuck matches names without regard to case.
+- `mode: additive` (the default) keeps grantees that are not declared. `mode: authoritative` revokes them, including grants made outside Blueprints.
+- `plan` reads the live grants and lists what deploy will grant and revoke. It stops before any write when a role does not exist and is not declared in the same run, or when a username is not in the organization.
+- A run always uses the owner's settings, secrets, and token, whoever starts it. The person who starts it can pass `config` values, so validate them in the Flight.
+- Someone with only a `run` grant can follow the runs they started, but cannot list the Flight's runs or read its logs. Restricted members cannot run Flights, even with a grant.
+- Grants apply in every target. Target overrides merge into `grants`, so set `roles: []`, `users: []`, and `organization: false` under `targets.preview` to keep previews private, as the example does for its role.
 
 ## Dives
 

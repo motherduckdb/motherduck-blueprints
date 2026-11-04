@@ -454,6 +454,82 @@ def test_roles_and_share_grants_reconcile_with_authoritative_revocations(starter
     assert 'ALTER SHARE "wikipedia_pageviews" RESET INCLUDE_PATTERN;' in fake.queries()
 
 
+def test_flight_chart_is_sent_only_when_declared(starter: Path, md_cli: Cli) -> None:
+    fake = md_cli.fake
+    md_cli.ok("deploy", "--root", str(starter))
+    create = next(query for query in fake.queries() if "MD_CREATE_FLIGHT" in query)
+    assert '"metadata" =>' not in create and "SET VARIABLE flight_chart" not in create
+
+    chart = starter / "flights/wikipedia-pageviews-ingest/src/chart.mmd"
+    chart.write_text("flowchart TD\n  load[Load pageviews]\n", encoding="utf-8")
+    edit_yaml(starter / INGEST, lambda data: data["resources"]["flights"]["pageviews_loader"].update(chart="src/chart.mmd"))
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    update = next(query for query in fake.queries() if "MD_UPDATE_FLIGHT" in query)
+    assert f"SET VARIABLE flight_chart = (SELECT content FROM read_text('{chart}'));" in update
+    assert "\"metadata\" => MAP {'chart': getvariable('flight_chart')}" in update
+
+    chart.unlink()
+    failed = md_cli.fails("validate", "--root", str(starter))
+    assert "chart.mmd" in failed.stdout + failed.stderr
+
+
+def test_flight_run_grants_reconcile_case_insensitively_and_revoke_only_when_authoritative(
+    starter: Path, md_cli: Cli,
+) -> None:
+    fake = md_cli.fake
+    flight_key = ("wikipedia-pageviews-ingest", "flight", "pageviews_loader")
+
+    def grant(**grants: object) -> None:
+        edit_yaml(starter / INGEST, lambda data: data["resources"]["flights"]["pageviews_loader"].update(grants=grants))
+
+    grant(roles=["analysts"], organization=True)
+    fake.seed(roles={"analysts": {}})
+    flight = records(md_cli.ok("plan", "--root", str(starter), "--json"))[flight_key]
+    assert flight["action"] == "create" and "will grant run to: role analysts, organization" in flight["notes"]
+
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    [flight_id] = fake.ids("flights").values()
+    queries = fake.queries()
+    statement = f"GRANT RUN ON FLIGHT '{flight_id}' TO ROLE \"analysts\", ORGANIZATION;"
+    assert statement in queries
+    # Grants land before the deploy-time run, so a Dive viewer can use the Flight once it has data.
+    runs = [i for i, query in enumerate(queries) if "MD_RUN_FLIGHT" in query]
+    assert all(queries.index(statement) < i for i in runs)
+    assert sorted(fake.state()["flight_grantees"][flight_id]) == [["analysts", "role"], ["fake org", "organization"]]
+
+    # Names match without regard to case, and additive mode leaves other grantees alone.
+    fake.seed(flight_grantees={flight_id: [["Analysts", "role"], ["fake org", "organization"], ["ops", "user"]]})
+    flight = records(md_cli.ok("plan", "--root", str(starter), "--json"))[flight_key]
+    assert "run grants already match" in flight["notes"]
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    assert not any(" ON FLIGHT " in query for query in fake.mutations())
+
+    grant(roles=["analysts"], mode="authoritative")
+    flight = records(md_cli.ok("plan", "--root", str(starter), "--json"))[flight_key]
+    assert "will revoke run from: user ops, organization" in flight["notes"]
+    assert "including grants created outside Blueprints" in flight["notes"]
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    assert f"REVOKE RUN ON FLIGHT '{flight_id}' FROM USER \"ops\", ORGANIZATION;" in fake.queries()
+    assert fake.state()["flight_grantees"][flight_id] == [["Analysts", "role"]]
+
+    # An unknown role stops the plan before any write.
+    grant(roles=["analysts", "finance"])
+    fake.clear_log()
+    failed = md_cli.fails("deploy", "--root", str(starter))
+    assert "run grant role(s) do not exist and are not selected for deployment: finance" in failed.stdout + failed.stderr
+    assert fake.mutations() == []
+
+    # A grant that cannot be read at plan time is still reconciled at deploy time.
+    grant(roles=["analysts"])
+    fake.seed(failures={"md_list_flight_grantees": "permission denied"})
+    flight = records(md_cli.ok("plan", "--root", str(starter), "--json"))[flight_key]
+    assert "current grants could not be read at plan time" in flight["notes"]
+
+
 def test_guides_publish_once_and_append_versions_only_for_changes(starter: Path, md_cli: Cli) -> None:
     fake = md_cli.fake
     package = write_guide(starter, "runbook", {

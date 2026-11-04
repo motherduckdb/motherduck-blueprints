@@ -229,7 +229,9 @@ if MOCK_FLIGHT_RUN_STATUS=RUN_STATUS_FAILED md-blueprints deploy --target previe
   echo "Failed Flight run unexpectedly passed" >&2
   exit 1
 fi
-grep -q "Log tail: mock failure log tail" "${TMP_DIR}/failed.out"
+grep -q "ended with FAILED. Log tail:" "${TMP_DIR}/failed.out"
+grep -q "^mock failure log tail" "${TMP_DIR}/failed.out"
+grep -q "motherduck flight logs --flight .* --tail 1000" "${TMP_DIR}/failed.out"
 
 echo "==> Checking schema maintenance commands"
 md-blueprints doctor > "${TMP_DIR}/doctor.out"

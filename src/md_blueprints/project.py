@@ -737,6 +737,14 @@ class Project:
                     f"Flight requirements for {blueprint.name}",
                 )
             )
+            if flight.get("chart"):
+                flight["chartPath"] = str(
+                    require_within(
+                        blueprint.dir / str(flight["chart"]),
+                        blueprint.dir,
+                        f"Flight chart for {blueprint.name}",
+                    )
+                )
             policies = target_settings.get("policies", {})
             if target == "preview" and isinstance(policies, dict) and policies.get("disableSchedules") is True:
                 flight["scheduleCron"] = ""
@@ -751,6 +759,12 @@ class Project:
                 flight["maxRuntimeSec"] = int(str(flight["maxRuntimeSec"]))  # validated by _render_resources
             flight["runOnDeploy"] = flight.get("runOnDeploy", False)
             flight["waitForRun"] = flight.get("waitForRun", False)
+            grants = flight.get("grants")
+            if isinstance(grants, dict):
+                grants.setdefault("roles", [])
+                grants.setdefault("users", [])
+                grants.setdefault("organization", False)
+                grants.setdefault("mode", "additive")
 
         dives = self._render_resources(
             resources_node.get("dives", {}), target, context, blueprint=blueprint, group="dives"
@@ -1088,6 +1102,8 @@ class Project:
                 require_nonempty(flight.get(required_field), f"flights.{key}.{required_field}")
             require_file(Path(str(flight["sourcePath"])))
             require_file(Path(str(flight["requirementsPath"])))
+            if flight.get("chartPath"):
+                require_file(Path(str(flight["chartPath"])))
             validate_python(Path(str(flight["sourcePath"])))
             schedule = str(flight.get("scheduleCron", ""))
             if schedule and (problem := cron_problem(schedule)):
@@ -1113,6 +1129,10 @@ class Project:
             max_runtime = flight.get("maxRuntimeSec")
             if max_runtime is not None and (not isinstance(max_runtime, int) or isinstance(max_runtime, bool) or max_runtime < 0):
                 raise ValidationError(f"flights.{key}.maxRuntimeSec must be a non-negative integer")
+            self._validate_grants(flight.get("grants"), f"flights.{key}.grants")
+            grants = flight.get("grants")
+            if isinstance(grants, dict) and not isinstance(grants.get("organization", False), bool):
+                raise ValidationError(f"flights.{key}.grants.organization must be boolean")
 
         for key, dive in blueprint.dives.items():
             for required_field in ["title", "sourcePath"]:
