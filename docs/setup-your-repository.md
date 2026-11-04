@@ -77,6 +77,7 @@ Create a new pipeline and dashboard with `make new-project revenue`. Edit its fi
 | No preview comment on a fork PR | Expected: fork PRs validate only. Use a branch in your own repository to deploy. |
 | `Unable to resolve action motherduckdb/motherduck-blueprints@vX.Y.Z` | The pinned release does not exist. Run `make upgrade` to move every pin to a published release. |
 | `requiredCliVersion` error | The repository needs a newer CLI than the one installed. Run `make upgrade`, then `make setup`. |
+| `ModuleNotFoundError: No module named 'duckdb'` in a Flight run | MotherDuck installs only the packages in the Flight's `requirements.txt`. Add `duckdb==1.5.6`, the version Blueprints pins; `make validate` warns about every Flight that imports `duckdb` without listing it. |
 | Flight run failed during deploy | The error prints the end of the log and the `motherduck flight logs --flight <id> --run <n> --tail 1000` command that prints more. `flight logs` prints the last 100 lines unless `--tail` or `--head` says otherwise. Fix the source and push again. |
 | Error about the Flight owner or creator | Adopted Flights can only be updated by the identity that owns them. Deploy with that identity's token, or recreate the Flight under the service account. |
 | Environments are missing from **Settings** | Private repositories on GitHub Free cannot use Environments. See [before you start](#before-you-start). |

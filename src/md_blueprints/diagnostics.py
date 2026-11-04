@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import html
 import os
 import re
@@ -7,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .deploy import required_databases_export, role_name_problem, strip_required_databases_export
+from .motherduck_cli import SUPPORTED_VERSION
 from .project import Project
 from .schema import ValidationError
 
@@ -82,6 +84,58 @@ def role_name_warnings(project: Project) -> list[str]:
     return warnings
 
 
+def _imports_duckdb(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import) and any(alias.name.split(".")[0] == "duckdb" for alias in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "duckdb":
+            return True
+    return False
+
+
+def _requirement_names(text: str) -> set[str] | None:
+    """Lowercased package names, or None when the file includes others or uses options we do not follow."""
+    names: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("-"):
+            return None
+        names.add(re.split(r"[\s\[<>=!~;@]", line, maxsplit=1)[0].lower().replace("_", "-"))
+    return names
+
+
+def flight_requirement_warnings(project: Project) -> list[str]:
+    """Flights that import duckdb without installing it. MotherDuck installs only what requirements.txt lists."""
+    target = next((name for name in project.target_names() if name != "preview"), None)
+    if target is None:
+        return []
+    duckdb_version = SUPPORTED_VERSION.removeprefix("v").split("-", 1)[0]
+    warnings: list[str] = []
+    for blueprint in project.render_all(target):
+        for key, flight in blueprint.flights.items():
+            try:
+                source = Path(str(flight["sourcePath"])).read_text(encoding="utf-8")
+                requirements_path = Path(str(flight["requirementsPath"]))
+                names = _requirement_names(requirements_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, KeyError):
+                continue
+            if names is None or "duckdb" in names or not _imports_duckdb(source):
+                continue
+            label = str(requirements_path).removeprefix(f"{project.root}/")
+            warnings.append(
+                f"{label}: {blueprint.name}.flights.{key} imports duckdb, but its requirements do not list it. "
+                "MotherDuck installs only the packages in requirements.txt, so the run fails with "
+                f"\"No module named 'duckdb'\". Add duckdb=={duckdb_version}"
+            )
+    return warnings
+
+
 def dive_source_warnings(project: Project) -> list[str]:
     """REQUIRED_DATABASES problems that plan and deploy stop on, or that make the preview differ from MotherDuck."""
     target = next((name for name in project.target_names() if name != "preview"), None)
@@ -120,7 +174,7 @@ def dive_source_warnings(project: Project) -> list[str]:
 
 def validation_warnings(project: Project) -> list[str]:
     """Non-fatal findings shared by validate and doctor."""
-    warnings: list[str] = role_name_warnings(project) + dive_source_warnings(project)
+    warnings: list[str] = role_name_warnings(project) + dive_source_warnings(project) + flight_requirement_warnings(project)
     legacy = legacy_context_blueprints(project)
     if legacy:
         warnings.append(

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from md_blueprints.diagnostics import report_error
+from md_blueprints.diagnostics import report_error, validation_warnings
 
 
 @pytest.mark.parametrize("message,advice", [
@@ -41,3 +41,25 @@ def test_short_settings_are_not_redacted(monkeypatch: pytest.MonkeyPatch, capsys
     stderr = capsys.readouterr().err
     assert "got false" in stderr
     assert "private-test-token" not in stderr
+
+
+@pytest.mark.parametrize("requirements,warned", [
+    ("pytz>=2024.1\n", True),
+    ("duckdb==1.5.6\npytz>=2024.1\n", False),
+    ("DuckDB[all] >= 1.5  # pinned below\n", False),
+    ("-r shared.txt\n", False),
+])
+def test_validation_warns_when_a_flight_imports_duckdb_without_installing_it(
+    tmp_path: Path, requirements: str, warned: bool,
+) -> None:
+    from md_blueprints.init import run_init
+    from md_blueprints.project import Project
+
+    run_init(tmp_path)
+    (tmp_path / "flights/wikipedia-pageviews-ingest/src/requirements.txt").write_text(requirements, encoding="utf-8")
+    warnings = validation_warnings(Project(tmp_path))
+    found = [warning for warning in warnings if "No module named 'duckdb'" in warning]
+    assert bool(found) is warned
+    if warned:
+        assert found[0].startswith("flights/wikipedia-pageviews-ingest/src/requirements.txt:")
+        assert found[0].endswith("Add duckdb==1.5.6")
