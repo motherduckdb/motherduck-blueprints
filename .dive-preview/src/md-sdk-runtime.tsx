@@ -132,7 +132,10 @@ class QueryObserver {
 
 // ── Provider ───────────────────────────────────────────────────────
 
-/** Which Flights the host lets the Dive run. Production allows "any" for the Dive's owner, else "none". */
+/**
+ * Which Flights the host lets the Dive run. Production allows "any" for every signed-in viewer and "none"
+ * in embeds; MotherDuck then runs a Flight only for its owner or a user with a run grant on it.
+ */
 export type AllowedFlights = "none" | "any" | readonly string[];
 
 type ContextValue = { state: ConnectionState; allowedFlights: AllowedFlights };

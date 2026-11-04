@@ -215,6 +215,13 @@ def convert(snapshot: dict[str, Any], target: str) -> tuple[str, dict[str, str],
                 raise ValidationError("Flight config/secrets have an unsupported shape")
         if resource["maxRuntimeSec"] is None:
             del resource["maxRuntimeSec"]
+        # MotherDuck releases before v1.5.6-2026-10-707 do not return the column. A cleared chart is
+        # left out, which deploys as "keep the live chart" and so changes nothing.
+        metadata = content.get("metadata")
+        chart = metadata.get("chart") if isinstance(metadata, dict) else None
+        if isinstance(chart, str) and chart.strip():
+            files["chart.mmd"] = chart
+            resource["chart"] = "chart.mmd"
         # Clients before DuckDB 1.5.6 do not return the column; the plan default then applies.
         instance_type = content.get("instance_type")
         if instance_type in FLIGHT_INSTANCE_TYPES:

@@ -13,6 +13,7 @@ The provider documents the same split from its side in [Deploy pipelines and das
 | Shared platform databases, secrets, and custom roles | Terraform | `motherduck_database`, `motherduck_secret`, `motherduck_role`, `motherduck_role_grant` |
 | Platform shares and their grants | Terraform | `motherduck_share`, `motherduck_share_grant` |
 | Flight code, Dive content, Guide content | Blueprints | Do not also use `motherduck_flight`, `motherduck_dive`, or `motherduck_guide` for the same object |
+| `run` grants on Flights that Blueprints deploys | Blueprints | The provider has no Flight grant resource; declare them in the Flight's `grants` |
 | Databases and shares created by a package's Flight | Blueprints | Do not also declare them in Terraform |
 | Branch-scoped preview resources | Blueprints only | Never manage previews with Terraform |
 
@@ -119,7 +120,7 @@ Share URLs are committed to Git in this form. The provider marks `motherduck_sha
 
 ## Avoid fights between the tools
 
-- Do not use `mode: authoritative` on a Blueprints role or share `grants` when Terraform also grants it. Authoritative mode revokes every undeclared grant, including grants from `motherduck_role_grant` and `motherduck_share_grant`. Terraform then re-adds them on its next apply. The default `additive` mode leaves them alone. `md-blueprints doctor` warns about authoritative mode.
+- Do not use `mode: authoritative` on a Blueprints role or share `grants` when Terraform also grants it. Flight `grants` in authoritative mode likewise revoke `run` grants made in the UI or with SQL. Authoritative mode revokes every undeclared grant, including grants from `motherduck_role_grant` and `motherduck_share_grant`. Terraform then re-adds them on its next apply. The default `additive` mode leaves them alone. `md-blueprints doctor` warns about authoritative mode.
 - Do not set `includePattern` on a share that `motherduck_share.include_pattern` manages.
 - Do not declare the same role in both tools. Blueprints runs `CREATE ROLE IF NOT EXISTS`, so it would recreate a role Terraform destroyed.
 - Use `dropDatabase: true` only for preview databases the package's Flight creates. Never point it at a Terraform database.

@@ -64,7 +64,8 @@ if (!token || token === "your_token_here") {
     "from app.motherduck.com (Settings, API Tokens), then restart make preview. make setup creates the file " +
     "from .env.example. make preview-smoke needs no token.</p>";
 } else {
-  // The local developer previews as the Dive's owner, who may run Flights in production.
+  // Like production, any signed-in viewer may try a run; MotherDuck allows it when the token's user owns
+  // the Flight or holds a run grant on it.
   createRoot(document.getElementById("root")!).render(
     <MotherDuckSDKProvider token={token} requiredDatabases={REQUIRED_DATABASES} allowedFlights="any">
       <ConnectionGate>

@@ -176,6 +176,22 @@ def test_flight_import_keeps_a_declarable_instance_type(live: str | None, declar
     assert any("instance size" in warning for warning in report["warnings"]) is warned
 
 
+@pytest.mark.parametrize(("metadata", "chart"), [
+    ({"chart": "flowchart TD\n  load[Load]"}, "flowchart TD\n  load[Load]"),
+    ({"chart": ""}, None),
+    ({}, None),
+    (None, None),
+])
+def test_flight_import_writes_a_live_chart(metadata: object, chart: str | None) -> None:
+    items = snapshots()
+    if metadata is not None:
+        items[0]["content"]["metadata"] = metadata
+    _, files, _ = convert(items[0], "prod")
+    flight = yaml.safe_load(files["blueprint.yml"])["resources"]["flights"]["imported"]
+    assert files.get("chart.mmd") == chart
+    assert flight.get("chart") == ("chart.mmd" if chart else None)
+
+
 def test_explicit_null_collections_are_not_mistaken_for_missing_fields() -> None:
     items = snapshots()
     items[0]["content"].update(config=None, flight_secret_names=None, max_runtime_sec=None)

@@ -10,6 +10,19 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.10.0
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.10.0` followed by `make install-deploy`.
+
+### cli-flight-logs-last-100-lines
+
+- **Changed in:** v0.10.0
+- **What changed:** `make install-deploy` installs MotherDuck CLI `v1.5.6-2026-11-37`. In this release, `motherduck flight logs` prints the last 100 lines of a run by default instead of the whole log. Blueprints does not call `flight logs` itself; deploy reads run logs through SQL.
+- **Symptom:** a script or runbook that reads `motherduck flight logs` output receives only the end of a long log.
+- **Find:** search scripts, workflows, and runbooks for `flight logs`.
+- **Fix:** pass `--tail <n>` or `--head <n>` with a larger number, and page with `--offset`. With `--output json`, `next_offset` gives the offset of the next page and is `null` on the last page.
+- **Implemented in:** `md_blueprints.motherduck_cli.SUPPORTED_VERSION`.
+
 ## v0.9.2
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.9.2`. Run `make validate` after the upgrade.

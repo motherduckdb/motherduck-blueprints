@@ -158,6 +158,11 @@
         "name": { "type": "string", "minLength": 1 },
         "source": { "type": "string", "minLength": 1 },
         "requirements": { "type": "string", "minLength": 1 },
+        "chart": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Mermaid chart file for the Flight Explainer; an empty file clears the live chart"
+        },
         "scheduleCron": { "type": "string" },
         "accessTokenName": { "type": "string" },
         "maxRuntimeSec": { "type": "integer", "minimum": 0 },
@@ -166,6 +171,7 @@
         "waitForRun": {
           "enum": ["success", false]
         },
+        "grants": { "$ref": "#/$defs/flightGrants" },
         "secrets": {
           "type": "array",
           "items": { "type": "string" }
@@ -296,6 +302,25 @@
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },
+        "mode": { "enum": ["additive", "authoritative"] }
+      }
+    },
+    "flightGrants": {
+      "type": "object",
+      "description": "who may run the Flight, granted with GRANT RUN ON FLIGHT",
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "users": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "organization": { "type": "boolean" },
         "mode": { "enum": ["additive", "authoritative"] }
       }
     },

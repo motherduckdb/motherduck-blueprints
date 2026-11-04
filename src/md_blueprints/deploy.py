@@ -737,11 +737,17 @@ class Deployer:
             for role in blueprint.roles.values()
             if role.get("deploy")
         }
+        flight_grants = [
+            grants
+            for blueprint in rendered
+            for flight in blueprint.flights.values()
+            if flight.get("deploy") is not False and isinstance(grants := flight.get("grants"), dict)
+        ]
         needs_role_catalog = bool(managed_role_names) or any(
             isinstance(grants := share.get("grants"), dict) and bool(grants.get("roles"))
             for blueprint in rendered
             for share in blueprint.shares.values()
-        )
+        ) or any(grants.get("roles") for grants in flight_grants)
         live_role_names = self._live_role_names() if needs_role_catalog else set()
         declared_users = {
             str(value)
@@ -755,13 +761,13 @@ class Deployer:
             for share in blueprint.shares.values()
             if isinstance(grants := share.get("grants"), dict)
             for value in grants.get("users", [])
-        }
+        } | {str(value) for grants in flight_grants for value in grants.get("users", [])}
         org_users = self._org_users() if declared_users else None
         if org_users is not None:
             deprovisioned = sorted(user for user in declared_users if org_users.get(user.lower()))
             if deprovisioned:
                 print(
-                    f"warning: deprovisioned user(s) are still declared as members or share grantees: "
+                    f"warning: deprovisioned user(s) are still declared as members or grantees: "
                     f"{', '.join(deprovisioned)}",
                     file=sys.stderr,
                 )
@@ -860,6 +866,35 @@ class Deployer:
                     if problem := self._access_token_problem(token_name, f"{blueprint.name}.{key}"):
                         record.action = "error"
                         record.notes = problem
+                grants = flight.get("grants")
+                if isinstance(grants, dict) and record.action in {"create", "update"}:
+                    missing_grant_roles = sorted(
+                        users_missing_from(
+                            {str(value) for value in grants.get("roles", [])},
+                            live_role_names | managed_role_names,
+                        )
+                    )
+                    unknown_grant_users = self._unknown_users(
+                        {str(value) for value in grants.get("users", [])}, org_users,
+                    )
+                    grant_problems = []
+                    if missing_grant_roles:
+                        grant_problems.append(
+                            "run grant role(s) do not exist and are not selected for deployment: "
+                            f"{', '.join(missing_grant_roles)}"
+                        )
+                    if unknown_grant_users:
+                        grant_problems.append(
+                            f"run grant user(s) are not users in this organization: {', '.join(unknown_grant_users)}"
+                        )
+                    if grant_problems:
+                        record.action = "error"
+                        record.notes = "; ".join(grant_problems)
+                    else:
+                        grant_note = self._flight_grant_plan_note(
+                            grants, str(record.id) if record.action == "update" else None,
+                        )
+                        record.notes = "; ".join(note for note in (record.notes, grant_note) if note)
                 records.append(record)
 
             for key, share in blueprint.shares.items():
@@ -1602,15 +1637,19 @@ class Deployer:
         # Omitted means the plan default on create and the current size on update.
         if instance_type := str(flight.get("instanceType", "")):
             common_args.insert(3, f'"instance_type" => {sql_string(instance_type)}')
+        # Without a chart file the live chart stays as it is; an empty file clears it, as the CLI does.
+        variables_sql = (
+            f"SET VARIABLE source_code = {source_sql}; "
+            f"SET VARIABLE requirements_txt = {requirements_sql}; "
+        )
+        if chart_path := str(flight.get("chartPath", "")):
+            variables_sql += f"SET VARIABLE flight_chart = (SELECT content FROM read_text({sql_string(chart_path)})); "
+            common_args.append("\"metadata\" => MAP {'chart': getvariable('flight_chart')}")
         common_args_sql = ", ".join(common_args)
 
         if plan.action == "create":
             print(f"  Creating new flight '{name}'...", file=sys.stderr)
-            self._sql(
-                f"SET VARIABLE source_code = {source_sql}; "
-                f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                f"FROM MD_CREATE_FLIGHT({common_args_sql});"
-            )
+            self._sql(f"{variables_sql}FROM MD_CREATE_FLIGHT({common_args_sql});")
             ids = self._list_flight_ids(name)
             if len(ids) != 1:
                 raise CommandError(f"Expected one Flight named {name} after create, found {len(ids)}")
@@ -1618,25 +1657,22 @@ class Deployer:
         elif plan.action == "update":
             print(f"  Updating existing flight '{name}' ({plan.id})...", file=sys.stderr)
             try:
-                self._sql(
-                    f"SET VARIABLE source_code = {source_sql}; "
-                    f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                    f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {common_args_sql});"
-                )
+                self._sql(f"{variables_sql}FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {common_args_sql});")
             except CommandError as exc:
                 if schedule_cron or "Cannot clear schedule: Flight has no schedule" not in str(exc):
                     raise
                 args_without_schedule_sql = ", ".join(arg for arg in common_args if arg != schedule_arg)
                 self._sql(
-                    f"SET VARIABLE source_code = {source_sql}; "
-                    f"SET VARIABLE requirements_txt = {requirements_sql}; "
-                    f"FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {args_without_schedule_sql});"
+                    f"{variables_sql}FROM MD_UPDATE_FLIGHT(\"flight_id\" => '{plan.id}'::UUID, {args_without_schedule_sql});"
                 )
             flight_id = str(plan.id)
         else:
             raise ValidationError(f"Cannot deploy Flight {name} with plan action {plan.action}")
 
         plan.id = flight_id
+        grants = flight.get("grants")
+        if isinstance(grants, dict):
+            self._reconcile_flight_grants(flight_id, grants)
         run_started = False
         if flight.get("runOnDeploy", False):
             print(f"  Starting flight run for '{name}'...", file=sys.stderr)
@@ -1703,6 +1739,7 @@ class Deployer:
     ) -> None:
         sleep_seconds = env_int("FLIGHT_RUN_POLL_SLEEP_SECONDS", 10, minimum=0)
         attempts = self._flight_run_poll_attempts(sleep_seconds, max_runtime_sec)
+        label = f"Flight '{name}' ({flight_id})" if name else f"Flight {flight_id}"
 
         for index in range(attempts):
             status = self._flight_run_status(flight_id, run_number)
@@ -1722,11 +1759,14 @@ class Deployer:
                     logs = "\n".join(str(entry.get("line", entry.get("logs")) or "") for entry in records)[-4000:]
                 except (CommandError, ValueError, TypeError, AttributeError) as exc:
                     logs = f"Logs unavailable: {exc}"
-                raise CommandError(f"Flight run {run_number} ended with {status}. Log tail: {logs}")
+                raise CommandError(
+                    f"{label} run {run_number} ended with {status}. Log tail:\n{logs}\n"
+                    f"Next: read the full log with `motherduck flight logs --flight {flight_id} --run {run_number} "
+                    "--tail 1000`, fix the Flight, and deploy again."
+                )
             if index < attempts - 1:
                 time.sleep(sleep_seconds)
 
-        label = f"Flight '{name}' ({flight_id})" if name else f"Flight {flight_id}"
         waited = attempts * max(0, sleep_seconds) if attempts > 1 else 0
         raise CommandError(
             f"Timed out after about {waited}s waiting for {label} run {run_number} to succeed "
@@ -1951,6 +1991,74 @@ class Deployer:
         roles = {str(row[0]) for row in rows if str(row[1]).lower() == "role"}
         users = {str(row[0]) for row in rows if str(row[1]).lower() == "user"}
         return roles, users
+
+    def _current_flight_grantees(self, flight_id: str) -> tuple[set[str], set[str], bool]:
+        """Roles, users, and whether the organization hold ``run`` on the Flight."""
+        rows = self._query_rows(
+            "SELECT grantee_name, grantee_type, privilege "
+            f"FROM md_list_flight_grantees({sql_string(flight_id)}::UUID)"
+        )
+        run_rows = [(str(row[0]), str(row[1]).lower()) for row in rows if str(row[2]).lower() == "run"]
+        roles = {name for name, kind in run_rows if kind == "role"}
+        users = {name for name, kind in run_rows if kind == "user"}
+        return roles, users, any(kind == "organization" for _, kind in run_rows)
+
+    def _flight_grant_changes(
+        self, grants: dict[str, object], flight_id: str | None,
+    ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+        """``run`` grantees to add and to revoke, as (``role``/``user``/``organization``, name) pairs.
+
+        MotherDuck matches Flight grantee names without regard to case, so the comparison does too.
+        """
+        raw_roles, raw_users = grants.get("roles"), grants.get("users")
+        roles = {str(value) for value in raw_roles} if isinstance(raw_roles, list) else set()
+        users = {str(value) for value in raw_users} if isinstance(raw_users, list) else set()
+        organization = grants.get("organization") is True
+        current_roles, current_users, current_organization = (
+            self._current_flight_grantees(flight_id) if flight_id else (set(), set(), False)
+        )
+        additions = [("role", value) for value in sorted(users_missing_from(roles, current_roles))]
+        additions += [("user", value) for value in sorted(users_missing_from(users, current_users))]
+        if organization and not current_organization:
+            additions.append(("organization", ""))
+        revocations: list[tuple[str, str]] = []
+        if grants.get("mode") == "authoritative":
+            revocations += [("role", value) for value in sorted(users_missing_from(current_roles, roles))]
+            revocations += [("user", value) for value in sorted(users_missing_from(current_users, users))]
+            if current_organization and not organization:
+                revocations.append(("organization", ""))
+        return additions, revocations
+
+    @staticmethod
+    def _flight_grantee_sql(grantees: list[tuple[str, str]]) -> str:
+        return ", ".join(kind.upper() + (f" {quote_name(name)}" if name else "") for kind, name in grantees)
+
+    def _flight_grant_plan_note(self, grants: dict[str, object], flight_id: str | None) -> str:
+        tail = [AUTHORITATIVE_NOTE] if grants.get("mode") == "authoritative" else []
+        try:
+            additions, revocations = self._flight_grant_changes(grants, flight_id)
+        except CommandError:
+            return "; ".join(["run grants will be reconciled; current grants could not be read at plan time", *tail])
+
+        def readable(grantees: list[tuple[str, str]]) -> str:
+            return ", ".join(f"{kind} {name}".strip() for kind, name in grantees)
+
+        notes = []
+        if additions:
+            notes.append(f"will grant run to: {readable(additions)}")
+        if revocations:
+            notes.append(f"will revoke run from: {readable(revocations)}")
+        if not notes and flight_id is None:
+            return "; ".join(tail)
+        return "; ".join([*(notes or ["run grants already match"]), *tail])
+
+    def _reconcile_flight_grants(self, flight_id: str, grants: dict[str, object]) -> None:
+        additions, revocations = self._flight_grant_changes(grants, flight_id)
+        # One statement per direction: MotherDuck applies a grantee list all or nothing.
+        if additions:
+            self._sql(f"GRANT RUN ON FLIGHT {sql_string(flight_id)} TO {self._flight_grantee_sql(additions)};")
+        if revocations:
+            self._sql(f"REVOKE RUN ON FLIGHT {sql_string(flight_id)} FROM {self._flight_grantee_sql(revocations)};")
 
     @staticmethod
     def _revocation_summary(roles: set[str], users: set[str]) -> str:

@@ -68,13 +68,13 @@ Existing paths are never overwritten. Re-importing an already-bound UUID reports
 
 | Resource | What is preserved | Deployment behavior |
 | --- | --- | --- |
-| Flight | UUID, owner, name, source, requirements, config, secret names, runtime-token name, timeout, cron | Updates the UUID, even after a rename. Requires the Flight creator's identity. Missing/inaccessible IDs never fall back to creation. |
+| Flight | UUID, owner, name, source, requirements, run chart (`chart.mmd`), config, secret names, runtime-token name, timeout, cron | Updates the UUID, even after a rename. Requires the Flight creator's identity. Missing/inaccessible IDs never fall back to creation. |
 | Dive | UUID, owner, title, description, source, mount URLs and aliases | Updates the UUID; production status is left unchanged unless you explicitly declare a desired status. A local mount export is generated from the authoritative version metadata. |
 | Guide | UUID, owner, title/topic, description, content, access, references | Updates the UUID. Reference UUIDs are retained and resolved directly, not through a name search. Organization access still requires an admin deployment identity. |
 
 Imported Flights use `manageSchedule: false`. Their live schedule, including paused state, is left untouched during updates. The exported cron remains in the manifest for review. Set `manageSchedule: true` only when you explicitly want repository deployments to apply that cron; do not accidentally reactivate an existing paused schedule. When the export includes the Flight's instance size, the import records it as `instanceType`. A size Blueprints cannot declare, such as a retired `F8`, is reported as a warning instead. Exports through a MotherDuck CLI before `v1.5.6-2026-10-169`, which embeds DuckDB 1.5.5, do not include the size. Run `make install-deploy` to install the pinned CLI and export again, or add `instanceType` before deploying the package to another target, or that target's Flight gets the plan default.
 
-Database/share URLs and Guide reference UUIDs remain external dependencies. The importer does not infer a producer from a SQL string, create shares, copy data, or rebuild grants. Preserve mount aliases. Before enabling preview, audit production URLs, hard-coded writes, secrets, and reference UUIDs and make the intended isolation explicit.
+Database/share URLs and Guide reference UUIDs remain external dependencies. The importer does not infer a producer from a SQL string, create shares, copy data, or rebuild grants. A Flight's existing `run` grants stay in place; declare them under the Flight's `grants` before using `mode: authoritative`, which would revoke them. Preserve mount aliases. Before enabling preview, audit production URLs, hard-coded writes, secrets, and reference UUIDs and make the intended isolation explicit.
 
 You can verify bound identities before enabling deployment with `.venv/bin/md-blueprints verify --target prod --blueprints PACKAGE --json`. This is read-only and includes imported IDs even when their deployment flags are false.
 

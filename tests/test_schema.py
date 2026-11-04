@@ -133,6 +133,7 @@ def test_blueprint_schema_accepts_current_guide_rbac_and_runtime_features() -> N
                     "source": "flight.py",
                     "requirements": "requirements.txt",
                     "maxRuntimeSec": 900,
+                    "grants": {"roles": ["finance"], "users": ["ops"], "organization": False, "mode": "additive"},
                 }
             },
             "dives": {
@@ -165,6 +166,17 @@ def test_blueprint_schema_accepts_current_guide_rbac_and_runtime_features() -> N
     }
 
     SchemaValidator().validate(manifest, "blueprint.schema.json")
+
+
+def test_flight_grants_reject_share_only_and_unknown_fields() -> None:
+    def manifest(grants: object) -> dict[str, object]:
+        flight = {"name": "loader", "source": "flight.py", "requirements": "requirements.txt", "grants": grants}
+        return {"schemaVersion": 1, "name": "loader", "title": "Loader", "resources": {"flights": {"loader": flight}}}
+
+    SchemaValidator().validate(manifest({"organization": True}), "blueprint.schema.json")
+    for grants in ({"organization": "yes"}, {"groups": ["finance"]}, {"mode": "replace"}):
+        with pytest.raises(ValidationError):
+            SchemaValidator().validate(manifest(grants), "blueprint.schema.json")
 
 
 def schema_keywords(node: object, *, in_map: bool = False) -> set[str]:

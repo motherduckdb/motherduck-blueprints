@@ -1,2 +1,2 @@
-duckdb==1.5.4
+duckdb==1.5.6
 pytz>=2024.1
