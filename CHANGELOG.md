@@ -6,6 +6,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- ruff is updated to 0.17.3.
+- The package and action pins are updated to 0.10.1.
+
 ## v0.10.0 - 2026-11-04
 
 Minor release that adds Flight `grants` and `chart` and pins MotherDuck CLI `v1.5.6-2026-11-37`. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.0`, followed by `make install-deploy`, `make sync-preview`, and `duckdb==1.5.6` in the `requirements.txt` of each Flight that `make validate` reports. Refer to the [breaking changes](docs/breaking-changes.md#v0100) and the [v0.10.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.0).
