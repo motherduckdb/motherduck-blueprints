@@ -1767,7 +1767,8 @@ class Deployer:
             if index < attempts - 1:
                 time.sleep(sleep_seconds)
 
-        waited = attempts * max(0, sleep_seconds) if attempts > 1 else 0
+        # The loop sleeps between polls only, not after the last one.
+        waited = (attempts - 1) * sleep_seconds
         raise CommandError(
             f"Timed out after about {waited}s waiting for {label} run {run_number} to succeed "
             "(waitForRun: success). Already applied: roles, earlier blueprints and resources in this "
@@ -2389,7 +2390,8 @@ class Deployer:
                 and len(existing[0]) >= 4
                 and guide_references_equal(existing[0][2], existing[0][3])
             )
-            source_content = Path(str(guide["sourcePath"])).read_text(encoding="utf-8")
+            # Compare the bytes read_text uploads; Path.read_text would turn \r\n into \n and never match.
+            source_content = Path(str(guide["sourcePath"])).read_bytes().decode("utf-8")
             append_version = not (
                 current_content == source_content
                 and (not external_id or current_external_id == external_id)

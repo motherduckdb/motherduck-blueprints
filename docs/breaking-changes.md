@@ -10,6 +10,21 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.10.1
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.10.1`. Run `make validate` after the upgrade.
+
+### schema-booleans-are-not-numbers
+
+- **Changed in:** v0.10.1
+- **What changed:** validation compares fixed values as JSON Schema does, so a boolean never equals a number. Before, `true` passed where the schema requires `1` and `0` passed where it allows `false`.
+  - `schemaVersion: true` is rejected. Before, it passed validation, but `migrate` and `doctor` reported it as an invalid schema version.
+  - `waitForRun: 0` is rejected. Before, it passed validation and deployed as `waitForRun: false`.
+- **Symptom:** `make validate` fails with `$.schemaVersion must equal 1` or `waitForRun must be one of 'success', False`.
+- **Find:** search `motherduck.yml` and `blueprint.yml` files for `schemaVersion: true` and `waitForRun: 0`.
+- **Fix:** write `schemaVersion: 1`, and `waitForRun: false` or `waitForRun: success`.
+- **Implemented in:** `md_blueprints.schema.json_equal`.
+
 ## v0.10.0
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.10.0` followed by `make install-deploy`.
@@ -174,7 +189,7 @@ Generated repositories pick up these changes with `make upgrade VERSION=0.8.0`. 
 
 - **Changed in:** v0.8.0
 - **What changed:** variables that reference each other in a cycle, or nest too deeply to resolve, fail validation. Before, the unresolved `${var.name}` text was deployed as part of resource names.
-- **Symptom:** `make validate` fails with `<file>: variables for target '<target>': variables reference each other in a cycle or nest too deeply: <names>.`
+- **Symptom:** `make validate` fails with `<file>: variables for target '<target>': variables reference each other in a cycle: <names>.` Releases before v0.10.1 print `in a cycle or nest too deeply` instead.
 - **Find:** `make validate`.
 - **Fix:** give one of the variables a literal value. To keep a literal `${...}` in a value, escape it as `\${...}`.
 - **Implemented in:** `md_blueprints.project.Project._render_variables`.

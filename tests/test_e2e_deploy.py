@@ -575,6 +575,20 @@ def test_guides_publish_once_and_append_versions_only_for_changes(starter: Path,
     assert fake.ids("guides") == {"Runbook": guide_id}
 
 
+def test_unchanged_guide_with_crlf_line_endings_appends_no_version(starter: Path, md_cli: Cli) -> None:
+    fake = md_cli.fake
+    package = write_guide(starter, "runbook", {"title": "Runbook", "deploy": True})
+    (package / "guide.md").write_bytes(b"# Runbook\r\n\r\nPage the on-call engineer.\r\n")
+    deploy = ("deploy", "--root", str(starter), "--blueprints", "runbook")
+    md_cli.ok(*deploy)
+    guide_id = fake.ids("guides")["Runbook"]
+    assert fake.state()["guides"][guide_id]["content"] == "# Runbook\r\n\r\nPage the on-call engineer.\r\n"
+
+    fake.clear_log()
+    md_cli.ok(*deploy)
+    assert [query for query in fake.mutations() if "GUIDE" in query] == []
+
+
 def test_multi_line_mount_export_is_removed_before_upload(starter: Path, md_cli: Cli) -> None:
     source = starter / "dives/wikipedia-pageviews/src/dive.tsx"
     text = source.read_text(encoding="utf-8")

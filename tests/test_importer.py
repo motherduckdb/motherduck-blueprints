@@ -277,3 +277,13 @@ def test_invalid_resource_selector_fails_before_connecting(
 
     with pytest.raises(ValidationError):
         run_import(project, target="prod", selectors=[selector], all_resources=False, write=False, snapshot_path=None)
+
+
+def test_template_syntax_in_imported_mapping_keys_stays_literal() -> None:
+    from md_blueprints.importer import literal
+    from md_blueprints.template import Template
+
+    config = {"${not_a_variable}": "${also_literal}", "plain": "value"}
+    escaped = literal({"config": config})
+    # Rendering resolves references in keys as well as values, so keys must be escaped too.
+    assert Template.render(escaped, {}) == {"config": config}

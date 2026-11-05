@@ -23,16 +23,16 @@ class Template:
     _UNTERMINATED = re.compile(r"(?<!\\)\$\{")
 
     @classmethod
-    def render(cls, value: object, context: dict[str, object], *, unescape: bool = True) -> object:
+    def render(cls, value: object, context: dict[str, object]) -> object:
         """Resolve ``${path}`` references. ``\\${`` stays literal.
 
-        ``unescape=False`` keeps escaped references escaped so a value can be
-        rendered again (for example variables that reference other variables).
+        Substituted text is data, such as a branch name, a rendered share name, or a variable's value.
+        It is escaped before the final unescape, so a ``${`` inside it is never resolved or rejected.
         """
         if isinstance(value, str):
-            rendered = cls._REFERENCE.sub(lambda match: as_text(cls.lookup(match.group(1), context)), value)
-            if not unescape:
-                return rendered
+            rendered = cls._REFERENCE.sub(
+                lambda match: as_text(cls.lookup(match.group(1), context)).replace("${", r"\${"), value,
+            )
             if cls._UNTERMINATED.search(rendered):
                 raise ValidationError(
                     f"Unterminated template reference in {value!r}: close it with }}, "
@@ -40,12 +40,9 @@ class Template:
                 )
             return rendered.replace(r"\${", "${")
         if isinstance(value, list):
-            return [cls.render(item, context, unescape=unescape) for item in value]
+            return [cls.render(item, context) for item in value]
         if isinstance(value, dict):
-            return {
-                str(cls.render(key, context, unescape=unescape)): cls.render(item, context, unescape=unescape)
-                for key, item in value.items()
-            }
+            return {str(cls.render(key, context)): cls.render(item, context) for key, item in value.items()}
         return value
 
     @staticmethod
