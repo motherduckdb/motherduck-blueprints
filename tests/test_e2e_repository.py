@@ -129,6 +129,31 @@ def test_changed_lists_packages_touched_between_real_commits(starter: Path, md_c
     assert text.splitlines() == ["wikipedia-pageviews-ingest", "wikipedia-pageviews"]
 
 
+def test_changed_sees_moved_files_and_non_ascii_paths(starter: Path, md_cli: Cli) -> None:
+    git(starter, "init", "-q", "-b", "main")
+    git(starter, "config", "core.quotePath", "true")
+    base = commit_all(starter, "starter")
+
+    def changed(since: str) -> list[str]:
+        return list(md_cli.ok("changed", "--root", str(starter), "--base", since, "--json").json())
+
+    # Git reports a rename only under its new path; the package the file left changed too.
+    shutil.move(
+        starter / "flights/wikipedia-pageviews-ingest/README.md", starter / "dives/wikipedia-pageviews/INGEST.md",
+    )
+    commit_all(starter, "move a file between packages")
+    assert changed(base) == ["wikipedia-pageviews", "wikipedia-pageviews-ingest"]
+
+    # Git quotes non-ASCII paths unless -z is used, so they never matched a package directory.
+    (starter / "dives/équipe").mkdir()
+    shutil.move(starter / "dives/wikipedia-pageviews", starter / "dives/équipe/wikipedia-pageviews")
+    regrouped = commit_all(starter, "nest the dive")
+    dive = starter / "dives/équipe/wikipedia-pageviews/src/dive.tsx"
+    dive.write_text(dive.read_text(encoding="utf-8") + "\n// changed\n", encoding="utf-8")
+    commit_all(starter, "edit nested dive")
+    assert changed(regrouped) == ["wikipedia-pageviews"]
+
+
 def test_changed_maps_repository_paths_when_motherduck_yml_is_in_a_subdirectory(
     tmp_path: Path, md_cli: Cli,
 ) -> None:

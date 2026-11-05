@@ -111,6 +111,17 @@ def validate_required_cli_version(value: object, *, path: Path) -> None:
         )
 
 
+def json_equal(left: object, right: object) -> bool:
+    """Equality as JSON Schema defines it: booleans never equal numbers, although Python's True == 1."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(json_equal(a, b) for a, b in zip(left, right))
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(json_equal(left[key], right[key]) for key in left)
+    return left == right
+
+
 class SchemaValidator:
     def __init__(self) -> None:
         self.schema_root = schema_root()
@@ -164,13 +175,19 @@ class SchemaValidator:
             self._validate_node(data, self._resolve_ref(ref, root_schema), path, root_schema)
             return
 
-        if "const" in schema and data != schema["const"]:
-            raise ValidationError(f"{path} must equal {schema['const']!r}")
+        if "const" in schema and not json_equal(data, schema["const"]):
+            message = f"{path} must equal {schema['const']!r}"
+            # Python's == used to let true pass for 1 and 0 for false.
+            if data == schema["const"]:
+                message += "." + breaking_change("schema-booleans-are-not-numbers")
+            raise ValidationError(message)
 
         enum_values = schema.get("enum")
-        if isinstance(enum_values, list) and data not in enum_values:
-            rendered = ", ".join(repr(value) for value in enum_values)
-            raise ValidationError(f"{path} must be one of {rendered}")
+        if isinstance(enum_values, list) and not any(json_equal(data, value) for value in enum_values):
+            message = f"{path} must be one of {', '.join(repr(value) for value in enum_values)}"
+            if data in enum_values:
+                message += "." + breaking_change("schema-booleans-are-not-numbers")
+            raise ValidationError(message)
 
         any_of = schema.get("anyOf")
         if isinstance(any_of, list):

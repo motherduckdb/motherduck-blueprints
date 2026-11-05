@@ -44,7 +44,8 @@ def literal(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("$" + "{", "\\" + "$" + "{")
     if isinstance(value, dict):
-        return {key: literal(item) for key, item in value.items()}
+        # Templates render mapping keys too, for example Flight config names.
+        return {literal(key): literal(item) for key, item in value.items()}
     if isinstance(value, list):
         return [literal(item) for item in value]
     return value
@@ -417,7 +418,7 @@ def run_import(
                         raise ValidationError("motherduck.yml changed during import; retry")
                     manifest_temp: Path | None = None
                     try:
-                        with tempfile.NamedTemporaryFile(mode="w", dir=project.root, delete=False) as handle:
+                        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=project.root, delete=False) as handle:
                             manifest_temp = Path(handle.name)
                             handle.write(after_manifest)
                         manifest_temp.chmod(project.manifest_path.stat().st_mode & 0o777)

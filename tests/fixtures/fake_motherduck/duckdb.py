@@ -76,7 +76,8 @@ def _select_columns(query: str) -> list[str]:
 
 def _read_text_argument(query: str) -> str:
     path = _optional_string(query, r"read_text\(")
-    return Path(path).read_text(encoding="utf-8") if path else ""
+    # DuckDB's read_text returns the file verbatim; it does not translate \r\n like Path.read_text.
+    return Path(path).read_bytes().decode("utf-8") if path else ""
 
 
 def _references_literal(query: str, prefix: str) -> str:

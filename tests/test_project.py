@@ -581,7 +581,7 @@ def test_variable_cycles_are_rejected(tmp_path: Path, variables: str) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ValidationError, match="variables reference each other in a cycle or nest too deeply: a"):
+    with pytest.raises(ValidationError, match="variables reference each other in a cycle: a"):
         Project(tmp_path).render_all("prod")
 
 
@@ -713,3 +713,83 @@ def test_unknown_template_references_suggest_the_closest_name(tmp_path: Path) ->
     write_override_project(tmp_path, "          maxRuntimeSec: ${var.runtme}")
     with pytest.raises(ValidationError, match=r"\$\{var.runtme\}. Did you mean \$\{var.runtime\}\?"):
         Project(tmp_path).validate(targets=["prod"])
+
+
+@pytest.mark.parametrize("source", ["src/flight.py", "guide.md"])
+def test_non_utf8_sources_name_the_file(tmp_path: Path, source: str) -> None:
+    import shutil
+
+    shutil.copytree(FIXTURES / "medium", tmp_path, dirs_exist_ok=True)
+    package = tmp_path / "blueprints/flight-dive"
+    if source == "guide.md":
+        manifest = package / "blueprint.yml"
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8").replace(
+                "resources:\n", "resources:\n  guides:\n    notes:\n      source: guide.md\n", 1,
+            ),
+            encoding="utf-8",
+        )
+    (package / source).write_bytes(b'x = "caf\xe9"\n')
+
+    with pytest.raises(ValidationError, match=rf"Could not read .*{re.escape(source)}: the file is not UTF-8 text"):
+        Project(tmp_path).validate()
+
+
+def test_substituted_values_are_never_parsed_as_templates(tmp_path: Path) -> None:
+    # Git allows ${ in branch names. A substituted value is data: it must not be resolved again or
+    # rejected as an unterminated reference, whether it reaches a resource directly or via a variable.
+    blueprint = write_override_project(
+        tmp_path, "          name: loader", extra_flight="      config:\n        pattern: ${var.branch}\n",
+    )
+    blueprint.write_text(
+        blueprint.read_text(encoding="utf-8").replace(
+            'variables:\n  runtime: "900"\n', 'variables:\n  runtime: "900"\n  branch: "b-${target.branch}"\n',
+        ),
+        encoding="utf-8",
+    )
+    project = Project(tmp_path)
+    branch = "feature/${var.runtime}"
+    loader = project.render_all("preview", branch=branch)[0].flights["loader"]
+    assert loader["config"] == {"pattern": "b-feature/${var.runtime}"}
+    assert loader["name"] == "loader:feature/${var.runtime} (Preview)"
+    project.validate(targets=["preview"], branch=branch)
+
+
+
+@pytest.mark.parametrize(("preview_topic", "branch", "error"), [
+    ("ops/${target.branch_slug}", "feature/x", None),
+    ("ops", "feature/x", "title or topic must include branch name or slug"),
+    # The branch name happens to be the production topic, so the preview would replace production.
+    ("ops", "ops", "must not match its production topic and title: Runbook"),
+])
+def test_preview_guide_may_scope_its_topic_instead_of_its_title(
+    tmp_path: Path, preview_topic: str, branch: str, error: str | None,
+) -> None:
+    # Guides are identified by topic and title, and validation accepts the branch in either.
+    write_root_manifest(tmp_path)
+    package = tmp_path / "blueprints" / "runbook"
+    package.mkdir(parents=True)
+    (package / "guide.md").write_text("# Runbook\n", encoding="utf-8")
+    (package / "blueprint.yml").write_text(
+        f"""
+schemaVersion: 1
+name: runbook
+title: Runbook
+resources:
+  guides:
+    guide:
+      source: guide.md
+      title: Runbook
+      topic: ops
+      deploy: true
+      targets:
+        preview:
+          topic: "{preview_topic}"
+""".lstrip(),
+        encoding="utf-8",
+    )
+    if error is None:
+        Project(tmp_path).validate(targets=["preview"], branch=branch)
+    else:
+        with pytest.raises(ValidationError, match=error):
+            Project(tmp_path).validate(targets=["preview"], branch=branch)

@@ -6,6 +6,15 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- `changed` selects the package a file was moved out of, not only the package it was moved into. Previously, Git rename detection listed only the new path, so the package that lost the file was not redeployed.
+- `changed` selects packages below directories with non-ASCII names. Previously, Git quoted those paths and they matched no package.
+- Deploying an unchanged Guide whose file uses CRLF line endings no longer appends a new Guide version on every deploy.
+- Validation no longer treats a boolean as a number: `schemaVersion: true` and `waitForRun: 0` are rejected. Refer to [schema-booleans-are-not-numbers](docs/breaking-changes.md#schema-booleans-are-not-numbers).
+- `import --write` writes `motherduck.yml` as UTF-8 regardless of the system locale, and keeps `${` in exported Flight config names literal instead of reading it as a template reference.
+- The timeout error for `waitForRun: success` reports the time actually waited.
+- A Flight or Guide source that is not UTF-8 fails validation with an error that names the file.
+- Values substituted into templates, such as the branch name, rendered share names, producer outputs, and variable values, are no longer parsed as templates again. Previously, a valid Git branch name that contains `${`, such as `feature/${x}`, failed with an unterminated template reference error, or resolved as a reference when it reached a resource through a variable. A variable cycle error now reads `variables reference each other in a cycle`.
+- A preview Guide may keep its production title when its topic includes the branch. Validation already accepted the branch in either the title or the topic, but the preview separation check rejected such a Guide for matching the production title.
 - ruff is updated to 0.17.3.
 - The package and action pins are updated to 0.10.1.
 

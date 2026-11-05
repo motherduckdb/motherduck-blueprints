@@ -28,6 +28,21 @@ def test_unsupported_schema_version_names_action_pin() -> None:
         SchemaValidator().validate(data, "motherduck-root.schema.json")
 
 
+def test_const_and_enum_do_not_treat_booleans_as_numbers() -> None:
+    # Python's True == 1, but JSON Schema keeps booleans and numbers apart.
+    with pytest.raises(ValidationError, match=r"\$.schemaVersion must equal 1\. .*#schema-booleans-are-not-numbers"):
+        SchemaValidator().validate(minimal_root(schemaVersion=True), "motherduck-root.schema.json")
+    validator = SchemaValidator()
+    with pytest.raises(ValidationError, match="must be one of True.*#schema-booleans-are-not-numbers"):
+        validator._validate_node(1, {"enum": [True]}, "$.x", {})
+    with pytest.raises(ValidationError, match=r"must equal 1$"):
+        validator._validate_node(2, {"const": 1}, "$.x", {})
+    with pytest.raises(ValidationError, match="must equal"):
+        validator._validate_node([0], {"const": [False]}, "$.x", {})
+    validator._validate_node(1.0, {"const": 1}, "$.x", {})
+    validator._validate_node({"a": [True]}, {"enum": [{"a": [True]}]}, "$.x", {})
+
+
 def test_unknown_field_error_explains_additive_upgrade_path() -> None:
     data = minimal_root(refreshWindow="daily")
 

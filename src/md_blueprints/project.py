@@ -119,6 +119,7 @@ def run_command(
         argv,
         input=stdin_data,
         text=True,
+        encoding="utf-8",
         capture_output=True,
         cwd=str(cwd) if cwd else None,
         env=command_env,
@@ -167,6 +168,17 @@ class RenderedBlueprint:
             "inputs": self.inputs,
             "outputs": self.outputs,
         }
+
+class _LazyVariables(dict[str, object]):
+    """``var`` while variables render: a lookup renders the referenced variable on demand."""
+
+    def __init__(self, names: dict[str, object], resolve: Callable[[str], object]) -> None:
+        super().__init__(dict.fromkeys(names))  # keys serve membership checks and suggestions
+        self._resolve = resolve
+
+    def __getitem__(self, name: str) -> object:
+        return self._resolve(name)
+
 
 class Project:
     def __init__(self, root: Path | str) -> None:
@@ -324,7 +336,9 @@ class Project:
 
         revisions = f"{base}...{head or 'HEAD'}"
         try:
-            diff = run_command(["git", "-C", str(self.root), "diff", "--name-only", revisions])
+            # --no-renames lists a moved file under both paths, so the package it left is selected too.
+            # -z prints paths verbatim; otherwise git quotes non-ASCII paths and they match no package.
+            diff = run_command(["git", "-C", str(self.root), "diff", "--name-only", "--no-renames", "-z", revisions])
         except CommandError as exc:
             # Selecting everything is the safe fallback, but say why so a mistyped --base is noticed.
             if warn:
@@ -335,7 +349,7 @@ class Project:
                 )
             return all_names
 
-        repo_files = [line.strip() for line in diff.splitlines() if line.strip()]
+        repo_files = [path for path in diff.split("\0") if path]
         if not repo_files:
             return []
         # git prints paths relative to the repository root, not to a motherduck.yml in a subdirectory.
@@ -932,25 +946,26 @@ class Project:
         return values
 
     def _render_variables(self, variables: dict[str, object], context: dict[str, object]) -> dict[str, str]:
-        rendered: dict[str, object] = dict(variables)
-        for _ in range(5):
-            context["var"] = rendered
-            # Keep escaped \${...} literals escaped between passes; the final resource
-            # render unescapes them once, so they are never resolved as references.
-            candidate = Template.render(rendered, context, unescape=False)
-            if not isinstance(candidate, dict):
-                raise ValidationError("variables must render to an object")
-            rendered = candidate
-        unresolved = sorted(
-            name for name, value in rendered.items()
-            if isinstance(value, str) and Template._REFERENCE.search(value)
-        )
-        if unresolved:
-            raise ValidationError(
-                "variables reference each other in a cycle or nest too deeply: " + ", ".join(unresolved) + "."
-                + breaking_change("variable-cycle")
-            )
-        return stringify_map(rendered)
+        """Render each variable once, resolving the variables it references first."""
+        resolved: dict[str, object] = {}
+        resolving: list[str] = []
+
+        def resolve(name: str) -> object:
+            if name in resolved:
+                return resolved[name]
+            if name in resolving:
+                cycle = sorted(set(resolving[resolving.index(name):]))
+                raise ValidationError(
+                    "variables reference each other in a cycle: " + ", ".join(cycle) + "."
+                    + breaking_change("variable-cycle")
+                )
+            resolving.append(name)
+            resolved[name] = Template.render(variables[name], context)
+            resolving.pop()
+            return resolved[name]
+
+        context["var"] = _LazyVariables(variables, resolve)
+        return stringify_map({name: resolve(name) for name in variables})
 
     def _validate_uniqueness(
         self, target: str, rendered_blueprints: list[RenderedBlueprint], *, placeholder_branch: str | None = None,
@@ -1193,7 +1208,7 @@ class Project:
             if guide.get("deploy"):
                 require_nonempty(guide.get("title"), f"guides.{key}.title")
             require_file(Path(str(guide["sourcePath"])))
-            content = Path(str(guide["sourcePath"])).read_text(encoding="utf-8")
+            content = read_utf8(Path(str(guide["sourcePath"])))
             if not content:
                 raise ValidationError(f"guides.{key}.source must not be empty")
             if len(content.encode("utf-8")) > 1024 * 1024:
@@ -1259,13 +1274,15 @@ class Project:
                         )
             for key, guide in preview.guides.items():
                 stable_guide = stable_blueprint.guides.get(key)
+                # A Guide is identified by topic and title, so a branch-scoped topic keeps it separate.
                 if (
                     guide.get("deploy")
                     and stable_guide is not None
                     and guide.get("title") == stable_guide.get("title")
+                    and guide.get("topic", "") == stable_guide.get("topic", "")
                 ):
                     raise ValidationError(
-                        f"preview Guide {preview.name}.{key} must not match its {stable_label} title: "
+                        f"preview Guide {preview.name}.{key} must not match its {stable_label} topic and title: "
                         f"{guide.get('title')}"
                     )
 
@@ -1462,8 +1479,15 @@ def require_within(path: Path, root: Path, label: str) -> Path:
     return resolved_path
 
 
+def read_utf8(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"Could not read {path}: the file is not UTF-8 text. Save it with UTF-8 encoding.") from exc
+
+
 def validate_python(path: Path) -> None:
     try:
-        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        ast.parse(read_utf8(path), filename=str(path))
     except SyntaxError as exc:
         raise ValidationError(f"Python syntax error in {path}: {exc}") from exc

@@ -55,6 +55,15 @@ def enable_reviewed_imports(root: Path, names: list[str], *, rename: bool = Fals
         edit_yaml(package / "blueprint.yml", enable)
 
 
+def test_import_writes_files_as_utf8_regardless_of_locale(tmp_path: Path, starter: Path, md_cli: Cli) -> None:
+    # Without an explicit encoding, motherduck.yml would be rewritten in the locale's encoding.
+    result = md_cli.ok(
+        "import", "--root", str(starter), "--snapshot", str(write_snapshot(tmp_path)), "--write",
+        PYTHONWARNDEFAULTENCODING="1",
+    )
+    assert "importer.py" not in result.stderr, result.stderr
+
+
 def test_import_reports_first_then_writes_disabled_packages_that_stay_inert(
     tmp_path: Path, starter: Path, md_cli: Cli,
 ) -> None:

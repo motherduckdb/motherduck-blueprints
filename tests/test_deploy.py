@@ -819,6 +819,19 @@ def test_flight_wait_timeout_explains_state_and_next_step(monkeypatch: pytest.Mo
     assert "maxRuntimeSec" in message
 
 
+def test_flight_wait_timeout_reports_the_time_actually_waited(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    sleeps: list[float] = []
+    monkeypatch.setenv("FLIGHT_RUN_POLL_ATTEMPTS", "3")
+    monkeypatch.setenv("FLIGHT_RUN_POLL_SLEEP_SECONDS", "10")
+    monkeypatch.setattr(deployer, "_flight_run_status", lambda *args: "RUNNING")
+    monkeypatch.setattr("md_blueprints.deploy.time.sleep", sleeps.append)
+
+    with pytest.raises(CommandError, match=r"Timed out after about 20s"):
+        deployer._wait_for_flight_run_success("00000000-0000-0000-0000-000000000001", 7)
+    assert sum(sleeps) == 20
+
+
 def test_cleanup_drops_database_names_that_need_quoting(monkeypatch: pytest.MonkeyPatch) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     calls: list[str] = []
