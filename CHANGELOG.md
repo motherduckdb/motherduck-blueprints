@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.1 - 2026-11-05
+
+Patch release that also rejects `schemaVersion: true` and `waitForRun: 0`. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.1`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0101) and the [v0.10.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.1).
+
 - `changed` selects the package a file was moved out of, not only the package it was moved into. Previously, Git rename detection listed only the new path, so the package that lost the file was not redeployed.
 - `changed` selects packages below directories with non-ASCII names. Previously, Git quoted those paths and they matched no package.
 - Deploying an unchanged Guide whose file uses CRLF line endings no longer appends a new Guide version on every deploy.
