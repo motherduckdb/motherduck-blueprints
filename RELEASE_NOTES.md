@@ -1,42 +1,54 @@
 ## Highlights
 
-- `changed` selects every package that a change affects. Previously, it did not select the package that a file was moved out of, or packages below directories with non-ASCII names, so those packages were not redeployed. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- Values substituted into templates, such as the branch name, are treated as literal text. A valid Git branch name that contains `${` no longer fails validation or resolves as a template reference. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- Deploying an unchanged Guide whose file uses CRLF line endings no longer appends a new Guide version on every deploy. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
+- Role names are compared without regard to case in role membership and share grants. Previously, with `mode: authoritative`, a role written with a capital letter was granted and then revoked on every deploy. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- Staging and production deploys queue every run. Previously, GitHub cancelled all but the newest waiting run, and the packages of a cancelled run were not deployed. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- The documentation gains an index by task and by error, and the field reference and the generated `AGENTS.md` are restructured for faster lookup by people and agents. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
 
-## Upgrading from v0.10.0
+## Upgrading from v0.10.1
 
-v0.10.1 is a patch release that also rejects two manifest values that validation previously accepted by mistake. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically. The local Dive preview is unchanged, so `make sync-preview` is not required.
+v0.10.2 is a patch release that also changes when Guide versions are appended and adds timeouts to the reusable workflows. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically. The local Dive preview is unchanged, so `make sync-preview` is not required.
 
-1. Review the [v0.10.1 breaking-change entry](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.1/docs/breaking-changes.md#v0101).
-2. Run `make upgrade VERSION=0.10.1`.
-3. Run `make validate` and correct any `schemaVersion: true` or `waitForRun: 0` that it now rejects. Then open a pull request and review the preview plan before merging.
+1. Review the [v0.10.2 breaking-change entries](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/breaking-changes.md#v0102).
+2. Run `make upgrade VERSION=0.10.2`.
+3. Run `make validate`. Then open a pull request and review the preview plan before merging.
+4. When a Flight with `waitForRun: success` can run longer than two hours, set `timeout-minutes` under `with:` in `.github/workflows/deploy_blueprints.yaml`.
 
 Changes to review:
 
-- [A boolean no longer matches a number in validation](#compatibility)
-- [Changed error text for variable cycles](#compatibility)
+- [Guide versions are appended only on change](#compatibility)
+- [Staging and production deploys queue every run](#compatibility)
+- [Reusable workflow jobs and native CLI statements have timeouts](#compatibility)
+
+## Features
+
+- The reusable deploy and cleanup workflows accept a `timeout-minutes` input for the jobs that use the MotherDuck token. The defaults are 120 minutes for deploys and 60 minutes for preview cleanup. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- `changed` prints a warning when a package was removed from the repository, because its deployed resources are not deleted and a scheduled Flight keeps running. The repository reference documents how to [retire a package](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/repository-reference.md#retire-a-package). [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- A failed staging or production deploy ends with an explanation that later pushes deploy only their own changes and that the failed job must be run again. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
 
 ## Bug Fixes
 
-- `changed` selects packages more completely. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-  - When a file was moved from one package to another, Git rename detection listed only the destination, so the package that lost the file was not redeployed. Both packages are now selected.
-  - Git quoted paths below directories with non-ASCII names, so those paths matched no package. They are now matched.
-- Deploying an unchanged Guide whose file uses CRLF line endings appended a new Guide version on every deploy, because the comparison translated line endings while MotherDuck stores the file unchanged. An unchanged Guide is now left as it is. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- Values substituted into templates were parsed as templates again. A valid Git branch name such as `feature/${x}` failed with an unterminated template reference error, or resolved as a reference when it reached a resource through a variable. The same applied to rendered share names, producer outputs, and variable values. Substituted values are now always literal text. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- Validation states that a preview Guide must include the branch in its title or its topic, but a separate check rejected every preview Guide that kept the production title. A preview Guide whose topic includes the branch may now keep the production title. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- `import --write` wrote `motherduck.yml` in the encoding of the system locale. It now writes UTF-8. `${` in the keys of exported Flight configuration mappings is now escaped, so it is no longer read as a template reference. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- A Flight or Guide source file that is not UTF-8 failed validation with a Python decoding error. The error now names the file and states the required encoding. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- The timeout error for `waitForRun: success` reported one polling interval more than the time actually waited. It now reports the time waited. [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
+- Role names were compared case-sensitively in role membership and share grants, although MotherDuck stores role names in lowercase. They are now compared without regard to case, as Flight grants already were. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+  - With `mode: authoritative`, a share grant or an included role declared with a capital letter was granted and then revoked on every deploy.
+  - A role declared with a capital letter was planned as a new role on every run.
+  - A capitalised reference to an existing role was reported as a role that does not exist.
+- YAML `<<` merge keys were rejected with "could not determine a constructor for the tag 'tag:yaml.org,2002:merge'". They now load, and a key that overrides a merged key is not reported as a duplicate. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- A manifest value written with Jinja-style braces, such as `{{ branch }}`, ended the command with a Python traceback. It now fails validation with an error that names the `${name}` template syntax. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- The preview comment on a pull request kept the report of the last successful preview after a later plan or deploy failed. The comment is now updated and states the failure. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- An export whose name starts with `REQUIRED_DATABASES`, such as `REQUIRED_DATABASES_BY_ENV`, was removed from a deployed Dive together with the `REQUIRED_DATABASES` export. Only the exact name is now removed. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
 
 ## Compatibility
 
-- **A boolean no longer matches a number in validation.** Validation compares fixed values as JSON Schema does. `schemaVersion: true` and `waitForRun: 0` are now rejected. Previously, `waitForRun: 0` deployed as `waitForRun: false`. Write `schemaVersion: 1`, and `waitForRun: false` or `waitForRun: success`. Refer to [schema-booleans-are-not-numbers](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.1/docs/breaking-changes.md#schema-booleans-are-not-numbers). [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
-- **Changed error text for variable cycles.** Variables no longer have a nesting limit, so the error reads `variables reference each other in a cycle` instead of `in a cycle or nest too deeply`. Automation that matches the previous text must be updated. Refer to [variable-cycle](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.1/docs/breaking-changes.md#variable-cycle). [#153](https://github.com/motherduckdb/motherduck-blueprints/pull/153)
+- **Guide versions are appended only on change.** Deploy appends a Guide version only when the content or the references differ from the live Guide, or when the manifest sets `externalId` and it differs. Previously, each deploy from a newer commit appended a version with identical content. Automation that expects the latest version's external ID to be the most recently deployed commit must set `externalId`. Refer to [guide-version-only-on-change](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/breaking-changes.md#guide-version-only-on-change). [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- **Staging and production deploys queue every run.** The reusable deploy workflow sets `queue: max` on the concurrency group of its staging and production jobs. No action is required on github.com. Repositories on a GitHub Enterprise Server release that does not support `concurrency.queue` must remain on v0.10.1 until the server is upgraded. Refer to [stable-deploys-queue](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/breaking-changes.md#stable-deploys-queue). [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- **Reusable workflow jobs and native CLI statements have timeouts.** Deploy jobs stop after 120 minutes, preview cleanup after 60 minutes, and jobs without the MotherDuck token after 15 minutes. A statement sent through the native MotherDuck CLI stops after 900 seconds. Repositories with longer deploy-time Flight runs must set `timeout-minutes`, and `MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS` adjusts the statement limit. Refer to [deploy-job-timeouts](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/breaking-changes.md#deploy-job-timeouts). [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
 
 ## Maintenance
 
-- ruff is updated to 0.17.3. [#152](https://github.com/motherduckdb/motherduck-blueprints/pull/152)
-- The package and action pins are updated to 0.10.1. [#152](https://github.com/motherduckdb/motherduck-blueprints/pull/152)
+- The documentation has an [index by task and by error](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.2/docs/README.md) with a section for agents. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+  - The field reference lists share, Flight, Guide, and role rules as tables and lists, and states that share `access` and `visibility` apply only when the share is created.
+  - The repository reference describes what each workflow event deploys.
+  - The generated `AGENTS.md` groups its constraints by topic.
+- The release production job no longer keeps Git credentials in the checkout. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
+- The package and action pins are updated to 0.10.2. [#160](https://github.com/motherduckdb/motherduck-blueprints/pull/160)
 
-**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.10.0...v0.10.1
+**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.10.1...v0.10.2

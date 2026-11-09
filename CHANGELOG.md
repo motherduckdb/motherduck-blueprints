@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.2 - 2026-11-09
+
+Patch release that also appends Guide versions only on change, queues every staging and production deploy, and adds timeouts to the reusable workflows. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.2`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0102) and the [v0.10.2 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.2).
+
 - Role names are compared without regard to case in role membership and share grants, as they already were in Flight grants. MotherDuck stores role names in lowercase. Previously, with `mode: authoritative`, a share grant or an included role declared with a capital letter was granted and then revoked on every deploy, a role declared with capitals was planned as new on every run, and a capitalised reference to an existing role was reported as missing.
 - YAML `<<` merge keys load again. Previously, the duplicate-key check rejected them with "could not determine a constructor for the tag 'tag:yaml.org,2002:merge'". A key that overrides a merged key is not a duplicate.
 - A manifest value written with Jinja-style braces, such as `{{ branch }}`, fails with an error that names the `${name}` template syntax. Previously, the command ended with a Python traceback.
