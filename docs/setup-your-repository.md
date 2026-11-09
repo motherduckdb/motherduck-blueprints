@@ -61,7 +61,9 @@ Create a new pipeline and dashboard with `make new-project revenue`. Edit its fi
 | --- | --- |
 | No deployment run | Change a file inside an example package and open the PR against `main`. |
 | Waiting for approval | Approve the deployment in Actions if you configured required environment reviewers. Reject runs you no longer need, such as cleanup for a Dependabot branch. |
-| Production deploy stays queued | An older production run is waiting for approval, and later `main` deploys queue behind it. Reject or approve the older run, then run **Deploy Blueprints** manually for `prod` so that changes from cancelled runs deploy too. |
+| Production deploy stays queued | An older production run is waiting for approval, and later `main` deploys queue behind it. Approve or reject the older run; the queued runs then deploy in order. If you reject a run, run **Deploy Blueprints** manually for `prod` so that its changes deploy too. |
+| A production deploy failed | Later pushes deploy only the packages they change. Re-run the failed job, or run **Deploy Blueprints** manually for `prod`. |
+| A deploy stops after two hours | The deploy job reached its `timeout-minutes`. Set a larger value under `with:` in `.github/workflows/deploy_blueprints.yaml`. |
 | Missing token | Put `MOTHERDUCK_TOKEN` in **Settings → Environments → motherduck-production**, not repository secrets. |
 | `MOTHERDUCK_TOKEN is required` although the environment secret exists | The calling workflow does not pass the secret, so GitHub gives the reusable job an empty string. Run `make upgrade`, which adds `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}` to the deploy and cleanup callers. `make doctor` reports callers that are missing it or use `secrets: inherit`, which GitHub ignores across organizations. |
 | Permission error from MotherDuck | Check the service account's privileges. Custom roles and organization-wide Guides require an admin identity. |
@@ -164,7 +166,7 @@ Open **Settings → Environments → motherduck-production** and add required re
 
 In the default setup, previews, production, and cleanup all use this environment, so its approval and branch rules apply to all three. Allow PR branches if you want previews to deploy. To approve production separately, [add staging](#add-staging-optional).
 
-Handle approvals promptly. Production deploys run one at a time, so a run that waits for approval holds later `main` deploys. GitHub keeps only the newest queued run and cancels the others. Each push deploys only the packages that push changed, so a cancelled run's changes reach production only if a later push changes the same packages. After clearing a stuck queue, run **Actions → Deploy Blueprints → Run workflow** with target `prod` to deploy every package.
+Handle approvals promptly. Production deploys run one at a time, so a run that waits for approval holds later `main` deploys. The later runs wait in a queue and deploy in order once the first one finishes. Each push deploys only the packages that push changed, so a rejected or failed run's changes reach production only if a later push changes the same packages. After rejecting a run or after a failed deploy, run **Actions → Deploy Blueprints → Run workflow** with target `prod` to deploy every package.
 
 ### Keep credentials and cleanup configured
 

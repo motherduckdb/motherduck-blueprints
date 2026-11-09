@@ -35,7 +35,7 @@ def test_init_writes_a_valid_repository_and_never_overwrites_customer_files(
     assert (root / "README.md").read_text(encoding="utf-8") == "my readme\n"
     assert (root / ".gitignore").read_text(encoding="utf-8") == "secrets/\n"
     assert (root / "motherduck.yml").is_file()
-    assert "Kept 48 existing file(s) unchanged:" in forced.stdout
+    assert "Kept 49 existing file(s) unchanged:" in forced.stdout
     assert "  .gitignore (merge the template's ignore entries into yours manually)" in forced.stdout
     assert "  README.md" in forced.stdout
 
@@ -278,3 +278,23 @@ def test_validate_reads_a_copied_example_only_once_activated(starter: Path, md_c
     assert yaml.safe_load((starter / "projects/ncs-field-recovery/blueprint.yml").read_text())["name"] == (
         "ncs-field-recovery"
     )
+
+
+def test_changed_warns_that_a_removed_package_stays_deployed(starter: Path, md_cli: Cli) -> None:
+    git(starter, "init", "-q", "-b", "main")
+    base = commit_all(starter, "starter")
+    shutil.move(starter / "dives/wikipedia-pageviews", starter / "dives/team")
+    (starter / "dives/team").rename(starter / "dives/wikipedia-pageviews")
+    (starter / "dives/reports").mkdir()
+    shutil.move(starter / "dives/wikipedia-pageviews", starter / "dives/reports/wikipedia-pageviews")
+    moved = commit_all(starter, "move the dive")
+    result = md_cli.ok("changed", "--root", str(starter), "--base", base, "--json")
+    # A moved package keeps its name, so nothing was retired.
+    assert result.json() == ["wikipedia-pageviews"] and "was removed" not in result.stderr
+
+    shutil.rmtree(starter / "dives/reports")
+    commit_all(starter, "remove the dive")
+    result = md_cli.ok("changed", "--root", str(starter), "--base", moved, "--json")
+    assert result.json() == []
+    assert "package 'wikipedia-pageviews' was removed from the repository" in result.stderr
+    assert "docs/repository-reference.md#retire-a-package" in result.stderr

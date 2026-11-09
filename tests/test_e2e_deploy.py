@@ -553,6 +553,9 @@ def test_guides_publish_once_and_append_versions_only_for_changes(starter: Path,
     fake.clear_log()
     md_cli.ok(*deploy)
     assert guide_writes() == []
+    # A newer commit alone does not append a version with identical content.
+    md_cli.ok(*deploy, GITHUB_SHA="def456")
+    assert guide_writes() == []
 
     (package / "guide.md").write_text("# Runbook\n\nPage the on-call engineer.\n", encoding="utf-8")
     fake.clear_log()
