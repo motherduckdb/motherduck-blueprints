@@ -15,6 +15,10 @@ on:
         description: Python version used by the Blueprints action.
         type: string
         default: "3.11"
+      timeout-minutes:
+        description: Timeout in minutes for each job that uses the MotherDuck token. Time spent queued does not count.
+        type: number
+        default: 60
     secrets:
       MOTHERDUCK_TOKEN:
         description: >-
@@ -33,6 +37,7 @@ jobs:
         (github.event_name == 'delete' && github.event.ref_type == 'branch')
       )
     runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
+    timeout-minutes: 15
     outputs:
       environment: ${{ steps.preview-target.outputs.environment }}
       identity: ${{ steps.preview-target.outputs.identity }}
@@ -45,7 +50,7 @@ jobs:
 
       - name: Validate base deployment configuration
         id: validate
-        uses: motherduckdb/motherduck-blueprints@v0.10.1
+        uses: motherduckdb/motherduck-blueprints@v0.10.3
         with:
           python-version: ${{ inputs.python-version }}
           command: validate
@@ -124,6 +129,7 @@ jobs:
     if: needs.resolve-environment.outputs.skip != 'true'
     runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
     environment: ${{ needs.resolve-environment.outputs.environment }}
+    timeout-minutes: ${{ inputs.timeout-minutes || 60 }}
     concurrency:
       # Shared with preview deploys. Cleanup never cancels or is cancelled by another cleanup.
       group: md-blueprints-preview-${{ github.head_ref || github.event.ref }}
@@ -152,7 +158,7 @@ jobs:
       - name: Cleanup preview blueprints from the branch manifest
         id: cleanup-branch-manifest
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.10.1
+        uses: motherduckdb/motherduck-blueprints@v0.10.3
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -170,7 +176,7 @@ jobs:
 
       - name: Cleanup preview blueprints from the base manifest
         if: ${{ github.event_name == 'pull_request' }}
-        uses: motherduckdb/motherduck-blueprints@v0.10.1
+        uses: motherduckdb/motherduck-blueprints@v0.10.3
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

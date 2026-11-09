@@ -209,3 +209,26 @@ def test_failed_query_reports_the_error_not_the_upgrade_notice(
     with pytest.raises(CommandError) as error:
         motherduck_cli.query_rows('SELECT 1', token=None)
     assert str(error.value) == f'MotherDuck SQL failed: {expected}'
+
+
+def test_query_stops_a_statement_that_never_returns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(motherduck_cli, 'executable', lambda: '/bin/motherduck')
+    timeouts = []
+
+    def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        timeouts.append(kwargs['timeout'])
+        raise subprocess.TimeoutExpired(args, kwargs['timeout'] or 0)
+
+    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.delenv('MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS', raising=False)
+    with pytest.raises(CommandError, match='did not finish within 900s'):
+        motherduck_cli.query_rows('SELECT 1', token='token')
+    monkeypatch.setenv('MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS', '30')
+    with pytest.raises(CommandError, match='did not finish within 30s'):
+        motherduck_cli.query_rows('SELECT 1', token='token')
+    assert timeouts == [900, 30]
+    monkeypatch.setenv('MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS', '0')
+    assert motherduck_cli.query_timeout() is None
+    monkeypatch.setenv('MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS', 'soon')
+    with pytest.raises(CommandError, match='must be a whole number of seconds'):
+        motherduck_cli.query_rows('SELECT 1', token='token')

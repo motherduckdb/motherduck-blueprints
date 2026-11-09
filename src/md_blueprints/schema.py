@@ -58,16 +58,33 @@ def breaking_change(entry: str) -> str:
 class _UniqueKeyLoader(yaml.SafeLoader):
     """Reject duplicate mapping keys; PyYAML otherwise keeps the last value and drops the rest silently."""
 
-    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[object, object]:
-        seen: set[object] = set()
-        for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if key in seen:
-                raise yaml.constructor.ConstructorError(
-                    None, None, f"duplicate key {key!r}", key_node.start_mark,
-                )
-            seen.add(key)
-        return super().construct_mapping(node, deep=deep)
+    def __init__(self, stream: object) -> None:
+        super().__init__(stream)  # type: ignore[arg-type]
+        self._checked: set[int] = set()
+
+    def flatten_mapping(self, node: yaml.MappingNode) -> None:
+        # PyYAML calls this before it constructs a mapping and before it copies the keys of a ``<<`` merge
+        # into it. Checking here sees only the keys written in this mapping, so a key that overrides a
+        # merged one is not a duplicate.
+        if id(node) not in self._checked:
+            self._checked.add(id(node))
+            seen: set[object] = set()
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    continue
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    duplicate = key in seen
+                except TypeError as exc:
+                    raise yaml.constructor.ConstructorError(
+                        None, None, "found unhashable key", key_node.start_mark,
+                    ) from exc
+                if duplicate:
+                    raise yaml.constructor.ConstructorError(
+                        None, None, f"duplicate key {key!r}", key_node.start_mark,
+                    )
+                seen.add(key)
+        super().flatten_mapping(node)
 
 
 def load_yaml(path: Path) -> object:
@@ -76,6 +93,11 @@ def load_yaml(path: Path) -> object:
             return yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     except yaml.YAMLError as exc:
         hint = breaking_change("duplicate-yaml-keys") if "duplicate key" in str(exc) else ""
+        if "unhashable key" in str(exc):
+            hint = (
+                "\nNext: a mapping cannot be used as a key. Blueprints templates are written ${name}, "
+                "not {{ name }}; quote the value if the braces are literal text."
+            )
         if "while scanning an alias" in str(exc):
             hint = '\nNext: quote values that start with *, for example scheduleCron: "*/15 * * * *".'
         raise ValidationError(f"Invalid YAML in {path}: {exc}.{hint}") from exc

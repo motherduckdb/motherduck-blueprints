@@ -112,7 +112,11 @@ def quote_ident(value: object) -> str:
 
 
 def users_missing_from(users: set[str], other: set[str]) -> set[str]:
-    """Users not in ``other``, comparing usernames without regard to case like the plan's username check."""
+    """Names not in ``other``, compared without regard to case.
+
+    MotherDuck matches usernames that way and stores role names in lowercase, so a name declared
+    with capitals is the same user or role as the lowercase name it lists.
+    """
     lowered = {user.lower() for user in other}
     return {user for user in users if user.lower() not in lowered}
 
@@ -154,7 +158,7 @@ def quote_name(value: object) -> str:
 
 
 _REQUIRED_DATABASES_EXPORT = re.compile(r"^export const REQUIRED_DATABASES\s*(?::(?:=>|[^=])+?)?=(?!>)\s*", re.MULTILINE)
-_LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES[^\n]*(?:\n|$)")
+_LEGACY_REQUIRED_DATABASES_LINE = re.compile(r"export const REQUIRED_DATABASES\b[^\n]*(?:\n|$)")
 OTHER_BRANCH_PREVIEW = "other-branch preview"
 FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
 ACCESS_TOKEN_WARNING_DAYS = 14
@@ -801,13 +805,13 @@ class Deployer:
                     if isinstance(raw_included_roles, list)
                     else set()
                 )
-                missing_roles = sorted(included_roles - live_role_names - managed_role_names)
+                missing_roles = sorted(users_missing_from(included_roles, live_role_names | managed_role_names))
                 raw_members = role.get("members", [])
                 unknown_members = self._unknown_users(
                     {str(value) for value in raw_members} if isinstance(raw_members, list) else set(),
                     org_users,
                 )
-                exists = name in live_role_names
+                exists = not users_missing_from({name}, live_role_names)
                 problems = []
                 if missing_roles:
                     problems.append(
@@ -906,7 +910,7 @@ class Deployer:
                     else set()
                 )
                 missing_grant_roles = sorted(
-                    desired_grant_roles - live_role_names - managed_role_names
+                    users_missing_from(desired_grant_roles, live_role_names | managed_role_names)
                 )
                 unknown_grant_users = self._unknown_users(
                     {str(value) for value in grants.get("users", [])} if isinstance(grants, dict) else set(),
@@ -1860,7 +1864,7 @@ class Deployer:
     @staticmethod
     def _dive_content_sql(source_path: str) -> str:
         legacy_sql = (
-            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES[^\\n]*(\\n|$)', '', 'g') "
+            "(SELECT regexp_replace(content, 'export const REQUIRED_DATABASES\\b[^\\n]*(\\n|$)', '', 'g') "
             f"FROM read_text({sql_string(source_path)}))"
         )
         try:
@@ -2079,7 +2083,7 @@ class Deployer:
             return f"{AUTHORITATIVE_NOTE}; current grants could not be read at plan time"
         return (
             f"{AUTHORITATIVE_NOTE}; "
-            f"{self._revocation_summary(current_roles - desired_roles, users_missing_from(current_users, desired_users))}"
+            f"{self._revocation_summary(users_missing_from(current_roles, desired_roles), users_missing_from(current_users, desired_users))}"
         )
 
     def _managed_share_plan(self, share: dict[str, object]) -> tuple[str, str]:
@@ -2101,13 +2105,13 @@ class Deployer:
                 desired_roles = {str(value) for value in grants.get("roles", [])}
                 desired_users = {str(value) for value in grants.get("users", [])}
                 current_roles, current_users = self._current_share_grantees(name)
-                additions = [f"role {value}" for value in sorted(desired_roles - current_roles)] + [
+                additions = [f"role {value}" for value in sorted(users_missing_from(desired_roles, current_roles))] + [
                     f"user {value}" for value in sorted(users_missing_from(desired_users, current_users))
                 ]
                 if additions:
                     changes.append(f"will grant: {', '.join(additions)}")
                 if grants.get("mode") == "authoritative":
-                    revoked_roles = current_roles - desired_roles
+                    revoked_roles = users_missing_from(current_roles, desired_roles)
                     revoked_users = users_missing_from(current_users, desired_users)
                     if revoked_roles or revoked_users:
                         changes.append(self._revocation_summary(revoked_roles, revoked_users))
@@ -2236,12 +2240,12 @@ class Deployer:
         if role.get("mode") == "authoritative" or plan.action == "update":
             current_roles, current_users = self._current_role_grants(name)
 
-        for included in sorted(desired_roles - current_roles):
+        for included in sorted(users_missing_from(desired_roles, current_roles)):
             self._sql(f"GRANT ROLE {quote_name(included)} TO ROLE {name_sql};")
         for member in sorted(users_missing_from(desired_users, current_users)):
             self._sql(f"GRANT ROLE {name_sql} TO USER {quote_name(member)};")
         if role.get("mode") == "authoritative":
-            for included in sorted(current_roles - desired_roles):
+            for included in sorted(users_missing_from(current_roles, desired_roles)):
                 self._sql(f"REVOKE ROLE {quote_name(included)} FROM ROLE {name_sql};")
             for member in sorted(users_missing_from(current_users, desired_users)):
                 self._sql(f"REVOKE ROLE {name_sql} FROM USER {quote_name(member)};")
@@ -2250,8 +2254,9 @@ class Deployer:
         self,
         rendered: list[RenderedBlueprint],
     ) -> list[tuple[RenderedBlueprint, str, dict[str, object]]]:
+        # Role names are keyed in lowercase, as MotherDuck stores them.
         resources = {
-            str(role["name"]): (blueprint, key, role)
+            str(role["name"]).lower(): (blueprint, key, role)
             for blueprint in rendered
             for key, role in blueprint.roles.items()
             if role.get("deploy")
@@ -2260,7 +2265,7 @@ class Deployer:
         for name, (_, _, role) in resources.items():
             included = role.get("includedRoles", [])
             if isinstance(included, list):
-                dependencies[name] = {str(value) for value in included if str(value) in resources}
+                dependencies[name] = {str(value).lower() for value in included if str(value).lower() in resources}
 
         ordered: list[tuple[RenderedBlueprint, str, dict[str, object]]] = []
         remaining = {name: set(values) for name, values in dependencies.items()}
@@ -2298,12 +2303,12 @@ class Deployer:
         desired_users = {str(value) for value in grants.get("users", [])}
         current_roles, current_users = self._current_share_grantees(name)
 
-        for role in sorted(desired_roles - current_roles):
+        for role in sorted(users_missing_from(desired_roles, current_roles)):
             self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO ROLE {quote_name(role)};")
         for user in sorted(users_missing_from(desired_users, current_users)):
             self._sql(f"GRANT READ ON SHARE {quote_name(name)} TO USER {quote_name(user)};")
         if grants.get("mode") == "authoritative":
-            for role in sorted(current_roles - desired_roles):
+            for role in sorted(users_missing_from(current_roles, desired_roles)):
                 self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM ROLE {quote_name(role)};")
             for user in sorted(users_missing_from(current_users, desired_users)):
                 self._sql(f"REVOKE READ ON SHARE {quote_name(name)} FROM USER {quote_name(user)};")
@@ -2348,7 +2353,10 @@ class Deployer:
         content_sql = f"(SELECT content FROM read_text({sql_string(guide['sourcePath'])}))"
         references_sql = self._guide_references_sql(blueprint, guide.get("references", []))
         change_comment = str(guide.get("changeComment", "deployed by md-blueprints"))
-        external_id = str(guide.get("externalId") or os.environ.get("GITHUB_SHA", ""))
+        # The commit labels a version that is appended anyway. Only an explicit externalId appends one
+        # for unchanged content, so redeploying a Guide from a newer commit adds no identical version.
+        explicit_external_id = str(guide.get("externalId") or "")
+        external_id = explicit_external_id or os.environ.get("GITHUB_SHA", "")
         version_args = [
             '"content" := getvariable(\'guide_content\')',
             f'"change_comment" := {sql_string(change_comment)}',
@@ -2394,7 +2402,7 @@ class Deployer:
             source_content = Path(str(guide["sourcePath"])).read_bytes().decode("utf-8")
             append_version = not (
                 current_content == source_content
-                and (not external_id or current_external_id == external_id)
+                and (not explicit_external_id or current_external_id == explicit_external_id)
                 and references_match
             )
             statements = [f"SET VARIABLE guide_content = {content_sql};"]

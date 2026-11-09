@@ -85,6 +85,7 @@ Run **Actions → Prepare Guide context** to collect context in CI, with an opti
 
 ## More help
 
+- [Documentation index](docs/README.md): find the page for a task or an error
 - [Setup and troubleshooting](docs/setup-your-repository.md)
 - [Blueprint fields and options](docs/blueprint-yml-reference.md)
 - [GitHub Action inputs](docs/github-action.md)
