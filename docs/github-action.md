@@ -16,12 +16,14 @@ Every reusable workflow accepts these optional inputs. Set them under `with:` in
 | --- | --- | --- |
 | `runs-on` | `ubuntu-latest` | Runner label, or a JSON array of labels such as `'["self-hosted", "linux"]'`. Self-hosted runners need `bash`, `git`, and `jq`. |
 | `python-version` | `3.11` | Python used to install Blueprints. |
-| `timeout-minutes` | `10` | Job timeout. Prepare Guide context only. |
+| `timeout-minutes` | `120` deploy, `60` cleanup, `10` Guide context | Timeout for each job that uses the MotherDuck token or prepares Guide context. Time spent queued or waiting for approval does not count. Raise it when a Flight with `waitForRun: success` runs longer. Not available on the doctor workflow. |
 
 The workflows also enforce a few rules:
 
 - Manual `staging` or `prod` runs must start from the default branch. Run them from another branch and they fail before deploying.
 - Dependabot pull requests are validated but do not deploy previews, because Dependabot runs receive no environment secrets. Preview cleanup skips Dependabot branches before it checks anything out. A pull request runs the workflow version from its own merge commit, so one opened before you upgraded can still start a cleanup run. It has nothing to clean up.
+- Staging and production deploys run one at a time, and every queued run deploys in order (`queue: max`). Each push deploys only its own changes, so a waiting run is never replaced by a newer one. This needs github.com or a GitHub Enterprise Server release that supports `concurrency.queue`.
+- A deploy that fails is not repeated by the next push. Re-run the failed job, or run the workflow manually for the target.
 - Preview deploys and preview cleanup for the same branch share one concurrency group, so cleanup waits for a running deploy. A new preview deploy for the same branch, for example after reopening a PR, can still cancel a running cleanup. The next close cleans up again.
 
 Use the action directly when adding Blueprints to an existing repository with a `motherduck.yml` manifest.
@@ -40,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.3
 ```
 
 The action installs its own Python dependencies. Validation is the default command and needs no token. Import, planning, verification, deployment, and cleanup read the job's environment token. Import also installs the tested MotherDuck CLI. See [CI and compatibility](motherduck-cli.md#ci-and-compatibility) for how commands reach MotherDuck.
@@ -63,7 +65,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.3
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:
@@ -112,7 +114,7 @@ permissions:
   contents: read
 jobs:
   context:
-    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@v0.10.1
+    uses: motherduckdb/motherduck-blueprints/.github/workflows/reusable_prepare_guide_context.yaml@v0.10.3
     with:
       root: .
       # dbt: analytics/dbt # Optional path inside the checkout.
@@ -126,7 +128,7 @@ To integrate an existing agent in the same job, use the composite action:
 - uses: actions/checkout@v7
   with:
     persist-credentials: false
-- uses: motherduckdb/motherduck-blueprints@v0.10.1
+- uses: motherduckdb/motherduck-blueprints@v0.10.3
   id: context
   with:
     command: guides
@@ -134,7 +136,7 @@ To integrate an existing agent in the same job, use the composite action:
 # Your existing agent step goes here. Give it the same checkout and pass
 # steps.context.outputs.stdout-file through an environment variable.
 # Instruct it to read that file and follow the Guide authoring workflow.
-- uses: motherduckdb/motherduck-blueprints@v0.10.1
+- uses: motherduckdb/motherduck-blueprints@v0.10.3
   with:
     command: validate
 ```
@@ -170,7 +172,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.3
         id: context
         with:
           command: guides
@@ -212,7 +214,7 @@ jobs:
           git apply --include='guides/**' "$RUNNER_TEMP/agent.patch"
           git add -N -- guides
           git diff --binary -- guides > "$RUNNER_TEMP/guide-updates.patch"
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.3
         with:
           command: validate
       - uses: actions/upload-artifact@v7
@@ -233,7 +235,7 @@ By default, deployment then reads back resource identities and checks declared s
 For a separate read-only check of existing resources, including disabled imported bindings, use:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.10.1
+- uses: motherduckdb/motherduck-blueprints@v0.10.3
   env:
     MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   with:

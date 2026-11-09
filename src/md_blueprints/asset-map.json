@@ -15,6 +15,7 @@
   "template_repo/dives/wikipedia-pageviews/README.md": "dives/wikipedia-pageviews/README.md",
   "template_repo/dives/wikipedia-pageviews/blueprint.yml": "dives/wikipedia-pageviews/blueprint.yml",
   "template_repo/dives/wikipedia-pageviews/src/dive.tsx": "dives/wikipedia-pageviews/src/dive.tsx",
+  "template_repo/docs/README.md": "docs/README.md",
   "template_repo/docs/adopt-existing-resources.md": "docs/adopt-existing-resources.md",
   "template_repo/docs/blueprint-yml-reference.md": "docs/blueprint-yml-reference.md",
   "template_repo/docs/breaking-changes.md": "docs/breaking-changes.md",

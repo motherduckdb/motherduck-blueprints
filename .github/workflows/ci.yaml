@@ -180,8 +180,11 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Lint GitHub Actions workflows
+        # actionlint does not know concurrency.queue yet, which GitHub documents under
+        # "Control the concurrency of workflows and jobs".
         run: >-
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          -ignore 'unexpected key "queue" for "concurrency" section'
           .github/workflows/*.yaml
           src/md_blueprints/template_repo/.github/workflows/*.yaml
 

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Callable, cast
 from uuid import UUID
 
+import yaml
+
 from .schema import SchemaValidator, ValidationError, breaking_change, load_yaml, validate_required_cli_version
 from .template import Template, as_text
 
@@ -22,6 +24,7 @@ ROLE_MODES = {"additive", "authoritative"}
 SHARE_ACCESS = {"ORGANIZATION", "UNRESTRICTED", "RESTRICTED"}
 SHARE_VISIBILITY = {"DISCOVERABLE", "HIDDEN"}
 BRANCH_SLUG_MAX_LENGTH = 48
+PACKAGE_ROOTS = ("flights", "dives", "guides", "roles", "projects", "blueprints")
 # Resource group -> schema definition in blueprint.schema.json.
 RESOURCE_DEFINITIONS = {
     "shares": "share",
@@ -355,6 +358,13 @@ class Project:
         # git prints paths relative to the repository root, not to a motherduck.yml in a subdirectory.
         prefix = self._repository_prefix()
         changed_files = [file[len(prefix):] for file in repo_files if file.startswith(prefix)]
+        if warn:
+            for name in self._removed_blueprints(base, repo_files):
+                warn(
+                    f"package {name!r} was removed from the repository. Blueprints does not delete its deployed "
+                    "Flights, Dives, Guides, shares, or roles, and a scheduled Flight keeps running. "
+                    "See docs/repository-reference.md#retire-a-package."
+                )
 
         global_patterns = [
             "motherduck.yml",
@@ -384,6 +394,26 @@ class Project:
             if any(file == rel_dir or file.startswith(f"{rel_dir}/") for file in changed_files):
                 changed.append(blueprint.name)
         return sorted(set(changed))
+
+    def _removed_blueprints(self, base: str, repo_files: list[str]) -> list[str]:
+        """Names of packages whose manifest existed at ``base`` and is gone now. A moved package keeps its name."""
+        prefix = self._repository_prefix()
+        removed: set[str] = set()
+        for file in repo_files:
+            relative = Path(file[len(prefix):])
+            if (
+                not file.startswith(prefix) or relative.name != "blueprint.yml"
+                or relative.parts[0] not in PACKAGE_ROOTS or (self.root / relative).exists()
+            ):
+                continue
+            try:
+                manifest = yaml.safe_load(run_command(["git", "-C", str(self.root), "show", f"{base}:{file}"]))
+            except (CommandError, yaml.YAMLError):
+                continue
+            name = manifest.get("name") if isinstance(manifest, dict) else None
+            if isinstance(name, str) and name not in self._blueprints_by_name:
+                removed.add(name)
+        return sorted(removed)
 
     def _repository_prefix(self) -> str:
         root = self.root.resolve()
@@ -1015,20 +1045,21 @@ class Project:
             )
 
     def _validate_role_graph(self, rendered_blueprints: list[RenderedBlueprint]) -> None:
+        # Role names are compared in lowercase, as MotherDuck stores them.
         managed_names = {
-            str(role["name"])
+            str(role["name"]).lower()
             for blueprint in rendered_blueprints
             for role in blueprint.roles.values()
         }
         dependencies: dict[str, set[str]] = {name: set() for name in managed_names}
         for blueprint in rendered_blueprints:
             for role in blueprint.roles.values():
-                name = str(role["name"])
+                name = str(role["name"]).lower()
                 included = role.get("includedRoles", [])
                 if not isinstance(included, list):
                     continue
                 for value in included:
-                    included_name = str(value)
+                    included_name = str(value).lower()
                     if included_name == name:
                         raise ValidationError(f"Role {name!r} cannot include itself")
                     if included_name in managed_names:
