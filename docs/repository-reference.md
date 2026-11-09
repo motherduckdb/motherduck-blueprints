@@ -194,7 +194,48 @@ Declare custom roles under `resources.roles` or scaffold a role package with `ma
 
 ## CI/CD
 
-Pull requests compute directly changed packages, expand the preview dependency graph, plan live changes, deploy branch-scoped resources, and comment with the selected packages, any packages the dependency graph added, and preview links. The verified resource table is folded in the comment, and the full plan is in the workflow run summary, also when the plan fails. Without staging, pushes to `main` expand changes downstream and deploy production. With staging, pushes to `main` deploy staging and a published non-prerelease GitHub Release verifies and deploys the exact tagged commit to production. Closing a PR or deleting a branch triggers dependency-safe preview cleanup through the preview target's GitHub Environment.
+The generated workflows call versioned reusable workflows. What each event does:
+
+| Event | Without staging | With staging |
+| --- | --- | --- |
+| Pull request | Deploys a branch-scoped preview | Deploys a preview with the staging service account |
+| Push to `main` | Deploys production | Deploys staging |
+| Published non-prerelease GitHub Release | Nothing | Verifies the tag is on the default branch, then deploys production |
+| Pull request closed or branch deleted | Cleans up the preview | Cleans up the preview |
+
+Pull requests:
+
+- The workflow computes the directly changed packages, expands the preview dependency graph, plans live changes, and deploys branch-scoped resources.
+- The pull request comment lists the selected packages, any packages the dependency graph added, and preview links. The verified resource table is folded in the comment.
+- The full plan is in the workflow run summary, also when the plan fails. When the plan or the deploy fails, the comment says so instead of keeping the previous preview's report.
+- Cleanup runs in dependency-safe order through the preview target's GitHub Environment.
+
+Pushes to `main`:
+
+- Each push deploys only the packages it changed, plus their downstream consumers.
+- Stable deploys run one at a time and every queued run deploys in order. A newer push never replaces a waiting one.
+- A deploy that fails is not repeated by the next push. Re-run the failed job, or run **Actions → Deploy Blueprints → Run workflow** for the target, to deploy its packages. The failed run's summary says the same.
+- A job that uses the MotherDuck token stops after `timeout-minutes` (120 for deploys, 60 for cleanup). See [customize the reusable workflows](github-action.md#customize-the-reusable-workflows).
+
+## Retire a package
+
+Deleting a package directory removes it from validation and deployment. It does not delete anything in MotherDuck: a scheduled Flight keeps running, and its Dives, Guides, shares, and roles stay live. The deploy log for that push prints a warning that names the package.
+
+1. Before deleting, record the live IDs: run `.venv/bin/md-blueprints plan --target prod --blueprints NAME` with the target's token and keep the `ID` column.
+2. Remove or repoint the consumers first. Validation fails while another package still declares the retired package as an input or a Guide reference.
+3. Delete the package directory and merge the pull request. Previews of the pull request are cleaned up as usual.
+4. Delete the live resources with the identity that owns them, in the MotherDuck UI or with SQL. Delete consumers before producers:
+
+   ```sql
+   FROM MD_DELETE_GUIDE(id := '<guide id>'::UUID);
+   FROM MD_DELETE_DIVE(id = '<dive id>'::UUID);
+   FROM MD_DELETE_FLIGHT("flight_id" => '<flight id>'::UUID);
+   FROM MD_DROP_DATABASE_SHARE('<share name>');
+   ```
+
+   Drop the database and any role only when nothing else uses them. With staging, repeat for the staging account.
+
+Renaming a package directory and its `name` together does not retire it: its resources are matched by `id`, or by Flight name, Dive title, and Guide topic and title.
 
 ## Included examples
 

@@ -294,3 +294,25 @@ def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="duplicate key 'variables'"):
         load_yaml(path)
+
+
+def test_yaml_merge_keys_load_and_only_written_keys_count_as_duplicates(tmp_path: Path) -> None:
+    from md_blueprints.schema import load_yaml
+
+    path = tmp_path / "blueprint.yml"
+    path.write_text("base: &base\n  a: 1\n  c: 0\nchild:\n  <<: *base\n  c: 2\nagain: *base\n")
+    # A key that overrides a merged key is not a duplicate.
+    assert load_yaml(path) == {"base": {"a": 1, "c": 0}, "child": {"a": 1, "c": 2}, "again": {"a": 1, "c": 0}}
+
+    path.write_text("base: &base {a: 1}\nchild:\n  <<: *base\n  c: 1\n  c: 2\n")
+    with pytest.raises(ValidationError, match="duplicate key 'c'"):
+        load_yaml(path)
+
+
+def test_jinja_style_braces_report_the_template_syntax_instead_of_a_traceback(tmp_path: Path) -> None:
+    from md_blueprints.schema import load_yaml
+
+    path = tmp_path / "blueprint.yml"
+    path.write_text("name: {{ branch }}\n")
+    with pytest.raises(ValidationError, match=r"unhashable key(.|\n)*written \$\{name\}, not \{\{ name \}\}"):
+        load_yaml(path)

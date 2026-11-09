@@ -20,3 +20,4 @@ jobs:
     # with:
     #   runs-on: ubuntu-latest # Or a JSON array, such as '["self-hosted", "linux"]'.
     #   python-version: "3.11"
+    #   timeout-minutes: 60 # For the job that uses the MotherDuck token.

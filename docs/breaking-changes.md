@@ -10,6 +10,37 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.10.2
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.10.2`. Run `make validate` after the upgrade.
+
+### guide-version-only-on-change
+
+- **Changed in:** v0.10.2
+- **What changed:** deploy appends a Guide version only when the content or the references differ from the live Guide, or when the manifest sets `externalId` and it differs from the live version's. Before, the commit SHA of the workflow run counted as the external ID, so a deploy from a newer commit appended a version with identical content.
+- **Symptom:** after a deploy that did not change a Guide, its latest version and that version's external ID stay at the commit that last changed it.
+- **Find:** look for automation that reads `version_external_id` from `MD_GET_GUIDE` and expects the most recently deployed commit.
+- **Fix:** none needed for most repositories. To append a version on every deploy, set `externalId` in the manifest to a value that changes.
+- **Implemented in:** `Deployer._deploy_guide`.
+
+### stable-deploys-queue
+
+- **Changed in:** v0.10.2
+- **What changed:** in the reusable deploy workflow, staging and production deploy jobs set `queue: max` on their concurrency group. Every queued run now waits and deploys in order. Before, GitHub kept one pending run per group and cancelled the others, and because each push deploys only its own changes, a cancelled run's packages were not deployed.
+- **Symptom:** several merges in quick succession produce one deploy per merge instead of some cancelled runs. On a GitHub Enterprise Server release that does not support `concurrency.queue`, the workflow is reported as invalid.
+- **Find:** look for cancelled **Deploy prod Blueprints** or **Deploy staging Blueprints** jobs in earlier runs; run **Deploy Blueprints** manually for that target once to deploy what they skipped.
+- **Fix:** none needed on github.com. On a GitHub Enterprise Server release without `concurrency.queue`, stay on v0.10.1 until the server is upgraded.
+- **Implemented in:** the `deploy-stable` and `deploy-release-production` jobs of `.github/workflows/reusable_deploy_blueprints.yaml` in motherduckdb/motherduck-blueprints.
+
+### deploy-job-timeouts
+
+- **Changed in:** v0.10.2
+- **What changed:** jobs of the reusable workflows have a timeout. Jobs that use the MotherDuck token follow the new `timeout-minutes` input: 120 minutes for deploys and 60 for preview cleanup. Jobs without the token stop after 15 minutes. A statement sent through the native MotherDuck CLI stops after 900 seconds. Before, a job could run until GitHub's limit of six hours.
+- **Symptom:** a deploy that waits for a long Flight run with `waitForRun: success` is cancelled after two hours with `The job has exceeded the maximum execution time`.
+- **Find:** search `blueprint.yml` files for `waitForRun: success` and compare each Flight's `maxRuntimeSec` and usual run time with 120 minutes.
+- **Fix:** set `timeout-minutes` under `with:` in `.github/workflows/deploy_blueprints.yaml`. For the CLI limit, set `MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS`, or `0` for no limit.
+- **Implemented in:** `.github/workflows/reusable_deploy_blueprints.yaml` and `reusable_cleanup_preview_blueprints.yaml` in motherduckdb/motherduck-blueprints, and `md_blueprints.motherduck_cli.query_timeout`.
+
 ## v0.10.1
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.10.1`. Run `make validate` after the upgrade.
