@@ -1247,3 +1247,77 @@ def test_share_timeout_says_what_to_check(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(deployer, "_query_rows", lambda statement: [])
     with pytest.raises(CommandError, match=r"waiting for share 'data'\. .*Next: check that the Flight"):
         deployer._wait_for_share("data")
+
+
+def test_role_names_are_compared_without_regard_to_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MotherDuck stores role names in lowercase and lists them that way."""
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    calls: list[str] = []
+
+    def fake_sql(statement: str) -> str:
+        calls.append(statement)
+        return ""
+
+    monkeypatch.setattr(deployer, "_sql", fake_sql)
+    monkeypatch.setattr(deployer, "_current_share_grantees", lambda name: ({"analysts"}, set()))
+    deployer._reconcile_share({"name": "s", "grants": {"roles": ["Analysts"], "users": [], "mode": "authoritative"}})
+    assert calls == []
+    action, notes = deployer._managed_share_plan(
+        {"name": "s", "grants": {"roles": ["Analysts"], "users": [], "mode": "authoritative"}}
+    )
+    assert action == "present" and "will grant" not in notes and "will revoke" not in notes
+
+    monkeypatch.setattr(deployer, "_current_role_grants", lambda name: ({"base_role"}, set()))
+    role: dict[str, object] = {
+        "name": "Finance_Readers", "includedRoles": ["Base_Role"], "members": [], "mode": "authoritative",
+    }
+    deployer._deploy_role(role, PlanRecord("access", "role", "finance", "Finance_Readers", "update", True, "x"))
+    assert calls == ['CREATE ROLE IF NOT EXISTS "Finance_Readers";']
+    assert "nothing to revoke today" in deployer._authoritative_role_note(role, True)
+
+    monkeypatch.setattr(deployer, "_current_share_grantees", lambda name: ({"old_team"}, set()))
+    deployer._reconcile_share({"name": "s", "grants": {"roles": ["Analysts"], "users": [], "mode": "authoritative"}})
+    assert calls[1:] == [
+        'GRANT READ ON SHARE "s" TO ROLE "Analysts";', 'REVOKE READ ON SHARE "s" FROM ROLE "old_team";',
+    ]
+
+
+def test_capitalised_role_is_planned_as_existing_and_orders_its_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    deployer = Deployer(Project(FIXTURES / "complex"))
+    deployer.target = "prod"
+    monkeypatch.setattr(deployer, "_live_role_names", lambda: {"finance_readers", "base_role"})
+    monkeypatch.setattr(deployer, "_org_users", lambda: None)
+
+    def blueprint(name: str, role: dict[str, object]) -> RenderedBlueprint:
+        return RenderedBlueprint(
+            name=name, title=name, description="", shares={}, flights={}, dives={}, contexts={},
+            roles={"role": {"members": [], "mode": "additive", "deploy": True, **role}},
+        )
+
+    rendered = [
+        blueprint("readers", {"name": "Finance_Readers", "includedRoles": ["BASE_ROLE"]}),
+        blueprint("base", {"name": "Base_Role", "includedRoles": []}),
+    ]
+    records = deployer._deploy_plan_records(rendered)
+    assert [(record.name, record.action, record.exists) for record in records] == [
+        ("Finance_Readers", "update", True), ("Base_Role", "update", True),
+    ]
+    assert [role["name"] for _, _, role in deployer._role_deployment_order(rendered)] == ["Base_Role", "Finance_Readers"]
+
+
+def test_required_databases_removal_leaves_longer_export_names(tmp_path: Path) -> None:
+    from md_blueprints.deploy import strip_required_databases_export
+
+    source = (
+        "export const REQUIRED_DATABASES_BY_ENV = { prod: 1 };\n"
+        "export const REQUIRED_DATABASES = [];\n"
+        "export default function Dive() { return REQUIRED_DATABASES_BY_ENV; }\n"
+    )
+    assert strip_required_databases_export(source) == (
+        "export const REQUIRED_DATABASES_BY_ENV = { prod: 1 };\n"
+        "export default function Dive() { return REQUIRED_DATABASES_BY_ENV; }\n"
+    )
+    path = tmp_path / "dive.tsx"
+    path.write_text(source, encoding="utf-8")
+    # The server-side pattern for single-line exports has the same word boundary.
+    assert "REQUIRED_DATABASES\\b[^" in Deployer._dive_content_sql(str(path))

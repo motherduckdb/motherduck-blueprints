@@ -68,3 +68,4 @@ jobs:
       # Optional runner settings. Defaults are shown:
       # runs-on: ubuntu-latest # Or a JSON array, such as '["self-hosted", "linux"]'.
       # python-version: "3.11"
+      # timeout-minutes: 120 # For each job that uses the MotherDuck token.

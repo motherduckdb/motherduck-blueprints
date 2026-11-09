@@ -24,7 +24,7 @@ Run `make upgrade` to update `CLI_VERSION` in `Makefile` and every Blueprints wo
 Customer workflows should pin an immutable release tag:
 
 ```yaml
-- uses: motherduckdb/motherduck-blueprints@v0.10.1
+- uses: motherduckdb/motherduck-blueprints@v0.10.2
   with:
     command: validate
 ```

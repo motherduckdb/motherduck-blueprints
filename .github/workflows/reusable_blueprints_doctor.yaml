@@ -21,6 +21,7 @@ jobs:
   doctor:
     name: Check Blueprint Tooling
     runs-on: ${{ startsWith(inputs.runs-on, '[') && fromJSON(inputs.runs-on) || inputs.runs-on || 'ubuntu-latest' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,7 +30,7 @@ jobs:
       - name: Run blueprints doctor
         id: doctor
         continue-on-error: true
-        uses: motherduckdb/motherduck-blueprints@v0.10.1
+        uses: motherduckdb/motherduck-blueprints@v0.10.2
         env:
           # Authenticated release lookups avoid the shared runner IP rate limit. Only github.com accepts this token.
           MD_BLUEPRINTS_GITHUB_TOKEN: ${{ github.api_url == 'https://api.github.com' && github.token || '' }}

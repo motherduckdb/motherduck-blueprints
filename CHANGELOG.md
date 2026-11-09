@@ -6,6 +6,20 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Role names are compared without regard to case in role membership and share grants, as they already were in Flight grants. MotherDuck stores role names in lowercase. Previously, with `mode: authoritative`, a share grant or an included role declared with a capital letter was granted and then revoked on every deploy, a role declared with capitals was planned as new on every run, and a capitalised reference to an existing role was reported as missing.
+- YAML `<<` merge keys load again. Previously, the duplicate-key check rejected them with "could not determine a constructor for the tag 'tag:yaml.org,2002:merge'". A key that overrides a merged key is not a duplicate.
+- A manifest value written with Jinja-style braces, such as `{{ branch }}`, fails with an error that names the `${name}` template syntax. Previously, the command ended with a Python traceback.
+- Deploy appends a Guide version only when the content or references change, or when an explicit `externalId` differs. Previously, each deploy from a newer commit appended a version with identical content. Refer to [guide-version-only-on-change](docs/breaking-changes.md#guide-version-only-on-change).
+- Staging and production deploys queue every run instead of keeping only the newest pending one, so several merges in quick succession all deploy. Refer to [stable-deploys-queue](docs/breaking-changes.md#stable-deploys-queue).
+- A failed staging or production deploy ends with an explanation that later pushes deploy only their own changes and that the job must be re-run.
+- The preview comment on a pull request is updated after a failed plan or deploy and states the failure. Previously, it kept the report of the last successful preview.
+- Jobs of the reusable workflows have timeouts, with a `timeout-minutes` input for the jobs that use the MotherDuck token, and statements sent through the native CLI stop after 900 seconds. Refer to [deploy-job-timeouts](docs/breaking-changes.md#deploy-job-timeouts).
+- Only the `REQUIRED_DATABASES` export is removed from a deployed Dive. Previously, an export whose name starts with it, such as `REQUIRED_DATABASES_BY_ENV`, was removed too.
+- `changed` warns when a package was removed from the repository, because its deployed resources are not deleted. The repository reference documents how to [retire a package](docs/repository-reference.md#retire-a-package).
+- The release production job no longer keeps Git credentials in the checkout.
+- The documentation gains an index by task and by error, including a section for agents. The field reference lists share, Flight, Guide, and role rules as tables and lists, and states that share `access` and `visibility` apply only when the share is created. The repository reference describes what each workflow event deploys. The generated `AGENTS.md` groups its constraints by topic.
+- The package and action pins are updated to 0.10.2.
+
 ## v0.10.1 - 2026-11-05
 
 Patch release that also rejects `schemaVersion: true` and `waitForRun: 0`. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.1`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0101) and the [v0.10.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.1).

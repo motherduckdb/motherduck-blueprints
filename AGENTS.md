@@ -55,7 +55,8 @@ Declare resources in `blueprint.yml`:
 - `resources.flights.<key>.chart` sends a Mermaid `chart.mmd` as Flight metadata (`MAP {'chart': ...}`). Omitted means the live chart is kept and an empty file clears it, matching `motherduck flight push`. The importer writes a non-empty live chart as `chart.mmd`.
 - `resources.flights` deploys MotherDuck Flights from Python source and requirements files. `instanceType` (`F4`, `F16`, `F32`) needs DuckDB 1.5.6, which both the pinned CLI and the Python backend embed; omitting it keeps the live size, or the plan default for a new Flight. `accessTokenName` is checked against `md_access_tokens()` at plan time: a missing or expired token is a plan error, one expiring within 14 days a warning, and an unreadable list skips the check.
 - `resources.dives` deploys Dives and required resources.
-- `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity.
+- `resources.guides` validates Guide files and deploys them when `deploy: true`; organization access requires an admin deployment identity. A version is appended only when content or references change, or when an explicit `externalId` differs; `GITHUB_SHA` only labels a version that is appended anyway.
+- Role names are compared without regard to case everywhere (role membership, share grants, Flight grants), because MotherDuck stores them in lowercase. Keep new comparisons on `users_missing_from`.
 - `resources.roles` reconciles production custom roles and memberships. Preview role deployment is always disabled. Role `members` and share `grants.users` are checked against `GET /v1/users` at plan time; keep that check non-blocking when the user list cannot be read. A role that does not exist yet must have a name MotherDuck accepts (a letter, then letters, digits, or underscores); existing roles are not checked. `make new-role` turns slug hyphens into underscores.
 - `resources.context` is deprecated and validation-only; plan, validate, and `doctor` point to `resources.guides`.
 
@@ -71,7 +72,9 @@ Preview Flight schedules are disabled by target policy. Use `runOnDeploy: true` 
 
 Preview selection adds the downstream consumers of changed packages, then the upstream producers those packages read. Other consumers of those producers stay out of the preview. Production selection expands downstream only, so changing a consumer does not rerun an unchanged producer.
 
-The preview PR comment comes from `deploy --target preview` stdout. It lists the selected and graph-added packages, then preview links, with the verification table folded. The plan goes to the run summary.
+Stable deploy jobs use `queue: max`, so every queued push deploys; previews keep the default single pending run so the newest push wins. Jobs that hold the token follow the `timeout-minutes` input. A failed stable deploy ends with a step that explains how to recover, because the next push only deploys its own changes. Removing a package never deletes live resources; `changed` warns and `docs/repository-reference.md#retire-a-package` holds the steps.
+
+The preview PR comment comes from `deploy --target preview` stdout. The comment step also runs after a failed plan or deploy and says so. It lists the selected and graph-added packages, then preview links, with the verification table folded. The plan goes to the run summary.
 
 ## Commands
 
