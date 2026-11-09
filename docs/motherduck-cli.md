@@ -73,3 +73,5 @@ Local Blueprints commands automatically prefer the native CLI when available. Th
 The native CLI embeds DuckDB 1.5.6, like the Python backend, so imports through it record a Flight's instance size and either backend can deploy `instanceType`. CLI builds before `v1.5.6-2026-10-169` embed DuckDB 1.5.5 and cannot. The native version is managed inside the Blueprints release. `make install-deploy` installs that tested version. `motherduck upgrade` can update your local installation independently.
 
 See the official [CLI overview](https://motherduck.com/docs/getting-started/interfaces/motherduck-cli/), [installation guide](https://motherduck.com/docs/getting-started/interfaces/motherduck-cli/install/), and [command reference](https://motherduck.com/docs/sql-reference/motherduck-cli/).
+
+Each statement sent through the native CLI stops after 900 seconds, so a lost connection cannot hold a job indefinitely. Set `MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS` to another number of seconds, or to `0` for no limit. A stopped statement that writes may still have been applied, so run `plan` before retrying.

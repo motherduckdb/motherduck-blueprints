@@ -13,6 +13,19 @@ from .project import CommandError
 
 
 SUPPORTED_VERSION = "v1.5.6-2026-11-37"
+# A statement that waits on a lost connection would otherwise hold a CI job until GitHub's six-hour limit.
+QUERY_TIMEOUT_ENV = "MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS"
+QUERY_TIMEOUT_DEFAULT_SECONDS = 900
+
+
+def query_timeout() -> int | None:
+    """Seconds one CLI query may run, or None when the limit is disabled with 0."""
+    raw = os.environ.get(QUERY_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return QUERY_TIMEOUT_DEFAULT_SECONDS
+    if not raw.isdecimal():
+        raise CommandError(f"{QUERY_TIMEOUT_ENV} must be a whole number of seconds, or 0 for no limit; got {raw!r}")
+    return int(raw) or None
 
 
 def executable() -> str | None:
@@ -96,11 +109,18 @@ def query_rows(statement: str, *, token: str | None) -> list[tuple[object, ...]]
             env.setdefault("MOTHERDUCK_HOME", str(Path(directory) / "home"))
         if "MOTHERDUCK_HOME" in env and not Path(env["MOTHERDUCK_HOME"]).is_absolute():
             raise CommandError("MOTHERDUCK_HOME must be an absolute path")
+        timeout = query_timeout()
         try:
             result = subprocess.run(
                 [binary, "query", "--file", str(sql_file), "--output", "json"],
-                env=env, capture_output=True, text=True, check=False,
+                env=env, capture_output=True, text=True, check=False, timeout=timeout,
             )
+        except subprocess.TimeoutExpired as exc:
+            raise CommandError(
+                f"MotherDuck SQL did not finish within {timeout}s and was stopped. A statement that writes may "
+                f"still have been applied. Next: run plan to see the live state, then retry. To wait longer, "
+                f"set {QUERY_TIMEOUT_ENV} (0 disables the limit)."
+            ) from exc
         except OSError as exc:
             raise CommandError("Could not start the MotherDuck CLI. Run make install-deploy.") from exc
     if result.returncode:

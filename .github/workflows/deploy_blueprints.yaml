@@ -72,6 +72,7 @@ jobs:
   compute_changes:
     name: Validate and Identify Deployment
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       changed_blueprints: ${{ steps.changed.outputs.changed_blueprints }}
       changed_csv: ${{ steps.changed.outputs.changed_csv }}
@@ -313,6 +314,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: ${{ needs.compute_changes.outputs.target_environment }}
+    timeout-minutes: 120
     concurrency:
       # Shared with preview cleanup. A running cleanup is never cancelled, and a deploy for a closed pull
       # request skips the job, so it does not join the group. GitHub keeps one pending job per group, so a
@@ -396,15 +398,24 @@ jobs:
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
       - name: Comment on pull request
-        if: ${{ github.event_name == 'pull_request' && steps.pr-state.outputs.open == 'true' }}
+        # Also after a failed plan or deploy, so the comment never shows an older preview as current.
+        if: >-
+          ${{ !cancelled() && github.event_name == 'pull_request' && steps.pr-state.outputs.open == 'true' &&
+          steps.plan-preview.outcome != 'skipped' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DEPLOY_OUTPUT: ${{ steps.deploy-preview.outputs.stdout }}
+          PLAN_OUTCOME: ${{ steps.plan-preview.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy-preview.outcome }}
         with:
           script: |
             const marker = '<!-- preview-blueprints-comment -->';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const header = `${marker}\n### Preview Blueprints\n\nFull plan and deployment log: [workflow run](${runUrl})\n\n`;
+            const failed = process.env.PLAN_OUTCOME === 'failure' || process.env.DEPLOY_OUTCOME === 'failure';
+            const status = failed
+              ? '**The preview deployment for the latest commit failed.** Resources listed below were deployed before the failure; the preview may be incomplete or out of date.\n\n'
+              : '';
+            const header = `${marker}\n### Preview Blueprints\n\n${status}Full plan and deployment log: [workflow run](${runUrl})\n\n`;
             const closer = '\n\n</details>';
             const notice = `\n\n_Output truncated. See the [workflow run](${runUrl}) for the full plan and deployment log._`;
             // GitHub rejects comment bodies over 65536 characters.
@@ -456,9 +467,13 @@ jobs:
       github.event_name != 'release'
     runs-on: ubuntu-latest
     environment: ${{ needs.compute_changes.outputs.target_environment }}
+    timeout-minutes: 120
     concurrency:
+      # Each push deploys only its own changes, so every queued run must deploy. Without queue: max GitHub
+      # keeps one pending run per group and cancels the others.
       group: stable-${{ needs.compute_changes.outputs.target }}
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -500,6 +515,16 @@ jobs:
           target: ${{ needs.compute_changes.outputs.target }}
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
 
+      - name: Explain how to recover a failed deployment
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          TARGET: ${{ needs.compute_changes.outputs.target }}
+        run: |
+          message="This ${TARGET} deployment did not finish. Later pushes deploy only the packages they change, so re-run this job, or run Deploy Blueprints manually for ${TARGET}, to deploy the packages of this run."
+          echo "::error title=Blueprints deployment incomplete::${message}"
+          printf '### Blueprints deployment incomplete\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+
   deploy-release-production:
     name: Deploy Released Production Blueprints
     needs: compute_changes
@@ -510,14 +535,18 @@ jobs:
       needs.compute_changes.outputs.deployment_enabled == 'true'
     runs-on: ubuntu-latest
     environment: ${{ needs.compute_changes.outputs.target_environment }}
+    timeout-minutes: 120
     concurrency:
       group: stable-prod
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history includes origin/<default branch>, which the next step compares with the tag.
           fetch-depth: 0
           ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
 
       - name: Verify released commit belongs to the default branch
         shell: bash
@@ -526,7 +555,6 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$DEFAULT_BRANCH"
           release_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
           git merge-base --is-ancestor "$release_commit" "origin/$DEFAULT_BRANCH" || {
             echo "Release tag $RELEASE_TAG does not point to a commit on $DEFAULT_BRANCH." >&2
@@ -568,3 +596,13 @@ jobs:
           verify-after-deploy: "true"
           target: prod
           blueprints: ${{ needs.compute_changes.outputs.changed_csv }}
+
+      - name: Explain how to recover a failed deployment
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          TARGET: prod
+        run: |
+          message="This ${TARGET} deployment did not finish. Later pushes deploy only the packages they change, so re-run this job, or run Deploy Blueprints manually for ${TARGET}, to deploy the packages of this run."
+          echo "::error title=Blueprints deployment incomplete::${message}"
+          printf '### Blueprints deployment incomplete\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"

@@ -46,6 +46,8 @@ All `source` and `requirements` paths must stay inside the package, including af
 
 ## Rendering
 
+Manifests are YAML. Anchors, aliases, and `<<` merge keys are supported; a key written twice in one mapping is an error. Template references are written `${name}`, not `{{ name }}`.
+
 Strings can contain `${path.to.value}`. Escape a literal placeholder as `\${path.to.value}`. A `${` without its closing `}` fails validation. Booleans, empty values, and lists in variables render as JSON text (`true`, an empty string, `["a", "b"]`), as Flight `config` values do.
 
 Available template roots are:
@@ -128,11 +130,38 @@ resources:
           dropDatabase: true
 ```
 
-Required fields are `name` and `database`. `access` is `ORGANIZATION`, `RESTRICTED`, or `UNRESTRICTED`, and `visibility` is `DISCOVERABLE` or `HIDDEN` (case-insensitive). Defaults are `access: ORGANIZATION`, `visibility: DISCOVERABLE`, `cleanup: true`, and `dropDatabase: false`.
+Required fields are `name` and `database`.
 
-A hidden share must use restricted access. With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug` as a whole `_`-separated part, such as `events_preview_feature_x`. When `targets.staging` exists, every rendered staging share name must differ from every production share name. Staging and production database names may match because they belong to separate service accounts.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `access` | `ORGANIZATION` | `ORGANIZATION`, `RESTRICTED`, or `UNRESTRICTED` (case-insensitive). |
+| `visibility` | `DISCOVERABLE` | `DISCOVERABLE` or `HIDDEN` (case-insensitive). A hidden share must use restricted access. |
+| `includePattern` | Unmanaged | The filtered-share include list. See below. |
+| `grants` | Unmanaged | `READ` grants for `roles` and `users`. See below. |
+| `cleanup` | `true` | Preview cleanup drops the share. |
+| `dropDatabase` | `false` | Preview cleanup also drops the database. |
 
-`includePattern` manages the filtered-share include list. An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing. `grants.roles` and `grants.users` manage `READ` grants. `mode: additive` (the default) preserves undeclared grantees, while `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations. `grants.users` are MotherDuck usernames in the share owner's organization; see the username check under [roles](#roles). `plan` reads the share's live include pattern and grants, lists what deploy will change, and reports `present` when nothing differs. Deploy skips `SET INCLUDE_PATTERN` when the live pattern already matches. Include patterns need a Business or Free Trial organization and a native, not DuckLake, database.
+**Who creates the share.** Blueprints does not create shares. The Flight that publishes the share creates it, and the starter Flight reads `access` and `visibility` from its `config`. They apply when the share is created and are not reconciled afterwards: MotherDuck changes the access or visibility of an existing share only with `CREATE OR REPLACE SHARE`, which gives the share a new URL. Editing either field for a share that already exists changes nothing, and `plan` does not report the difference.
+
+**Names.**
+
+- With the default preview policy, cleanup-sensitive share and database names must contain `target.branch_slug` as a whole `_`-separated part, such as `events_preview_feature_x`.
+- When `targets.staging` exists, every rendered staging share name must differ from every production share name.
+- Staging and production database names may match because they belong to separate service accounts.
+
+**`includePattern`.**
+
+- An omitted field leaves the current filter unmanaged, `null` resets the share to unfiltered, and an empty array includes nothing.
+- Deploy skips `SET INCLUDE_PATTERN` when the live pattern already matches.
+- Include patterns need a Business or Free Trial organization and a native, not DuckLake, database.
+
+**`grants`.**
+
+- `grants.roles` and `grants.users` manage `READ` grants. `grants.users` are MotherDuck usernames in the share owner's organization; see the username check under [roles](#roles).
+- `mode: additive` (the default) preserves undeclared grantees. `mode: authoritative` revokes them, including grants made outside Blueprints, for example by Terraform. `plan` lists the revocations.
+- Role names and usernames are compared without regard to case, because MotherDuck stores role names in lowercase. `Analysts` and `analysts` are the same grantee.
+
+`plan` reads the share's live include pattern and grants, lists what deploy will change, and reports `present` when nothing differs.
 
 ## Flights
 
@@ -161,7 +190,12 @@ resources:
             roles: []
 ```
 
-Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `chart`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `grants`, `secrets`, `config`, and `targets`. `scheduleCron` is a 5-field UTC cron expression (minute, hour, day of month, month, day of week) that uses digits and `* , / -` only, without names such as `MON`; validation checks each field's range and rejects a step of `0`. Quote a schedule that starts with `*`, for example `"*/15 * * * *"`. `maxRuntimeSec: 0` means no timeout. Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set: removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout. With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish.
+Required fields are `name`, `source`, and `requirements`. Optional fields include `id`, `owner`, `deploy`, `manageSchedule`, `chart`, `scheduleCron`, `accessTokenName`, `maxRuntimeSec`, `instanceType`, `runOnDeploy`, `waitForRun`, `grants`, `secrets`, `config`, and `targets`.
+
+- `scheduleCron` is a 5-field UTC cron expression (minute, hour, day of month, month, day of week) that uses digits and `* , / -` only, without names such as `MON`. Validation checks each field's range and rejects a step of `0`. Quote a schedule that starts with `*`, for example `"*/15 * * * *"`.
+- `maxRuntimeSec: 0` means no timeout.
+- Like `instanceType`, `accessTokenName` and `maxRuntimeSec` are sent only when set. Removing either from the manifest keeps the existing Flight's current value, so set `maxRuntimeSec: 0` to remove a timeout.
+- With `waitForRun: success`, deployment waits at least `maxRuntimeSec` plus two minutes for the run to finish. The deploy job's own `timeout-minutes` (120 by default in the reusable workflow) must be longer than that wait; see [customize the reusable workflows](github-action.md#customize-the-reusable-workflows).
 
 `accessTokenName` names an access token of the deployment identity, which owns the Flight and runs it with that token. MotherDuck uses the newest token with the name and refuses to create or update a Flight whose token is missing or expired. `plan` and `deploy` read the identity's tokens with `md_access_tokens()` and stop before any write in either case. A token that expires within 14 days prints a warning, because runs fail once it expires. When the tokens cannot be listed, Blueprints warns and skips the check. `verify` does not check tokens.
 
@@ -210,7 +244,7 @@ Each item requires `alias` and exactly one of:
 
 A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives must be `draft`, so a Dive with another base `status` needs `targets.preview.status: draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
-The deployer strips the `export const REQUIRED_DATABASES = ...` declaration (single-line or multi-line) from local-preview source and passes the rendered mounts to MotherDuck.
+The deployer strips the `export const REQUIRED_DATABASES = ...` declaration (single-line or multi-line) from local-preview source and passes the rendered mounts to MotherDuck. Only that exact name is removed; an export such as `REQUIRED_DATABASES_BY_ENV` stays in the deployed source.
 
 ## Guides
 
@@ -234,7 +268,12 @@ resources:
           resource: dashboard
 ```
 
-A validation-only Guide requires `source`; a deployed Guide also requires `title`. `topic`, `description`, `access`, `references`, `changeComment`, `externalId`, `cleanup`, and target overrides are optional. `deploy` defaults to `false` for compatibility; `deploy: true` creates the Guide and publishes versioned content and references during selected deployments. `access` is `user` by default or `organization`, which requires an admin deployment identity.
+A validation-only Guide requires `source`; a deployed Guide also requires `title`. `topic`, `description`, `access`, `references`, `changeComment`, `externalId`, `cleanup`, and target overrides are optional.
+
+- `deploy` defaults to `false` for compatibility. `deploy: true` creates the Guide and publishes versioned content and references during selected deployments.
+- `access` is `user` by default or `organization`, which requires an admin deployment identity.
+- Deploy appends a Guide version only when the content or the references differ from the live Guide, so redeploying an unchanged Guide adds nothing to its history. In GitHub Actions the commit SHA is recorded as the external ID of a version that is appended.
+- Set `externalId` to label versions yourself. A value that differs from the live version's also appends a version for unchanged content.
 
 Catalog references require exactly one of `url`, `share`, or `input`, and may narrow to a schema plus one table, view, or macro. Dive, Flight, and Guide references require either `uuid` or a repository `resource`; set `blueprint` for a resource in another package. These references participate in dependency ordering and are resolved during planning before any mutation. A referenced validation-only Guide must declare its stable `id`; set `deploy: true` instead when this repository owns its lifecycle. Set a stable `id` on a deployed Guide when topic and title are not sufficient to identify an existing Guide. Preview Guides cannot use a production ID and their title or topic must be branch-scoped.
 
@@ -256,9 +295,19 @@ resources:
       deploy: true
 ```
 
-Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames. `plan` and `deploy` look up every declared username with the MotherDuck [`GET /v1/users`](https://motherduck.com/docs/sql-reference/rest-api/users-list/) endpoint, without regard to case, and stop before any write when one is not a user in the organization. A deprovisioned user prints a warning. When the user list cannot be read, for example because the deployment identity lacks the `member_management.view_all_members` privilege, Blueprints prints a warning and skips the check, so an unknown username fails at its `GRANT` instead. `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them. Blueprints never delete roles automatically.
+Roles deploy to stable staging and production targets and require an admin deployment identity. They never deploy to preview. Blueprints never delete roles automatically.
 
-MotherDuck role names start with a letter and contain only letters, digits, and underscores, up to 255 characters. Package slugs use hyphens, so `make new-role finance-team` declares the role `finance_team`. `plan` stops before any write when a role it would create has a name MotherDuck refuses. Roles that already exist are not checked, so a role created under older naming rules keeps working. When the organization assigns user roles through SCIM provisioning from its identity provider (SCIM is an Enterprise plan feature), MotherDuck refuses role assignments to users; keep `members` empty or list only service accounts, and keep `includedRoles` for role-to-role inheritance.
+- `includedRoles` are roles inherited by the custom role; `members` are MotherDuck usernames.
+- `mode: additive` preserves assignments not listed in the manifest. `mode: authoritative` revokes undeclared direct role and user memberships, including ones granted by other tools such as Terraform, and `plan` lists them.
+- Role names and usernames are compared without regard to case. MotherDuck stores role names in lowercase, so `Finance_Readers` in a manifest is the role `finance_readers`.
+- `plan` and `deploy` look up every declared username with the MotherDuck [`GET /v1/users`](https://motherduck.com/docs/sql-reference/rest-api/users-list/) endpoint, without regard to case, and stop before any write when one is not a user in the organization. A deprovisioned user prints a warning.
+- When the user list cannot be read, for example because the deployment identity lacks the `member_management.view_all_members` privilege, Blueprints prints a warning and skips the check, so an unknown username fails at its `GRANT` instead.
+
+Role names:
+
+- MotherDuck role names start with a letter and contain only letters, digits, and underscores, up to 255 characters. Package slugs use hyphens, so `make new-role finance-team` declares the role `finance_team`.
+- `plan` stops before any write when a role it would create has a name MotherDuck refuses. Roles that already exist are not checked, so a role created under older naming rules keeps working.
+- When the organization assigns user roles through SCIM provisioning from its identity provider (SCIM is an Enterprise plan feature), MotherDuck refuses role assignments to users; keep `members` empty or list only service accounts, and keep `includedRoles` for role-to-role inheritance.
 
 ## Adopting existing resources (0.4.3+)
 
