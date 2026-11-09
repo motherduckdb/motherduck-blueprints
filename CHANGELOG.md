@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.3 - 2026-11-09
+
+Patch release that updates dependencies and the local Dive preview build plugin. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.3`, followed by `make sync-preview`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.10.3 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.3).
+
 - pytest is updated to 9.2.0, mypy to 2.4.1, types-PyYAML to 6.0.12.20261030, and pytz to 2026.6.
 - The local Dive preview uses `@vitejs/plugin-react` 6.2.1. Run `make sync-preview` so that `doctor` does not report the preview files as out of date.
 - The package and action pins are updated to 0.10.3.
