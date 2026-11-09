@@ -22,6 +22,7 @@ jobs:
         (github.event_name == 'delete' && github.event.ref_type == 'branch')
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       environment: ${{ steps.preview-target.outputs.environment }}
       identity: ${{ steps.preview-target.outputs.identity }}
@@ -113,6 +114,7 @@ jobs:
     if: needs.resolve-environment.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve-environment.outputs.environment }}
+    timeout-minutes: 60
     concurrency:
       # Shared with preview deploys. Cleanup never cancels or is cancelled by another cleanup.
       group: md-blueprints-preview-${{ github.head_ref || github.event.ref }}

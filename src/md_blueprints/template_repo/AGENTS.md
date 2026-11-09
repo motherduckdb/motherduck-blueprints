@@ -9,6 +9,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 - Guides in CI: run **Prepare Guide context** or use the action's `command: guides` with an optional `dbt` path. Consume `stdout-file` or the `guide-context` artifact in an existing agent runner. See [CI integration](docs/github-action.md#prepare-guides-in-ci) for an optional Codex draft-patch example. Discovery requires no credentials and does not publish Guides.
 - Existing MotherDuck assets: follow [adopt existing resources](docs/adopt-existing-resources.md) before creating manifests.
 - Terraform-managed MotherDuck accounts, tokens, roles, or shares: follow [use with Terraform](docs/use-with-terraform.md). Give each object one owner and avoid `mode: authoritative` on grants Terraform also manages.
+- Not sure which page covers a task or an error: [documentation index](docs/README.md).
 - Package layout and command reference: [repository reference](docs/repository-reference.md).
 - Field definitions and target overrides: [manifest reference](docs/blueprint-yml-reference.md).
 - Upgrades, and errors that end with `see docs/breaking-changes.md#<entry>`: read that entry in [breaking changes](docs/breaking-changes.md). Each entry gives the exact symptom, how to find affected files, the fix, and the code that implements the check. Before `make upgrade`, read every entry newer than the current `CLI_VERSION`.
@@ -24,6 +25,10 @@ The GitHub workflows are short callers into versioned Blueprints workflows. Keep
 
 ## Operating constraints
 
+Each rule below is enforced by `validate`, `plan`, or `deploy`, or prevents a change those commands cannot undo.
+
+### Existing files and adopted resources
+
 - Preserve existing files and live resource identities. Export into a fresh ignored directory first; pull commands overwrite local files.
 - Never run `init --force` over a customer's existing repository to add Blueprints. Generate into a separate directory and integrate the needed files.
 - Inventory the owner, ID, version, name, schedule, data dependencies, and access before adopting resources. Admin visibility is not proof of update permission.
@@ -32,20 +37,42 @@ The GitHub workflows are short callers into versioned Blueprints workflows. Keep
 - Keep existing schedules, config, secret names, mounts, aliases, Guide references, and access explicit during adoption. Omission can reset settings. Do not commit secret values.
 - Imported Flights use manageSchedule: false to preserve the current schedule, including paused state, and runOnDeploy: false. Enable deploy only in the bound target after reviewing the baseline; audit external URLs and production writes before enabling preview.
 - Exporting source does not copy databases, secret values, ownership, history, or grants. Do not create missing shares or change permissions without that being part of the requested work.
+
+### Previews
+
 - Preview resource names must be branch-scoped. Flight schedules are disabled in preview, but source/config may still point at production data. Audit those references before enabling immediate runs.
 - Do not use a production Guide ID in preview. Put an adopted ID under `targets.prod` only.
-- New Guides are validation-only until `deploy: true`. Roles never deploy in preview. Organization Guides and role administration require an admin identity. Blueprints checks for the `admin` role, granted directly or through a custom role, before any write; without it, `plan` and `deploy` stop for every selected package. Role `members` and share `grants.users` are usernames in the organization; `plan` and `deploy` look them up with `GET /v1/users` and stop before any write when one does not exist. If the list cannot be read, they warn and skip that check.
 - Preview selection deploys the changed packages, their downstream consumers, and the producers those packages read. Other consumers of those producers are not previewed.
+
+### Guides, roles, and access
+
+- New Guides are validation-only until `deploy: true`. Roles never deploy in preview. Organization Guides and role administration require an admin identity. Blueprints checks for the `admin` role, granted directly or through a custom role, before any write; without it, `plan` and `deploy` stop for every selected package. Role `members` and share `grants.users` are usernames in the organization; `plan` and `deploy` look them up with `GET /v1/users` and stop before any write when one does not exist. If the list cannot be read, they warn and skip that check.
+- New role names start with a letter and use only letters, digits, and underscores; `plan` rejects others before any write. When the organization assigns user roles through SCIM, MotherDuck refuses user `members`; list only service accounts.
+- Role names and usernames are compared without regard to case. MotherDuck stores role names in lowercase, so write them in lowercase.
+- Deploy appends a Guide version only when its content or references change. Set `externalId` only to label versions or to force one.
+- Share `access` and `visibility` apply when the Flight creates the share. Changing them later has no effect on an existing share; MotherDuck needs `CREATE OR REPLACE SHARE`, which changes the share URL.
+
+### Flights
+
 - Flight `instanceType` is `F4`, `F16`, or `F32` and must be allowed by the organization's plan. Omitting it keeps the live size, or the plan default for a new Flight.
 - Flight `accessTokenName` must name an unexpired access token of the deployment identity. `plan` stops before any write when it is missing or expired, and warns when it expires within 14 days.
 - Flight source opens its own database with `md:<database>?attach_mode=single` and attaches any other database it reads with `ATTACH 'md:<name>'`. Single attach needs an existing database, so the starter's `connect()` falls back to `md:` on the first run.
-- New role names start with a letter and use only letters, digits, and underscores; `plan` rejects others before any write. When the organization assigns user roles through SCIM, MotherDuck refuses user `members`; list only service accounts.
+
+### Dives
+
 - Dives import only `useSQLQuery`, `useExport`, `useDiveState`, `useRunFlight`, `useFlightRun`, `quoteSqlIdentifier`, and `quoteSqlString` from `@motherduck/react-sql-query`, plus React, d3, lucide-react, and recharts at the versions in `.dive-preview/package.json`. `make preview-smoke` fails on anything else, as MotherDuck would. Viewers can run a Dive's Flights only when they own them or hold a `run` grant, so declare the Dive's audience in the Flight's `grants` and ask before granting `organization: true`. Flight IDs in Dive source are not substituted per target, so a preview Dive runs the same Flight as production. BIGINT and HUGEINT values are not JavaScript numbers; convert them with `Number()` before passing rows to recharts or d3. After `make upgrade`, run `make sync-preview` (or `.venv/bin/md-blueprints sync-preview --write`) to refresh `.dive-preview/`.
+
+### Deployment behavior
+
 - Production selection expands downstream, not upstream. Deploy missing producers first or include them explicitly.
 - `plan` checks live identity and dependencies; it is not a complete source/config diff and does not promise a no-op deployment.
-- Deleting a manifest does not delete its production resource. Preview cleanup is a separate destructive operation.
-- CI credentials belong in the selected GitHub Environment as `MOTHERDUCK_TOKEN`. The deploy and cleanup workflows pass it by name to the reusable jobs with `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}`; keep that block, because without it the reusable job gets an empty token. Do not use `secrets: inherit`, which does not cross GitHub organizations. Do not print tokens or commit local exports before checking source/config for embedded secrets.
+- Deleting a manifest does not delete its production resource, and a scheduled Flight keeps running. Follow [retire a package](docs/repository-reference.md#retire-a-package). Preview cleanup is a separate destructive operation.
+- A push to `main` deploys only the packages it changed. A failed or rejected deploy is not repeated by the next push: re-run the failed job, or run **Deploy Blueprints** manually for the target.
+- Jobs that use the token stop after `timeout-minutes` (120 for deploys). Raise it in the caller workflow when a Flight with `waitForRun: success` runs longer.
 
+### Credentials
+
+- CI credentials belong in the selected GitHub Environment as `MOTHERDUCK_TOKEN`. The deploy and cleanup workflows pass it by name to the reusable jobs with `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}`; keep that block, because without it the reusable job gets an empty token. Do not use `secrets: inherit`, which does not cross GitHub organizations. Do not print tokens or commit local exports before checking source/config for embedded secrets.
 ## Validate and hand off
 
 Use `md-blueprints verify --target prod --blueprints NAME` to check existing IDs before enabling deployment; bound imports are checked even while disabled. Deploy always runs preflight and checks live results afterward by default. A postcheck failure means deployment already ran, not that it rolled back. See the action guide for the explicit postcheck opt-out; preflight cannot be disabled.

@@ -87,6 +87,7 @@ Run **Actions → Prepare Guide context** to collect context in CI, with an opti
 
 ## More help
 
+- [Documentation index](docs/README.md): find the page for a task or an error
 - [Setup and troubleshooting](docs/setup-your-repository.md)
 - [Blueprint fields and options](docs/blueprint-yml-reference.md)
 - [GitHub Action inputs](docs/github-action.md)
@@ -102,7 +103,7 @@ Your repository must contain `motherduck.yml` and its blueprint packages. For a 
 
 ```bash
 python3 -m venv /tmp/blueprints-cli
-/tmp/blueprints-cli/bin/pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0.10.1"
+/tmp/blueprints-cli/bin/pip install "md-blueprints @ git+https://github.com/motherduckdb/motherduck-blueprints.git@v0.10.2"
 /tmp/blueprints-cli/bin/md-blueprints init /tmp/blueprints-starter
 ```
 
@@ -122,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.2
 ```
 
 ### Deploy to production manually
@@ -143,7 +144,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
-      - uses: motherduckdb/motherduck-blueprints@v0.10.1
+      - uses: motherduckdb/motherduck-blueprints@v0.10.2
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         with:

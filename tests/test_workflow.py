@@ -302,11 +302,13 @@ def test_reusable_workflows_expose_runner_inputs_and_isolate_checkouts() -> None
                 uses = step.get("uses", "")
                 if uses.startswith("motherduckdb/motherduck-blueprints@"):
                     assert step["with"]["python-version"] == "${{ inputs.python-version }}"
-                if uses.startswith("actions/checkout@") and job_name != "deploy-release-production":
+                if uses.startswith("actions/checkout@"):
                     assert step["with"]["persist-credentials"] is False, (name, job_name)
-            if "timeout-minutes" in job:
-                assert inputs["timeout-minutes"]["default"] == 10
-                assert job["timeout-minutes"] == "${{ inputs.timeout-minutes || 10 }}"
+            # Every job is bounded. Jobs that hold the token or run customer-sized work follow the input.
+            default = inputs.get("timeout-minutes", {}).get("default")
+            assert job["timeout-minutes"] in (15, f"${{{{ inputs.timeout-minutes || {default} }}}}"), (name, job_name)
+        token_jobs = [job for job in workflow["jobs"].values() if "environment" in job or name == "prepare_guide_context"]
+        assert all(isinstance(job["timeout-minutes"], str) for job in token_jobs), name
 
 
 def test_python_helpers_use_the_action_environment() -> None:
@@ -380,7 +382,23 @@ def test_preview_comment_uses_the_deploy_report_and_moves_the_plan_to_the_run_su
     names = [step.get("name") for step in steps]
     assert names.index("Summarize preview plan") < names.index("Deploy preview blueprints")
     assert "GITHUB_STEP_SUMMARY" in steps[names.index("Summarize preview plan")]["run"]
-    assert set(preview_comment_step()["env"]) == {"DEPLOY_OUTPUT"}
+    comment = preview_comment_step()
+    assert set(comment["env"]) == {"DEPLOY_OUTPUT", "PLAN_OUTCOME", "DEPLOY_OUTCOME"}
+    # A failed plan or deploy still updates the comment, so it never shows an older preview as current.
+    assert "!cancelled()" in comment["if"] and "steps.plan-preview.outcome != 'skipped'" in comment["if"]
+    assert "The preview deployment for the latest commit failed" in comment["with"]["script"]
+
+
+@pytest.mark.parametrize("prefix", ["", "reusable_"])
+def test_stable_deploys_queue_every_run_and_explain_recovery(prefix: str) -> None:
+    jobs = yaml.safe_load((ROOT / f".github/workflows/{prefix}deploy_blueprints.yaml").read_text())["jobs"]
+    for name in ("deploy-stable", "deploy-release-production"):
+        # Each push deploys only its own changes, so a queued run must never be replaced by a newer one.
+        assert jobs[name]["concurrency"]["queue"] == "max" and jobs[name]["concurrency"]["cancel-in-progress"] is False
+        last = jobs[name]["steps"][-1]
+        assert last["if"] == "${{ failure() }}" and "re-run this job" in last["run"]
+    release = "\n".join(str(step.get("run", "")) for step in jobs["deploy-release-production"]["steps"])
+    assert "git fetch" not in release and "merge-base --is-ancestor" in release
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
