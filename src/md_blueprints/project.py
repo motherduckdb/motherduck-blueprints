@@ -436,7 +436,12 @@ class Project:
         if isinstance(target_config, dict):
             return cast(dict[str, object], target_config)
         known = ", ".join(self.target_names()) or "none"
-        raise ValidationError(f"Unknown target {target}; motherduck.yml declares: {known}")
+        hint = (
+            " See docs/setup-your-repository.md#add-staging-optional to add it."
+            if target == "staging"
+            else f" Pass one of these to --target, or add targets.{target} to motherduck.yml."
+        )
+        raise ValidationError(f"Unknown target {target}; motherduck.yml declares: {known}.{hint}")
 
     def _validate_deployment_topology(self) -> None:
         if not self.has_target("preview") or not self.has_target("prod"):
@@ -682,7 +687,11 @@ class Project:
     ) -> RenderedBlueprint:
         target_settings = self.target_config(target)
         if target == "preview" and not branch:
-            raise ValidationError("Preview target requires --branch")
+            raise ValidationError(
+                "Preview target requires --branch, because preview resources are named after the branch.\n"
+                "Next: add --branch <branch-name>, for example --branch my-change, or select a stable target "
+                "such as --target prod."
+            )
 
         rendered_inputs: dict[str, dict[str, object]] = {}
         raw_inputs = blueprint.raw.get("inputs", {})

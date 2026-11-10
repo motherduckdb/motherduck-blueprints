@@ -77,7 +77,7 @@ make new-project revenue
 make validate
 ```
 
-Edit the generated files in `projects/revenue/`, then open a pull request.
+The command prints the files it wrote and the next steps. Edit the generated files in `projects/revenue/`, then open a pull request. `make help` lists every command by task.
 
 Ask your Claude, ChatGPT, or Codex agent: **"Initialize or update this repository's MotherDuck Guides. Follow `docs/guides-as-code.md`."** The agent reads the source and writes Markdown that explains the data and workflows. `make guides` gathers context, and `make guides DBT="/path/to/dbt-project"` adds dbt YAML documentation and relationship hints. See [the agent workflow](docs/guides-as-code.md).
 

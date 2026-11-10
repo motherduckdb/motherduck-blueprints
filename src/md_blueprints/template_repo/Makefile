@@ -54,6 +54,8 @@ $(CLI): cli
 	@:
 
 
+##@ Set up
+
 .PHONY: setup
 setup: $(CLI) ## Install CLI, Dive preview dependencies, and create .env from example
 	cd .dive-preview && $(NPM_INSTALL)
@@ -68,6 +70,8 @@ install-deploy: $(CLI) ## Install the supported MotherDuck CLI for export and li
 .PHONY: export
 export: $(CLI) ## Export all visible Flights, Dives, and Guides as disabled packages (TARGET=prod)
 	MD_BLUEPRINTS_SQL_BACKEND=motherduck $(CLI) import --all --target "$(or $(TARGET),prod)" --write
+
+##@ Preview a Dive locally
 
 .PHONY: preview
 preview: $(CLI) ## Preview a package Dive locally (NAME=wikipedia-pageviews, optional DIVE=<key>)
@@ -85,6 +89,7 @@ preview-smoke: $(CLI) ## Build a package Dive preview without a dev server (NAME
 	cd .dive-preview && { { test -x node_modules/.bin/vite && test node_modules/.package-lock.json -nt package-lock.json; } || { $(NPM_INSTALL); }; }
 	cd .dive-preview && npm run build
 
+##@ Write Guides
 
 .PHONY: guides init-guides update-guides
 guides: $(CLI) ## Print context for your agent to write Guides (optional DBT=/path/to/project)
@@ -95,6 +100,8 @@ init-guides: $(CLI) ## Print an agent brief to initialize Guides (optional DBT=.
 
 update-guides: $(CLI) ## Print an agent brief to update Guides (optional DBT=...)
 	@$(CLI) guides update $(if $(DBT),--dbt "$$DBT")
+
+##@ Create packages
 
 .PHONY: new-blueprint
 new-blueprint: $(CLI) ## Deprecated: use make new-project NAME=<name>
@@ -123,6 +130,8 @@ new-project: $(CLI) ## Scaffold a complete Flight + share + Dive project (NAME=<
 	@test -n "$(NAME)" || { echo "Usage: make new-project NAME=<name>" >&2; exit 1; }
 	$(CLI) new project "$(NAME)"
 
+##@ Check without contacting MotherDuck
+
 .PHONY: validate
 validate: $(CLI) ## Validate all blueprint manifests without contacting MotherDuck
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) validate
@@ -131,6 +140,17 @@ validate: $(CLI) ## Validate all blueprint manifests without contacting MotherDu
 render-preview: $(CLI) ## Render a package for a preview branch (NAME=<blueprint-name>)
 	@test -n "$(NAME)" || { echo "Usage: make render-preview NAME=<blueprint-name>" >&2; exit 1; }
 	PYTHONDONTWRITEBYTECODE=1 $(CLI) render --target preview --branch feature/local --blueprints "$(NAME)"
+
+##@ Check against MotherDuck (read-only, needs the target's MOTHERDUCK_TOKEN)
+
+.PHONY: plan verify
+plan: $(CLI) ## Show what a deploy would change (TARGET=prod or BRANCH=<branch>, optional NAME=<package>)
+	PYTHONDONTWRITEBYTECODE=1 $(CLI) plan $(if $(TARGET),--target "$(TARGET)") $(if $(BRANCH),--branch "$(BRANCH)") $(if $(NAME),--blueprints "$(NAME)")
+
+verify: $(CLI) ## Compare deployed resources with the manifests (TARGET=prod or BRANCH=<branch>, optional NAME=<package>)
+	PYTHONDONTWRITEBYTECODE=1 $(CLI) verify $(if $(TARGET),--target "$(TARGET)") $(if $(BRANCH),--branch "$(BRANCH)") $(if $(NAME),--blueprints "$(NAME)")
+
+##@ Maintain
 
 .PHONY: doctor
 doctor: $(CLI) ## Check installed CLI, schema status, and upgrade guidance without contacting GitHub
@@ -153,4 +173,5 @@ migrate: $(CLI) ## Dry-run schema migration to the latest supported version
 .PHONY: help
 help: ## Show available targets
 	@if [ -t 1 ] && [ -z "$$NO_COLOR" ]; then on='\033[36m'; off='\033[0m'; else on=; off=; fi; \
-	  grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk -v on="$$on" -v off="$$off" 'BEGIN {FS = ":.*?## "}; {printf "  %s%-16s%s %s\n", on, $$1, off, $$2}'
+	  grep -E '^[a-zA-Z_-]+:.*?## .*$$|^##@ ' $(MAKEFILE_LIST) | awk -v on="$$on" -v off="$$off" 'BEGIN {FS = ":.*?## "}; /^##@ / {printf "\n%s\n", substr($$0, 5); next} {printf "  %s%-16s%s %s\n", on, $$1, off, $$2}'; \
+	  printf '\nPass a package as NAME=<name>, for example make preview-smoke NAME=wikipedia-pageviews.\n'

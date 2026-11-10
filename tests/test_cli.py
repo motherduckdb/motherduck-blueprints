@@ -219,3 +219,59 @@ def test_dive_source_names_the_packages_that_have_a_dive(capsys: pytest.CaptureF
     root = Path(__file__).resolve().parents[1]
     assert cli.main(["dive-source", "--root", str(root), "--blueprints", "wikipedia-pageviews-ingest"]) == 1
     assert "Packages with a Dive: wikipedia-pageviews" in capsys.readouterr().err
+
+
+def test_help_groups_commands_by_task_and_lists_every_command(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--help"]) == 0
+    out = capsys.readouterr().out
+    grouped = [name for _, names in cli.COMMAND_GROUPS for name in names]
+    assert sorted(grouped) == sorted(cli.COMMANDS)
+    for title, names in cli.COMMAND_GROUPS:
+        assert f"{title}:" in out
+        assert all(f"  {name} " in out for name in names)
+    assert out.index("Check locally") < out.index("Read or change MotherDuck")
+    assert "Typical workflow:" in out and "md-blueprints <command> --help" in out
+
+
+def test_new_without_arguments_shows_examples(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["new"]) == 2
+    err = capsys.readouterr().err
+    assert "new needs a kind and a name" in err and "md-blueprints new project revenue" in err
+
+
+def test_preview_without_branch_and_unknown_target_say_what_to_do(capsys: pytest.CaptureFixture[str]) -> None:
+    root = str(FIXTURES / "simple")
+    assert cli.main(["render", "--root", root, "--target", "preview"]) == 1
+    err = capsys.readouterr().err
+    assert "Preview target requires --branch" in err and "Next: add --branch <branch-name>" in err
+
+    assert cli.main(["render", "--root", root, "--target", "staging"]) == 1
+    assert "docs/setup-your-repository.md#add-staging-optional" in capsys.readouterr().err
+
+    assert cli.main(["render", "--root", root, "--target", "qa"]) == 1
+    assert "add targets.qa to motherduck.yml" in capsys.readouterr().err
+
+
+def test_dive_source_without_a_package_lists_the_packages_with_a_dive(capsys: pytest.CaptureFixture[str]) -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert cli.main(["dive-source", "--root", str(root)]) == 1
+    assert "requires exactly one --blueprints NAME. Packages with a Dive: wikipedia-pageviews" in capsys.readouterr().err
+
+
+def test_validate_warns_that_branch_is_ignored_for_a_stable_target(capsys: pytest.CaptureFixture[str]) -> None:
+    root = str(FIXTURES / "simple")
+    assert cli.main(["validate", "--root", root, "--target", "prod", "--branch", "x"]) == 0
+    assert "--branch only scopes preview resources and is ignored for target 'prod'" in capsys.readouterr().err
+    assert cli.main(["validate", "--root", root, "--branch", "x"]) == 0
+    assert "is ignored" not in capsys.readouterr().err
+
+
+def test_changed_notes_that_no_base_lists_every_package(capsys: pytest.CaptureFixture[str]) -> None:
+    root = str(FIXTURES / "simple")
+    assert cli.main(["changed", "--root", root]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.split() == ["simple-dive"]
+    assert "note: no --base revision given, so every package is listed" in captured.err
+    assert cli.main(["changed", "--root", root, "--all", "--json"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == '["simple-dive"]' and captured.err == ""

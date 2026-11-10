@@ -352,3 +352,43 @@ def test_new_rejects_names_that_render_broken_titles(tmp_path: Path, name: str) 
     with pytest.raises(ValidationError, match="single hyphens between words"):
         run_new(tmp_path, "flight", name)
     assert not (tmp_path / "flights").exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "options", "readme_text", "next_step"),
+    [
+        ("flight", {}, "make new-dive NAME=<name> INPUT=sales.data", "Add a dashboard for its data"),
+        ("dive", {"share_url": "md:_share/sales/1"}, "an existing MotherDuck share by URL", "make preview-smoke NAME=sales"),
+        ("guide", {}, "validated but not deployed", "Set deploy: true"),
+        ("role", {}, "Roles deploy only to production", "Set deploy: true after review"),
+        ("project", {}, "## Replace the Starter Logic", "make preview-smoke NAME=sales"),
+    ],
+)
+def test_new_explains_the_package_and_prints_next_steps(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    kind: str, options: dict[str, str], readme_text: str, next_step: str,
+) -> None:
+    write_root(tmp_path)
+    destination = run_new(tmp_path, kind, "sales", **options)
+
+    readme = (destination / "README.md").read_text(encoding="utf-8")
+    assert readme.startswith("# Sales\n") and readme_text in readme
+    out = capsys.readouterr().out
+    relative = destination.relative_to(tmp_path).as_posix()
+    assert out.startswith(f"Created {relative}\n  {relative}/README.md\n  {relative}/blueprint.yml\n")
+    assert "Next:\n  - " in out and next_step in out and "make validate" in out
+    Project(tmp_path).validate()
+
+
+def test_scaffolded_readme_links_resolve_in_a_generated_repository(tmp_path: Path) -> None:
+    import re
+
+    from md_blueprints.init import run_init
+
+    run_init(tmp_path)
+    for kind in ("flight", "guide", "role"):
+        destination = run_new(tmp_path, kind, f"sample-{kind}")
+        readme = (destination / "README.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\(([^)#]+)(?:#[^)]*)?\)", readme)
+        assert links
+        assert all((destination / link).resolve().is_file() for link in links)

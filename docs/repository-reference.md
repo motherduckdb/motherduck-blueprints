@@ -161,10 +161,14 @@ make preview-smoke wikipedia-pageviews
 make render-preview wikipedia-pageviews
 make sync-preview
 
-.venv/bin/md-blueprints plan --target preview --branch feature/local --blueprints wikipedia-pageviews
+make plan                                     # production, every package
+make plan BRANCH=feature/local NAME=wikipedia-pageviews
+make verify
 .venv/bin/md-blueprints cleanup --dry-run --target preview --branch feature/local
 make doctor
 ```
+
+`make help` lists the targets by task, and `.venv/bin/md-blueprints --help` lists the CLI commands the same way. `make plan` and `make verify` read MotherDuck without changing it and need the target's `MOTHERDUCK_TOKEN` in the environment; supply it through a secret manager. Both accept `TARGET=<target>`, `BRANCH=<branch>` for a preview, and `NAME=<package>`. `make validate`, `make render-preview`, and `make preview-smoke` never contact MotherDuck.
 
 Omit `--blueprints` to select all packages; an explicitly empty selection is an error. `plan`, `deploy`, `verify`, and `render` use `prod` unless `--target` is given; `--branch` alone selects `preview`, and `--branch` with any other target is an error, so a branch name never reaches a stable target. `doctor` validates all declared targets, including rendered resources, and exits unsuccessfully if the manifest is missing or validation fails. Preview commands preserve the existing Dive entrypoint if source selection fails.
 
@@ -174,7 +178,7 @@ Commands that take a name accept it as the second word or as `NAME=`, for exampl
 
 Customer repositories include a manual **Prepare Guide context** workflow. It uploads the same brief as a `guide-context` artifact for an agent to consume. The composite action supports `command: guides`, a named `dbt` input, and a `stdout-file` output. See [Guide CI integration](github-action.md#prepare-guides-in-ci) for custom jobs and optional agent authoring.
 
-`make validate` renders every declared target, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `md-blueprints plan` queries live state without mutations. A non-selected stable producer must already expose its declared share or planning fails before deployment.
+`make validate` renders every declared target, validates contracts and uniqueness, checks Flight Python syntax and source boundaries, and validates Dive mounts and Guide references. `make plan` queries live state without mutations. A non-selected stable producer must already expose its declared share or planning fails before deployment.
 
 ## Dives
 

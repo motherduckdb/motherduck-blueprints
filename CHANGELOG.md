@@ -6,6 +6,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- `md-blueprints --help` groups the commands by task (create, check locally, read or change MotherDuck, maintain) and shows a typical workflow. `make help` in generated repositories groups its targets the same way.
+- Generated repositories gain `make plan` and `make verify`, read-only checks against MotherDuck that accept `TARGET`, `BRANCH`, and `NAME`.
+- `md-blueprints new` prints the files it wrote and the next steps for that kind of package. The `README.md` of a scaffolded Flight, Dive, Guide, or role package now describes its files, its preview behavior, and what to do next, instead of one generic line.
+- Errors that named a problem without a remedy now say what to do: a preview target without `--branch`, an unknown target (with a pointer to the staging setup for `staging`), `dive-source` without a package (lists the packages that have a Dive), and `new` without a kind or name (shows examples).
+- `validate --target <stable target> --branch <name>` warns that `--branch` is ignored, and `changed` without `--base` or `--all` notes on stderr that it lists every package. Standard output and exit codes are unchanged.
+- `doctor` ends with a `result:` line that states whether anything needs attention.
+- The package and action pins are updated to 0.10.4.
+
 ## v0.10.3 - 2026-11-09
 
 Patch release that updates dependencies and the local Dive preview build plugin. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.3`, followed by `make sync-preview`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.10.3 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.3).

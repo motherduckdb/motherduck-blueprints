@@ -44,6 +44,25 @@ COMMANDS: dict[str, str] = {
     "migrate": "Preview or write schemaVersion migrations",
 }
 
+# Order and grouping of the commands in `md-blueprints --help`.
+COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Create packages", ("init", "new", "import", "guides")),
+    ("Check locally, without contacting MotherDuck", ("validate", "render", "changed", "dive-source")),
+    ("Read or change MotherDuck (needs the target's token)", ("plan", "deploy", "verify", "cleanup")),
+    ("Maintain the repository", ("doctor", "check-updates", "upgrade", "sync-preview", "migrate", "install-cli")),
+)
+
+HELP_EXAMPLES = """\
+Typical workflow:
+  md-blueprints new project revenue                    scaffold a Flight, share, and Dive
+  md-blueprints validate                               check every package offline
+  md-blueprints plan --branch my-change                preview what a pull request would deploy
+  md-blueprints plan --target prod                     preview what a merge would deploy
+
+import reads MotherDuck unless --snapshot is given. Pull requests and merges run plan and deploy
+in GitHub Actions, so local live commands are optional.
+Run md-blueprints <command> --help for the options of a command."""
+
 # Specific guidance for flags that users commonly pass to the wrong command.
 FLAG_HINTS: dict[tuple[str, str], str] = {
     ("deploy", "--dry-run"): "use `plan` to preview changes",
@@ -68,6 +87,19 @@ class UsageError(Exception):
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         raise UsageError(f"{self.prog}: {message}")
+
+
+class _RootParser(_Parser):
+    def format_help(self) -> str:
+        width = max(len(name) for name in COMMANDS)
+        lines = ["usage: md-blueprints <command> [options]", "", str(self.description), ""]
+        for title, names in COMMAND_GROUPS:
+            lines.append(f"{title}:")
+            lines.extend(f"  {name:<{width}}  {COMMANDS[name]}" for name in names)
+            lines.append("")
+        lines.extend(["Options:", "  --version   Print the md-blueprints version and exit", "  -h, --help  Show this help", ""])
+        lines.append(HELP_EXAMPLES)
+        return "\n".join(lines) + "\n"
 
 
 def parse_blueprints(value: str | None) -> list[str] | None:
@@ -114,10 +146,9 @@ def _format(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> _Parser:
-    parser = _Parser(
+    parser = _RootParser(
         prog="md-blueprints",
         description="Validate, preview, and deploy MotherDuck Blueprints.",
-        epilog="Run md-blueprints <command> --help for the options of a command.",
     )
     parser.add_argument("--version", action="store_true", help="Print the md-blueprints version and exit")
     commands = parser.add_subparsers(dest="command", metavar="<command>", parser_class=_Parser)
@@ -350,7 +381,14 @@ def _install_cli(options: argparse.Namespace) -> None:
 
 def _new(options: argparse.Namespace) -> None:
     if not options.kind or not options.name:
-        raise UsageError("Usage: md-blueprints new <flight|dive|guide|role|project> NAME [options]")
+        raise UsageError(
+            "new needs a kind and a name: md-blueprints new <flight|dive|guide|role|project> NAME [options]\n"
+            "Examples:\n"
+            "  md-blueprints new project revenue                          a Flight, its share, and a Dive in one package\n"
+            "  md-blueprints new flight events-ingest                     a pipeline that publishes a share\n"
+            "  md-blueprints new dive events --input events-ingest.data   a dashboard that reads that share\n"
+            "Run md-blueprints new --help for every option."
+        )
     run_new(
         Path(options.root), options.kind, options.name,
         input_ref=options.input_ref, share_url=options.share_url, alias=options.alias,
@@ -417,6 +455,11 @@ def _project(options: argparse.Namespace) -> tuple[Project, list[str] | None]:
 def _validate(options: argparse.Namespace) -> None:
     project, _ = _project(options)
     targets = [options.target] if options.target else project.target_names()
+    if options.branch and options.target and options.target != "preview":
+        print(
+            f"warning: --branch only scopes preview resources and is ignored for target {options.target!r}",
+            file=sys.stderr,
+        )
     project.validate(targets=targets, branch=options.branch)
     for warning in validation_warnings(project):
         print(f"warning: {warning}", file=sys.stderr)
@@ -435,7 +478,14 @@ def _render(options: argparse.Namespace) -> None:
 def _dive_source(options: argparse.Namespace) -> None:
     names = parse_blueprints(options.blueprints)
     if not names or len(names) != 1:
-        raise ValidationError("dive-source requires exactly one --blueprints NAME")
+        with_dives = [
+            blueprint.name for blueprint in Project(Path(options.root)).blueprints
+            if isinstance(resources := blueprint.raw.get("resources"), dict) and resources.get("dives")
+        ]
+        raise ValidationError(
+            "dive-source requires exactly one --blueprints NAME. "
+            f"Packages with a Dive: {', '.join(sorted(with_dives)) or 'none'}"
+        )
     project, _ = _project(options)
     project.validate(targets=["prod"])
     rendered = project.render_all("prod", names=names)
@@ -464,6 +514,12 @@ def _dive_source(options: argparse.Namespace) -> None:
 
 def _changed(options: argparse.Namespace) -> None:
     project = Project(Path(options.root))
+    if not options.all_blueprints and not options.base:
+        print(
+            "note: no --base revision given, so every package is listed. "
+            "Pass --base origin/main to list only the packages changed on this branch, or --all to silence this note.",
+            file=sys.stderr,
+        )
     changed = (
         project.all_blueprint_names()
         if options.all_blueprints

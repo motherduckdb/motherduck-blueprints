@@ -257,6 +257,15 @@ def run_doctor(
             if Version(normalize_version(__version__)) > Version(latest_version):
                 lines.append("version status: ahead of latest release")
 
+    warnings = sum(line.startswith("warning:") for line in lines)
+    notes = sum(line.startswith("info:") for line in lines)
+    problems = [f"{warnings} warning(s)"] if warnings else []
+    if stale_schema:
+        problems.append("a schema version to migrate")
+    if pin_mismatch:
+        problems.append("mismatched tooling pins")
+    result = f"result: needs attention: {', '.join(problems)}" if problems else "result: no problems found"
+    lines.append(result + (f" ({notes} note(s) above)" if notes else ""))
     emit_lines(lines, output_format=output_format)
     if pin_mismatch and check_updates:
         raise ValidationError("Generated repository action and CLI pins are not aligned; update both to the same release")
