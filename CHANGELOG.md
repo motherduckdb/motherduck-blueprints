@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.4 - 2026-11-10
+
+Patch release that improves command help, error messages, and scaffolded packages without changing deployment behavior. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.4`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.10.4 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.4).
+
 - `md-blueprints --help` groups the commands by task (create, check locally, read or change MotherDuck, maintain) and shows a typical workflow. `make help` in generated repositories groups its targets the same way.
 - Generated repositories gain `make plan` and `make verify`, read-only checks against MotherDuck that accept `TARGET`, `BRANCH`, and `NAME`.
 - `md-blueprints new` prints the files it wrote and the next steps for that kind of package. The `README.md` of a scaffolded Flight, Dive, Guide, or role package now describes its files, its preview behavior, and what to do next, instead of one generic line.
