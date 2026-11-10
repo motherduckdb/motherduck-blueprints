@@ -165,11 +165,126 @@ def run_new(
     readme = (
         _render(_starter_source("README.md"), name=name, alias=resource_alias)
         if kind == "project"
-        else f"# {_title(name)}\n\nGenerated `{kind}` blueprint. Run `make validate` before opening a PR.\n"
+        else _package_readme(kind, name, resource_alias, input_ref=input_ref)
     )
     _write(destination / "README.md", readme)
-    print(f"Created {destination.relative_to(root)}")
+    relative = destination.relative_to(root).as_posix()
+    print(f"Created {relative}")
+    for path in sorted(item for item in destination.rglob("*") if item.is_file()):
+        print(f"  {path.relative_to(root).as_posix()}")
+    print("Next:")
+    for step in _next_steps(kind, name, relative):
+        print(f"  - {step}")
     return destination
+
+
+def _next_steps(kind: str, name: str, relative: str) -> list[str]:
+    validate = "Run make validate, then open a pull request to deploy a preview."
+    if kind == "flight":
+        return [
+            f"Replace the sample load in {relative}/src/flight.py and list its packages in src/requirements.txt.",
+            f"Add a dashboard for its data: make new-dive NAME=<name> INPUT={name}.data",
+            validate,
+        ]
+    if kind == "dive":
+        return [
+            f"Write the queries and layout in {relative}/src/dive.tsx.",
+            f"Build it locally: make preview-smoke NAME={name}",
+            validate,
+        ]
+    if kind == "guide":
+        return [
+            f"Write the Guide in {relative}/guide.md; make guides prints context for an agent.",
+            f"Set deploy: true in {relative}/blueprint.yml when it is ready. Until then it is only validated.",
+            "Run make validate, then open a pull request.",
+        ]
+    if kind == "role":
+        return [
+            f"List members and includedRoles in {relative}/blueprint.yml.",
+            "Set deploy: true after review. Roles deploy only to production and need an admin deployment identity.",
+            "Run make validate, then open a pull request.",
+        ]
+    return [
+        f"Replace the sample load in {relative}/src/flight.py and the dashboard in {relative}/src/dive.tsx.",
+        f"Build the dashboard locally: make preview-smoke NAME={name}",
+        validate,
+    ]
+
+
+def _package_readme(kind: str, name: str, alias: str, *, input_ref: str | None) -> str:
+    title = _title(name)
+    reference = "../../docs/blueprint-yml-reference.md"
+    if kind == "flight":
+        body = f"""This package deploys the Flight `{name}` and publishes the `{alias}` database as a share. Other packages read the share through the `data` output.
+
+## Files
+
+- `blueprint.yml`: the Flight, its schedule, and the share it publishes.
+- `src/flight.py`: the Python that loads the data. Replace the sample load.
+- `src/requirements.txt`: the packages MotherDuck installs for each run.
+
+Pull-request previews write to a database named after the branch, disable the schedule, and run the Flight once on deploy. Production writes to `{alias}` and follows `scheduleCron`.
+
+## Next steps
+
+1. Replace the sample load in `src/flight.py`.
+2. Add a dashboard that reads the share: `make new-dive NAME=<name> INPUT={name}.data`.
+3. Run `make validate`, then open a pull request to deploy a preview.
+
+See the [Flight fields]({reference}#flights)."""
+    elif kind == "dive":
+        source = (
+            f"the `{input_ref}` output of another package in this repository"
+            if input_ref else "an existing MotherDuck share by URL"
+        )
+        body = f"""This package deploys the Dive `{title}`. It reads {source}, attached under the alias `{alias}`.
+
+## Files
+
+- `blueprint.yml`: the Dive, its title, and the data it requires.
+- `src/dive.tsx`: the React component. Query tables as `{alias}.<schema>.<table>`.
+
+The Dive is named `{title}:<branch> (Preview)` in pull-request previews.
+
+## Next steps
+
+1. Write the queries and layout in `src/dive.tsx`.
+2. Build it without a token: `make preview-smoke NAME={name}`. For a live preview, set `VITE_MOTHERDUCK_TOKEN` in `.dive-preview/.env` and run `make preview NAME={name}`.
+3. Run `make validate`, then open a pull request to deploy a preview.
+
+See the [Dive fields]({reference}#dives)."""
+    elif kind == "guide":
+        body = f"""This package holds the Guide `{title}`, Markdown that tells agents and collaborators how to use the data.
+
+## Files
+
+- `blueprint.yml`: the Guide's title, topic, and access. It starts with `deploy: false`, so it is validated but not deployed.
+- `guide.md`: the content.
+
+## Next steps
+
+1. Write `guide.md`. `make guides` prints context for an agent; see [Guides as code](../../docs/guides-as-code.md).
+2. Replace the `description` in `blueprint.yml`, then set `deploy: true`.
+3. Run `make validate`, then open a pull request.
+
+See the [Guide fields]({reference}#guides)."""
+    else:
+        body = f"""This package manages one MotherDuck role and its members.
+
+## Files
+
+- `blueprint.yml`: the role name, the roles it includes, and its members. It starts with `deploy: false`.
+
+Roles deploy only to production, never to previews, and need a deployment identity with the `admin` role. `mode: additive` only adds what is declared; `mode: authoritative` also revokes members and included roles that are not declared.
+
+## Next steps
+
+1. List `members` (usernames in the organization) and `includedRoles`.
+2. Set `deploy: true` after the members and the production identity have been reviewed.
+3. Run `make validate`, then open a pull request.
+
+See the [role fields]({reference}#roles)."""
+    return f"# {title}\n\n{body}\n"
 
 
 def _share_and_flight(name: str, alias: str) -> str:

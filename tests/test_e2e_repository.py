@@ -208,6 +208,7 @@ def test_doctor_migrate_and_update_checks_run_offline(tmp_path: Path, starter: P
     doctor = md_cli.ok("doctor", *root, "--offline")
     assert "validation: passed" in doctor.stdout
     assert "blueprints discovered: 2" in doctor.stdout
+    assert doctor.stdout.rstrip().splitlines()[-1].startswith("result: no problems found")
     invalid = md_cli.fails("doctor", "--root", str(FIXTURES / "invalid-preview"), "--offline")
     assert "validation: failed" in invalid.stdout and "validation: passed" not in invalid.stdout
     assert "project manifest: missing" in md_cli.fails("doctor", "--root", str(tmp_path), "--offline").stdout

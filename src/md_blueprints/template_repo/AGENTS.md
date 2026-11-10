@@ -75,9 +75,9 @@ Each rule below is enforced by `validate`, `plan`, or `deploy`, or prevents a ch
 - CI credentials belong in the selected GitHub Environment as `MOTHERDUCK_TOKEN`. The deploy and cleanup workflows pass it by name to the reusable jobs with `secrets: MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}`; keep that block, because without it the reusable job gets an empty token. Do not use `secrets: inherit`, which does not cross GitHub organizations. Do not print tokens or commit local exports before checking source/config for embedded secrets.
 ## Validate and hand off
 
-Use `md-blueprints verify --target prod --blueprints NAME` to check existing IDs before enabling deployment; bound imports are checked even while disabled. Deploy always runs preflight and checks live results afterward by default. A postcheck failure means deployment already ran, not that it rolled back. See the action guide for the explicit postcheck opt-out; preflight cannot be disabled.
+Use `make verify NAME=<package>` (`md-blueprints verify --target prod --blueprints NAME`) to check existing IDs before enabling deployment; bound imports are checked even while disabled. Deploy always runs preflight and checks live results afterward by default. A postcheck failure means deployment already ran, not that it rolled back. See the action guide for the explicit postcheck opt-out; preflight cannot be disabled.
 
-Run `make validate`. For a changed Dive, run `make preview-smoke NAME`. Run a live plan only with the intended identity and target; report the exact resource IDs, any creates, and unresolved dependencies. Request deployment only after the import baseline and plan have been reviewed.
+Run `make validate`. For a changed Dive, run `make preview-smoke NAME`. Run a live plan (`make plan`, or `make plan BRANCH=<branch>` for a preview) only with the intended identity and target; report the exact resource IDs, any creates, and unresolved dependencies. Request deployment only after the import baseline and plan have been reviewed.
 
 After adoption, use one writer for managed settings: the repository workflow. Pulling from MotherDuck is an explicit reconciliation step, not continuous two-way sync. Report whether changes are local, merged, deployed, or published; these are different outcomes.
 
