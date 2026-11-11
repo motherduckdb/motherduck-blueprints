@@ -6,6 +6,29 @@ This repository uses MotherDuck Blueprints to deploy your data pipelines and das
 
 If you are viewing the original template, [create your own repository first](https://github.com/motherduckdb/blueprints-template/generate).
 
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph repo["Your GitHub repository"]
+    pkg["Packages<br/>blueprint.yml + source"]
+  end
+  subgraph actions["GitHub Actions"]
+    pr["Pull request<br/>validate, plan, deploy preview"]
+    merge["Merge to main<br/>plan, deploy, verify"]
+    close["Pull request closed<br/>clean up preview"]
+  end
+  subgraph md["MotherDuck"]
+    preview["Preview resources<br/>named after the branch"]
+    prod["Production<br/>Flights, shares, Dives, Guides"]
+  end
+  pkg --> pr --> preview
+  pkg --> merge --> prod
+  close -->|removes| preview
+```
+
+A package is a directory with a `blueprint.yml` and the source it deploys: a Flight (scheduled Python), the share it publishes, a Dive (dashboard), a Guide (context for agents), or a role. A pull request deploys a private copy of the changed packages and everything they need, so reviewers open a working dashboard on real data. Merging deploys the same code to production.
+
 ## Already using MotherDuck?
 
 In your repository created from the template, with Python 3.10+ and Git installed, export your existing Flights, Dives, and Guides into code before enabling deployment:
@@ -53,7 +76,12 @@ Each `blueprint.yml` describes what to deploy; the source files beside it contai
 - [Flight](flights/wikipedia-pageviews-ingest/): Python that loads data and publishes a share.
 - [Dive](dives/wikipedia-pageviews/): the dashboard that reads that share.
 
-Wikipedia is the only active starter. The [optional NCS example](docs/examples/ncs-field-recovery.md) stays outside deployment discovery until you enable it.
+Wikipedia is the only active starter. The [examples](docs/examples/README.md) cover the most common next steps and stay outside deployment discovery until you copy one into a package root:
+
+- [Pageviews weekly trends](examples/pageviews-weekly-trends/README.md): build reporting tables with SQL and put a dashboard on them.
+- [Data freshness monitor](examples/data-freshness-monitor/README.md): check hourly that tables are fresh, and fail or alert when they are not.
+- [Pageviews Guide](examples/pageviews-guide/README.md): give agents and analysts the context to query a dataset correctly.
+- [NCS field recovery](docs/examples/ncs-field-recovery.md): one project that ships a pipeline, share, and dashboard together.
 
 For local checks, install Python 3.10+ and Git, then run:
 
@@ -86,6 +114,7 @@ Run **Actions → Prepare Guide context** to collect context in CI, with an opti
 ## More help
 
 - [Documentation index](docs/README.md): find the page for a task or an error
+- [Examples](docs/examples/README.md): working packages for ingestion, transformation, monitoring, and Guides
 - [Setup and troubleshooting](docs/setup-your-repository.md)
 - [Blueprint fields and options](docs/blueprint-yml-reference.md)
 - [GitHub Action inputs](docs/github-action.md)

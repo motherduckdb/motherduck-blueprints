@@ -2,6 +2,8 @@
 
 A Guide is Markdown that helps an agent work with your data: where to start, which tables to use, how the pipeline works, what a metric means, and which mistakes to avoid. Your Claude, ChatGPT, or Codex agent reads the sources and writes the Guide.
 
+For a finished Guide package to compare against, see the [Pageviews Guide example](../examples/pageviews-guide/README.md).
+
 ## Start here
 
 Open this repository in an agent with filesystem access and ask:

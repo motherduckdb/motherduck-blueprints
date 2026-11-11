@@ -2,6 +2,16 @@
 
 The NCS Field Recovery Explorer is a complete project package that loads public Norwegian Continental Shelf data, publishes a share, and deploys an interactive Dive. It demonstrates when related resources belong together below `projects/` instead of in independently deployed typed packages.
 
+```mermaid
+flowchart LR
+  sodir(["SODIR FactMaps API"]) --> loader
+  subgraph project["projects/ncs-field-recovery"]
+    loader["loader<br/>Flight, runs on deploy"] --> db[("ncs_field_recovery")]
+    db --> share["data<br/>Share"]
+    share --> explorer["explorer<br/>Dive"]
+  end
+```
+
 The optional implementation lives in [`examples/ncs-field-recovery/`](../../examples/ncs-field-recovery/). It is not discovered or deployed by default.
 
 ## Enable the example
@@ -66,10 +76,7 @@ With `MOTHERDUCK_TOKEN` configured, inspect the live plan before deployment:
 
 ```bash
 make install-deploy
-.venv/bin/md-blueprints plan \
-  --target preview \
-  --branch feature/ncs-review \
-  --blueprints ncs-field-recovery
+make plan BRANCH=feature/ncs-review NAME=ncs-field-recovery
 ```
 
 Opening a pull request runs the same selection through GitHub Actions. Preview database, share, Flight, and Dive names include the branch scope, and cleanup removes them after the branch closes. Without staging, merging deploys the stable production target. With staging, merging deploys the `_staging` share through `motherduck-staging`, and a published release deploys the unsuffixed production share through `motherduck-production`. Both accounts may use the `ncs_field_recovery` database name.

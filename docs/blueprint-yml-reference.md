@@ -75,7 +75,7 @@ An input exposes:
 | `access` | Target-rendered share access |
 | `visibility` | Target-rendered share visibility |
 
-For example, a Guide or Flight can use `${inputs.events.database}` in its rendered configuration. Share URLs are resolved from live MotherDuck state during plan/deploy and are not a static template field.
+For example, a Guide or Flight can use `${inputs.events.database}` in its rendered configuration. The [Pageviews weekly trends example](../examples/pageviews-weekly-trends/README.md) passes it to a transformation Flight this way. Share URLs are resolved from live MotherDuck state during plan/deploy and are not a static template field.
 
 ## Inputs and Outputs
 
@@ -208,6 +208,8 @@ Required fields are `name`, `source`, and `requirements`. Optional fields includ
 | Free | `F4` | `F4` |
 
 Without `instanceType`, a new Flight gets the plan default and an existing Flight keeps its current size. Removing the field does not reset the size; set it to the size you want. MotherDuck rejects a size your plan does not allow when the Flight is created or updated. Sending a size needs DuckDB 1.5.6 or newer. The Blueprints action and the MotherDuck CLI that `make install-deploy` installs both use it. With an older backend, such as a MotherDuck CLI before `v1.5.6-2026-10-169`, `plan` and `deploy` stop before any write; run `make install-deploy`, or install `md-blueprints[deploy]` and set `MD_BLUEPRINTS_SQL_BACKEND=duckdb`.
+
+For complete Flights, see the [examples](examples/README.md): an API load, a SQL transformation with a run chart, and an hourly monitor that uses `instanceType` and an optional secret.
 
 Flight source must exist and parse as Python. Cron values use five UTC fields. The default preview policy disables schedules. `waitForRun: success` applies when `runOnDeploy: true`.
 

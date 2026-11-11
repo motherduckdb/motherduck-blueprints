@@ -4,6 +4,14 @@ Many teams manage their MotherDuck platform with the [MotherDuck Terraform provi
 
 The provider documents the same split from its side in [Deploy pipelines and dashboards with Blueprints](https://github.com/motherduckdb/terraform-provider-motherduck/blob/main/docs/guides/blueprints-deployment.md).
 
+```mermaid
+flowchart LR
+  tf["Terraform"] --> platform["Service accounts, tokens,<br/>compute settings, platform databases,<br/>roles, platform shares"]
+  tf -->|writes the token| env["GitHub Environment<br/>MOTHERDUCK_TOKEN"]
+  env --> bp["Blueprints"]
+  bp --> product["Flights, Dives, Guides,<br/>package shares, run grants,<br/>previews"]
+```
+
 ## Choose one owner for every object
 
 | Object | Recommended owner | Terraform resources |
@@ -131,6 +139,6 @@ Share URLs are committed to Git in this form. The provider marks `motherduck_sha
 1. Export the objects into disabled, ID-bound packages with `make export`, or select them with `md-blueprints import`. See [adopt existing resources](adopt-existing-resources.md).
 2. Remove them from Terraform without destroying them. On Terraform 1.7 or later, use a `removed` block with `lifecycle { destroy = false }`. See the provider's [resource scope and migration guide](https://github.com/motherduckdb/terraform-provider-motherduck/blob/main/docs/guides/resource-scope.md).
 3. Confirm the next `terraform plan` proposes neither deletion nor recreation.
-4. Run `.venv/bin/md-blueprints verify --target prod`, then set `deploy: true` in a reviewed pull request.
+4. Run `make verify` (`.venv/bin/md-blueprints verify --target prod`), then set `deploy: true` in a reviewed pull request.
 
 Moving objects the other way works the same: set `deploy: false` in Blueprints first, then `terraform import` the object by ID.

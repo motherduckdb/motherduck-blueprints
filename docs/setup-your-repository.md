@@ -53,7 +53,7 @@ make preview-smoke wikipedia-pageviews
 
 Validation and preview builds do not connect to MotherDuck. To open a live local preview after deploying the data, set `VITE_MOTHERDUCK_TOKEN` in the ignored `.dive-preview/.env`, then run `make preview wikipedia-pageviews`. A personal read/write token works for local preview, which only reads data. Keep it private. CI always uses the service-account token.
 
-Create a new pipeline and dashboard with `make new-project revenue`. Edit its files under `projects/revenue/`, run `make validate`, and open a PR. For separate pipeline and dashboard packages, see the [repository reference](repository-reference.md).
+Create a new pipeline and dashboard with `make new-project revenue`. Edit its files under `projects/revenue/`, run `make validate`, and open a PR. For separate pipeline and dashboard packages, see the [repository reference](repository-reference.md). For a transformation, a data monitor, or a Guide, start from an [example](examples/README.md).
 
 ## If something does not work
 
@@ -88,7 +88,7 @@ Before team use, [configure branch protection and deployment approvals](#protect
 
 ## Add staging (optional)
 
-Add staging when production credentials must not be available to pull requests or ordinary `main` deployments.
+Add staging when production credentials must not be available to pull requests or ordinary `main` deployments. The [CI/CD diagram](repository-reference.md#cicd) shows both setups side by side.
 
 1. Create a second MotherDuck service account for staging.
 2. Create a GitHub Environment named `motherduck-staging` and add its token as an environment secret named `MOTHERDUCK_TOKEN`.

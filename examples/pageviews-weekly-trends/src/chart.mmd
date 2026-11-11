@@ -1,0 +1,4 @@
+flowchart TD
+  check_source{Source has rows?}:::check --> weekly[Rebuild weekly_pageviews]:::transform
+  weekly --> trends[Rebuild article_trends]:::transform
+  trends --> publish[Update share]:::load

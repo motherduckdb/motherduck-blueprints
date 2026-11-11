@@ -303,6 +303,7 @@ def test_starter_flight_reads_config_from_environment_variables(
     [
         "flights/wikipedia-pageviews-ingest/src/flight.py",
         "examples/ncs-field-recovery/src/flight.py",
+        "examples/pageviews-weekly-trends/src/flight.py",
         "src/md_blueprints/template_repo/templates/blueprint/flight.py",
     ],
 )

@@ -1,0 +1,3 @@
+flowchart TD
+  run_checks[Run checks]:::check --> record[Record results]:::load
+  record --> alert{Any check failed?}:::switch
