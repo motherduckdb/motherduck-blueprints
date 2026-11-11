@@ -1,0 +1,79 @@
+schemaVersion: 1
+name: pageviews-weekly-trends
+title: Pageviews Weekly Trends
+description: Rebuilds weekly reporting tables from the Wikipedia pageviews dataset and shows them in a Dive.
+
+# The transformation reads another package's data through a declared input, so
+# Blueprints deploys the producer first and renders its preview database name here.
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+variables:
+  database:
+    default: pageviews_trends
+  share:
+    default: pageviews_trends
+
+outputs:
+  trends:
+    share: trends
+
+resources:
+  shares:
+    trends:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        staging:
+          name: ${var.share}_staging
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    transform:
+      name: pageviews-weekly-trends
+      source: src/flight.py
+      requirements: src/requirements.txt
+      chart: src/chart.mmd
+      # Runs after the 06:17 UTC ingest of wikipedia-pageviews-ingest.
+      scheduleCron: 47 6 * * *
+      maxRuntimeSec: 900
+      runOnDeploy: true
+      waitForRun: success
+      secrets: []
+      config:
+        source_database: ${inputs.pageviews.database}
+        source_schema: main
+        database: ${resources.shares.trends.database}
+        schema: main
+        share: ${resources.shares.trends.name}
+        share_access: ${resources.shares.trends.access}
+        share_visibility: ${resources.shares.trends.visibility}
+      targets:
+        preview:
+          name: pageviews-weekly-trends:${target.branch} (Preview)
+          scheduleCron: ""
+
+  dives:
+    trends:
+      title: Pageviews Weekly Trends
+      source: src/dive.tsx
+      description: Week-over-week pageview trends per article, rebuilt daily by a MotherDuck Flight.
+      status: ready
+      requiredResources:
+        - share: trends
+          alias: pageviews_trends
+      targets:
+        preview:
+          title: Pageviews Weekly Trends:${target.branch} (Preview)
+          status: draft

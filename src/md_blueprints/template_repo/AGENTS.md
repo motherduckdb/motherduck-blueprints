@@ -21,7 +21,7 @@ Read [README.md](README.md) first. This is a customer deployment repository, not
 
 `motherduck` is the product CLI: it can list and pull remote resources into files. `md-blueprints` validates and deploys this repository's manifests. Any `make` target installs the pinned `md-blueprints` into `.venv/`; run it as `.venv/bin/md-blueprints` when no `make` target exists. CLI metadata JSON is not a Blueprints manifest and its IDs are not automatically adopted.
 
-The GitHub workflows are short callers into versioned Blueprints workflows. Keep deployment implementation upstream and use `make upgrade` to update workflow and CLI pins together. The workflows, `schemas/`, and `.dive-preview/` are support files. Do not edit them to add a package. Starter templates live in the installed CLI; there is no customer `templates/` directory to maintain. `examples/` is optional and does not deploy.
+The GitHub workflows are short callers into versioned Blueprints workflows. Keep deployment implementation upstream and use `make upgrade` to update workflow and CLI pins together. The workflows, `schemas/`, and `.dive-preview/` are support files. Do not edit them to add a package. Starter templates live in the installed CLI; there is no customer `templates/` directory to maintain. `examples/` is optional and does not deploy. Before writing a new Flight, Dive, or Guide, read the closest example listed in `docs/examples/README.md` (API load, SQL transformation, data monitor, Guide, project) and reuse its patterns.
 
 ## Operating constraints
 

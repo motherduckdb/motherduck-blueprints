@@ -1,0 +1,42 @@
+schemaVersion: 1
+name: pageviews-guide
+title: Wikipedia Pageviews Guide
+description: Tells agents and collaborators how to query the Wikipedia pageviews dataset.
+
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+resources:
+  guides:
+    pageviews:
+      title: Wikipedia pageviews
+      # Guides that describe a dataset belong under data-sources.
+      topic: data-sources/wikipedia-pageviews
+      description: Grain, columns, and query patterns for the daily Wikipedia pageviews table. Read before querying it.
+      source: guide.md
+      # user keeps the Guide private to the deployment identity. organization shares it with
+      # everyone and needs a deployment identity with the admin role.
+      access: user
+      deploy: true
+      # References let an agent that finds the table, the Flight, or the Dive find this Guide.
+      references:
+        - type: catalog
+          input: pageviews
+          schema: main
+          table: pageviews_daily
+        - type: catalog
+          input: pageviews
+          schema: main
+          view: pageviews_article_summary
+        - type: flight
+          blueprint: wikipedia-pageviews-ingest
+          resource: pageviews_loader
+        - type: dive
+          blueprint: wikipedia-pageviews
+          resource: pageviews
+      targets:
+        preview:
+          title: Wikipedia pageviews:${target.branch} (Preview)
+          topic: data-sources/wikipedia-pageviews-${target.branch_slug}

@@ -1,0 +1,71 @@
+schemaVersion: 1
+name: data-freshness-monitor
+title: Data Freshness Monitor
+description: Checks hourly that tables are fresh and non-empty, records every result, and fails the run when a check fails.
+
+# Declaring the input makes Blueprints deploy the monitored package first and
+# points a pull-request preview at the preview copy of its database.
+inputs:
+  pageviews:
+    blueprint: wikipedia-pageviews-ingest
+    output: pageviews
+
+variables:
+  database:
+    default: data_monitoring
+  share:
+    default: data_monitoring
+
+outputs:
+  results:
+    share: results
+
+resources:
+  shares:
+    results:
+      name: ${var.share}
+      database: ${var.database}
+      access: ORGANIZATION
+      visibility: DISCOVERABLE
+      cleanup: true
+      dropDatabase: false
+      targets:
+        staging:
+          name: ${var.share}_staging
+        preview:
+          name: ${var.share}${var.preview_suffix}
+          database: ${var.database}${var.preview_suffix}
+          access: RESTRICTED
+          visibility: HIDDEN
+          dropDatabase: true
+
+  flights:
+    monitor:
+      name: data-freshness-monitor
+      source: src/flight.py
+      requirements: src/requirements.txt
+      chart: src/chart.mmd
+      scheduleCron: 0 * * * *
+      maxRuntimeSec: 300
+      # A small runner is enough: every check is one aggregate query that runs in MotherDuck.
+      instanceType: F4
+      # Run once on deploy to create the results table. The deploy does not wait for the
+      # result, so stale data fails the monitor run and not the deployment.
+      runOnDeploy: true
+      # To send alerts, create a Flight secret named alert_webhook with the key URL and list it here.
+      secrets: []
+      config:
+        database: ${resources.shares.results.database}
+        schema: main
+        share: ${resources.shares.results.name}
+        share_access: ${resources.shares.results.access}
+        share_visibility: ${resources.shares.results.visibility}
+        fail_on_alert: "true"
+        # One JSON object per table. max_age_hours and min_rows are both optional.
+        checks: >-
+          [{"table": "${inputs.pageviews.database}.main.pageviews_daily",
+          "timestamp_column": "loaded_at_utc", "max_age_hours": 30, "min_rows": 1}]
+      targets:
+        preview:
+          name: data-freshness-monitor:${target.branch} (Preview)
+          scheduleCron: ""

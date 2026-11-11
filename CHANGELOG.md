@@ -6,6 +6,13 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- Three new optional examples ship under `examples/`, chosen from the most common workloads: `pageviews-weekly-trends` (a SQL transformation Flight that reads another package through an input, with its share and Dive), `data-freshness-monitor` (an hourly Flight that records freshness and row-count checks, fails the run on a problem, and can post to a webhook from a Flight secret), and `pageviews-guide` (a Guide with catalog, Flight, and Dive references). None deploys until it is copied into a package root.
+- A new [examples index](docs/examples/README.md) lists every example by what it is for, shows how they connect, and states the practices they share.
+- The documentation gains diagrams: how a repository deploys to MotherDuck (README), which event deploys to which target with and without staging, how package selection follows the dependency graph, the adoption steps, the split of ownership with Terraform, and the layout of each example.
+- The starter Flight and Dive READMEs describe what the packages deploy, how to change what is loaded, and the patterns to reuse.
+- The adoption, Terraform, retirement, and NCS pages use `make plan` and `make verify`, and keep the full CLI command where JSON output is needed.
+- The package and action pins are updated to 0.10.5.
+
 ## v0.10.4 - 2026-11-10
 
 Patch release that improves command help, error messages, and scaffolded packages without changing deployment behavior. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.4`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.10.4 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.4).

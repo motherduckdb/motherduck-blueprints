@@ -19,7 +19,8 @@ Find the page for a task or an error. Each page stands on its own; start with th
 | Manage accounts, tokens, roles, or shares with Terraform | [Use Blueprints with the MotherDuck Terraform provider](use-with-terraform.md) |
 | Upgrade the tooling or migrate a schema version | [Tooling and schema versioning](tooling-and-schema-versioning.md) |
 | See what an upgrade changes | [Breaking changes](breaking-changes.md) |
-| Study a complete package | [Wikipedia pageviews](examples/wikipedia-pageviews.md) and [NCS field recovery](examples/ncs-field-recovery.md) |
+| Start from a working package for ingestion, transformation, monitoring, or Guides | [Examples](examples/README.md) |
+| See how previews, production, and staging relate | [CI/CD](repository-reference.md#cicd) |
 
 ## By error or symptom
 
@@ -42,6 +43,7 @@ Read `AGENTS.md` at the repository root first. It lists the constraints that `va
 1. Run `make validate` after every manifest or source edit. It needs no token and reports the file, resource, and target of each problem.
 2. For a field, read its section in the [blueprint.yml reference](blueprint-yml-reference.md) before editing. Defaults and target-override rules are stated per resource type.
 3. For a changed Dive, run `make preview-smoke NAME`.
-4. Run live commands (`plan`, `deploy`, `verify`, `cleanup`) only with the token of the intended target, and report the resource IDs the plan shows.
+4. Before writing a new Flight, Dive, or Guide, read the closest [example](examples/README.md) and reuse its patterns.
+5. Run live commands (`plan`, `deploy`, `verify`, `cleanup`) only with the token of the intended target, and report the resource IDs the plan shows.
 
 Errors name the next step after `Next:`. Follow it before trying another approach.

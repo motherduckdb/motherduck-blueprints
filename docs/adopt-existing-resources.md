@@ -2,6 +2,15 @@
 
 The importer reads existing Flights, Dives, and Guides, creates UUID-bound packages, and preserves their source and deployment settings. It never changes remote resources. Every imported package starts with deployment disabled.
 
+```mermaid
+flowchart LR
+  export["make export<br/>disabled, UUID-bound packages"] --> review["Review source,<br/>owners, schedules"]
+  review --> verify["make verify<br/>bound IDs resolve"]
+  verify --> enable["deploy: true<br/>for one stable target"]
+  enable --> plan["make plan<br/>no unexpected creates"]
+  plan --> merge["Pull request,<br/>then merge"]
+```
+
 ## 1. Use the current tooling and intended identity
 
 Import and UUID-bound Flight/Dive updates require Blueprints 0.4.3 or newer. Keep your Makefile and action pins aligned; use `make upgrade VERSION=X.Y.Z` when upgrading an existing generated repository.
@@ -76,14 +85,16 @@ Imported Flights use `manageSchedule: false`. Their live schedule, including pau
 
 Database/share URLs and Guide reference UUIDs remain external dependencies. The importer does not infer a producer from a SQL string, create shares, copy data, or rebuild grants. A Flight's existing `run` grants stay in place; declare them under the Flight's `grants` before using `mode: authoritative`, which would revoke them. Preserve mount aliases. Before enabling preview, audit production URLs, hard-coded writes, secrets, and reference UUIDs and make the intended isolation explicit.
 
-You can verify bound identities before enabling deployment with `.venv/bin/md-blueprints verify --target prod --blueprints PACKAGE --json`. This is read-only and includes imported IDs even when their deployment flags are false.
+You can verify bound identities before enabling deployment with `make verify NAME=PACKAGE` (`.venv/bin/md-blueprints verify --target prod --blueprints PACKAGE --json` for JSON). This is read-only and includes imported IDs even when their deployment flags are false.
 
 For each package you intend to adopt, set `deploy: true` only inside its selected stable-target override, retaining `id` and `owner`. Leave the base and preview flags false. Then run:
 
 ```bash
 make validate
-.venv/bin/md-blueprints plan --target prod --blueprints PACKAGE --json
+make plan NAME=PACKAGE
 ```
+
+Use `.venv/bin/md-blueprints plan --target prod --blueprints PACKAGE --json` for machine-readable output.
 
 For a Dive also run `make preview-smoke PACKAGE`. Compare planned IDs against `import.json`. Missing IDs, owner changes, unexpected creates, or insufficient permissions are blockers. Do not delete the ID to bypass them.
 
