@@ -198,6 +198,7 @@
         "source": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "status": { "type": "string", "enum": ["draft", "ready", "endorsed", "archived"] },
+        "grants": { "$ref": "#/$defs/diveGrants" },
         "requiredResources": {
           "type": "array",
           "minItems": 0,
@@ -308,6 +309,25 @@
     "flightGrants": {
       "type": "object",
       "description": "who may run the Flight, granted with GRANT RUN ON FLIGHT",
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "users": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "organization": { "type": "boolean" },
+        "mode": { "enum": ["additive", "authoritative"] }
+      }
+    },
+    "diveGrants": {
+      "type": "object",
+      "description": "who may open the Dive, granted with GRANT READ ON DIVE",
       "additionalProperties": false,
       "properties": {
         "roles": {

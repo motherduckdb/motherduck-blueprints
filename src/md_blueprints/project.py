@@ -833,6 +833,12 @@ class Project:
             dive.setdefault("description", "")
             if target == "preview":
                 dive.setdefault("status", "draft")
+            grants = dive.get("grants")
+            if isinstance(grants, dict):
+                grants.setdefault("roles", [])
+                grants.setdefault("users", [])
+                grants.setdefault("organization", False)
+                grants.setdefault("mode", "additive")
 
         contexts = self._render_resources(
             resources_node.get("context", {}), target, context, blueprint=blueprint, group="context"
@@ -1210,6 +1216,10 @@ class Project:
                 )
             if not isinstance(required_resources, list):
                 raise ValidationError(f"dives.{key}.requiredResources must be an array")
+            self._validate_grants(dive.get("grants"), f"dives.{key}.grants")
+            grants = dive.get("grants")
+            if isinstance(grants, dict) and not isinstance(grants.get("organization", False), bool):
+                raise ValidationError(f"dives.{key}.grants.organization must be boolean")
 
             aliases: set[str] = set()
             for index, resource in enumerate(required_resources):

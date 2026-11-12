@@ -12,7 +12,7 @@ from urllib.request import urlopen
 from .project import CommandError
 
 
-SUPPORTED_VERSION = "v1.5.6-2026-11-37"
+SUPPORTED_VERSION = "v1.5.6-2026-11-382"
 # A statement that waits on a lost connection would otherwise hold a CI job until GitHub's six-hour limit.
 QUERY_TIMEOUT_ENV = "MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS"
 QUERY_TIMEOUT_DEFAULT_SECONDS = 900

@@ -169,6 +169,8 @@ REJECTED_TOKEN = re.compile(
     r"invalid or expired motherduck_token|request is not authenticated|jwt is not in the form", re.IGNORECASE,
 )
 FLIGHT_RUN_START_GRACE_SECONDS = 120
+# The privilege that `grants` manages on each kind: GRANT RUN ON FLIGHT, GRANT READ ON DIVE.
+OBJECT_GRANT_PRIVILEGES = {"flight": "run", "dive": "read"}
 AUTHORITATIVE_NOTE = (
     "mode: authoritative revokes every grant not declared here, including grants created outside "
     "Blueprints (for example by Terraform or the UI)"
@@ -741,17 +743,18 @@ class Deployer:
             for role in blueprint.roles.values()
             if role.get("deploy")
         }
-        flight_grants = [
+        # Run grants on Flights and read grants on Dives share one shape and one set of checks.
+        object_grants = [
             grants
             for blueprint in rendered
-            for flight in blueprint.flights.values()
-            if flight.get("deploy") is not False and isinstance(grants := flight.get("grants"), dict)
+            for resource in (*blueprint.flights.values(), *blueprint.dives.values())
+            if resource.get("deploy") is not False and isinstance(grants := resource.get("grants"), dict)
         ]
         needs_role_catalog = bool(managed_role_names) or any(
             isinstance(grants := share.get("grants"), dict) and bool(grants.get("roles"))
             for blueprint in rendered
             for share in blueprint.shares.values()
-        ) or any(grants.get("roles") for grants in flight_grants)
+        ) or any(grants.get("roles") for grants in object_grants)
         live_role_names = self._live_role_names() if needs_role_catalog else set()
         declared_users = {
             str(value)
@@ -765,7 +768,7 @@ class Deployer:
             for share in blueprint.shares.values()
             if isinstance(grants := share.get("grants"), dict)
             for value in grants.get("users", [])
-        } | {str(value) for grants in flight_grants for value in grants.get("users", [])}
+        } | {str(value) for grants in object_grants for value in grants.get("users", [])}
         org_users = self._org_users() if declared_users else None
         if org_users is not None:
             deprovisioned = sorted(user for user in declared_users if org_users.get(user.lower()))
@@ -870,35 +873,9 @@ class Deployer:
                     if problem := self._access_token_problem(token_name, f"{blueprint.name}.{key}"):
                         record.action = "error"
                         record.notes = problem
-                grants = flight.get("grants")
-                if isinstance(grants, dict) and record.action in {"create", "update"}:
-                    missing_grant_roles = sorted(
-                        users_missing_from(
-                            {str(value) for value in grants.get("roles", [])},
-                            live_role_names | managed_role_names,
-                        )
-                    )
-                    unknown_grant_users = self._unknown_users(
-                        {str(value) for value in grants.get("users", [])}, org_users,
-                    )
-                    grant_problems = []
-                    if missing_grant_roles:
-                        grant_problems.append(
-                            "run grant role(s) do not exist and are not selected for deployment: "
-                            f"{', '.join(missing_grant_roles)}"
-                        )
-                    if unknown_grant_users:
-                        grant_problems.append(
-                            f"run grant user(s) are not users in this organization: {', '.join(unknown_grant_users)}"
-                        )
-                    if grant_problems:
-                        record.action = "error"
-                        record.notes = "; ".join(grant_problems)
-                    else:
-                        grant_note = self._flight_grant_plan_note(
-                            grants, str(record.id) if record.action == "update" else None,
-                        )
-                        record.notes = "; ".join(note for note in (record.notes, grant_note) if note)
+                self._plan_object_grants(
+                    record, flight.get("grants"), "flight", live_role_names | managed_role_names, org_users,
+                )
                 records.append(record)
 
             for key, share in blueprint.shares.items():
@@ -996,7 +973,11 @@ class Deployer:
                 )
 
             for key, dive in blueprint.dives.items():
-                records.append(self._dive_plan_record(blueprint, key, dive))
+                record = self._dive_plan_record(blueprint, key, dive)
+                self._plan_object_grants(
+                    record, dive.get("grants"), "dive", live_role_names | managed_role_names, org_users,
+                )
+                records.append(record)
 
             for key, ctx in blueprint.contexts.items():
                 records.append(
@@ -1676,7 +1657,7 @@ class Deployer:
         plan.id = flight_id
         grants = flight.get("grants")
         if isinstance(grants, dict):
-            self._reconcile_flight_grants(flight_id, grants)
+            self._reconcile_object_grants("flight", flight_id, grants)
         run_started = False
         if flight.get("runOnDeploy", False):
             print(f"  Starting flight run for '{name}'...", file=sys.stderr)
@@ -1840,6 +1821,9 @@ class Deployer:
             raise ValidationError(f"Cannot deploy Dive {title} with plan action {plan.action}")
 
         plan.id = dive_id
+        grants = dive.get("grants")
+        if isinstance(grants, dict):
+            self._reconcile_object_grants("dive", dive_id, grants)
         desired_status_value = dive.get("status")
         desired_status = str(desired_status_value) if desired_status_value is not None else None
         if (
@@ -1997,30 +1981,64 @@ class Deployer:
         users = {str(row[0]) for row in rows if str(row[1]).lower() == "user"}
         return roles, users
 
-    def _current_flight_grantees(self, flight_id: str) -> tuple[set[str], set[str], bool]:
-        """Roles, users, and whether the organization hold ``run`` on the Flight."""
+    def _plan_object_grants(
+        self,
+        record: PlanRecord,
+        grants: object,
+        kind: str,
+        known_roles: set[str],
+        org_users: dict[str, bool] | None,
+    ) -> None:
+        """Check a Flight's or Dive's ``grants`` and add what deploy will change to the plan record."""
+        if not isinstance(grants, dict) or record.action not in {"create", "update"}:
+            return
+        privilege = OBJECT_GRANT_PRIVILEGES[kind]
+        missing_roles = sorted(users_missing_from({str(value) for value in grants.get("roles", [])}, known_roles))
+        unknown_users = self._unknown_users({str(value) for value in grants.get("users", [])}, org_users)
+        problems = []
+        if missing_roles:
+            problems.append(
+                f"{privilege} grant role(s) do not exist and are not selected for deployment: "
+                f"{', '.join(missing_roles)}"
+            )
+        if unknown_users:
+            problems.append(
+                f"{privilege} grant user(s) are not users in this organization: {', '.join(unknown_users)}"
+            )
+        if problems:
+            record.action = "error"
+            record.notes = "; ".join(problems)
+            return
+        grant_note = self._object_grant_plan_note(
+            kind, grants, str(record.id) if record.action == "update" else None,
+        )
+        record.notes = "; ".join(note for note in (record.notes, grant_note) if note)
+
+    def _current_object_grantees(self, kind: str, object_id: str) -> tuple[set[str], set[str], bool]:
+        """Roles, users, and whether the organization hold the Flight's ``run`` or the Dive's ``read``."""
+        privilege = OBJECT_GRANT_PRIVILEGES[kind]
         rows = self._query_rows(
             "SELECT grantee_name, grantee_type, privilege "
-            f"FROM md_list_flight_grantees({sql_string(flight_id)}::UUID)"
+            f"FROM md_list_{kind}_grantees({sql_string(object_id)}::UUID)"
         )
-        run_rows = [(str(row[0]), str(row[1]).lower()) for row in rows if str(row[2]).lower() == "run"]
-        roles = {name for name, kind in run_rows if kind == "role"}
-        users = {name for name, kind in run_rows if kind == "user"}
-        return roles, users, any(kind == "organization" for _, kind in run_rows)
+        held = [(str(row[0]), str(row[1]).lower()) for row in rows if str(row[2]).lower() == privilege]
+        roles = {name for name, grantee_type in held if grantee_type == "role"}
+        users = {name for name, grantee_type in held if grantee_type == "user"}
+        return roles, users, any(grantee_type == "organization" for _, grantee_type in held)
 
-    def _flight_grant_changes(
-        self, grants: dict[str, object], flight_id: str | None,
+    def _object_grant_changes(
+        self, kind: str, grants: dict[str, object], object_id: str | None,
     ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-        """``run`` grantees to add and to revoke, as (``role``/``user``/``organization``, name) pairs.
+        """Grantees to add and to revoke, as (``role``/``user``/``organization``, name) pairs.
 
-        MotherDuck matches Flight grantee names without regard to case, so the comparison does too.
+        MotherDuck matches Flight and Dive grantee names without regard to case, so the comparison does too.
         """
         raw_roles, raw_users = grants.get("roles"), grants.get("users")
         roles = {str(value) for value in raw_roles} if isinstance(raw_roles, list) else set()
         users = {str(value) for value in raw_users} if isinstance(raw_users, list) else set()
         organization = grants.get("organization") is True
         current_roles, current_users, current_organization = (
-            self._current_flight_grantees(flight_id) if flight_id else (set(), set(), False)
+            self._current_object_grantees(kind, object_id) if object_id else (set(), set(), False)
         )
         additions = [("role", value) for value in sorted(users_missing_from(roles, current_roles))]
         additions += [("user", value) for value in sorted(users_missing_from(users, current_users))]
@@ -2035,35 +2053,46 @@ class Deployer:
         return additions, revocations
 
     @staticmethod
-    def _flight_grantee_sql(grantees: list[tuple[str, str]]) -> str:
-        return ", ".join(kind.upper() + (f" {quote_name(name)}" if name else "") for kind, name in grantees)
+    def _object_grantee_sql(grantees: list[tuple[str, str]]) -> str:
+        return ", ".join(
+            grantee_type.upper() + (f" {quote_name(name)}" if name else "") for grantee_type, name in grantees
+        )
 
-    def _flight_grant_plan_note(self, grants: dict[str, object], flight_id: str | None) -> str:
-        tail = [AUTHORITATIVE_NOTE] if grants.get("mode") == "authoritative" else []
+    def _object_grant_plan_note(self, kind: str, grants: dict[str, object], object_id: str | None) -> str:
+        privilege = OBJECT_GRANT_PRIVILEGES[kind]
+        authoritative = grants.get("mode") == "authoritative"
+        tail = [AUTHORITATIVE_NOTE] if authoritative else []
         try:
-            additions, revocations = self._flight_grant_changes(grants, flight_id)
+            additions, revocations = self._object_grant_changes(kind, grants, object_id)
         except CommandError:
-            return "; ".join(["run grants will be reconciled; current grants could not be read at plan time", *tail])
+            return "; ".join(
+                [f"{privilege} grants will be reconciled; current grants could not be read at plan time", *tail]
+            )
 
         def readable(grantees: list[tuple[str, str]]) -> str:
-            return ", ".join(f"{kind} {name}".strip() for kind, name in grantees)
+            return ", ".join(f"{grantee_type} {name}".strip() for grantee_type, name in grantees)
 
         notes = []
         if additions:
-            notes.append(f"will grant run to: {readable(additions)}")
+            notes.append(f"will grant {privilege} to: {readable(additions)}")
         if revocations:
-            notes.append(f"will revoke run from: {readable(revocations)}")
-        if not notes and flight_id is None:
+            notes.append(f"will revoke {privilege} from: {readable(revocations)}")
+        if kind == "dive" and object_id is None and authoritative and grants.get("organization") is not True:
+            # MotherDuck gives a new Dive an organization grant unless the organization starts Dives private.
+            notes.append("will revoke the organization read grant if MotherDuck gives the new Dive one")
+        if not notes and object_id is None:
             return "; ".join(tail)
-        return "; ".join([*(notes or ["run grants already match"]), *tail])
+        return "; ".join([*(notes or [f"{privilege} grants already match"]), *tail])
 
-    def _reconcile_flight_grants(self, flight_id: str, grants: dict[str, object]) -> None:
-        additions, revocations = self._flight_grant_changes(grants, flight_id)
+    def _reconcile_object_grants(self, kind: str, object_id: str, grants: dict[str, object]) -> None:
+        privilege = OBJECT_GRANT_PRIVILEGES[kind].upper()
+        target = f"{privilege} ON {kind.upper()} {sql_string(object_id)}"
+        additions, revocations = self._object_grant_changes(kind, grants, object_id)
         # One statement per direction: MotherDuck applies a grantee list all or nothing.
         if additions:
-            self._sql(f"GRANT RUN ON FLIGHT {sql_string(flight_id)} TO {self._flight_grantee_sql(additions)};")
+            self._sql(f"GRANT {target} TO {self._object_grantee_sql(additions)};")
         if revocations:
-            self._sql(f"REVOKE RUN ON FLIGHT {sql_string(flight_id)} FROM {self._flight_grantee_sql(revocations)};")
+            self._sql(f"REVOKE {target} FROM {self._object_grantee_sql(revocations)};")
 
     @staticmethod
     def _revocation_summary(roles: set[str], users: set[str]) -> str:

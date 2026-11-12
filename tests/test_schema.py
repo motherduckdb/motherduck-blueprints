@@ -156,6 +156,7 @@ def test_blueprint_schema_accepts_current_guide_rbac_and_runtime_features() -> N
                     "title": "Finance",
                     "source": "dive.tsx",
                     "status": "endorsed",
+                    "grants": {"roles": ["finance"], "users": ["ops"], "organization": False, "mode": "authoritative"},
                     "requiredResources": [{"share": "data", "alias": "finance"}],
                 }
             },
@@ -187,6 +188,17 @@ def test_flight_grants_reject_share_only_and_unknown_fields() -> None:
     def manifest(grants: object) -> dict[str, object]:
         flight = {"name": "loader", "source": "flight.py", "requirements": "requirements.txt", "grants": grants}
         return {"schemaVersion": 1, "name": "loader", "title": "Loader", "resources": {"flights": {"loader": flight}}}
+
+    SchemaValidator().validate(manifest({"organization": True}), "blueprint.schema.json")
+    for grants in ({"organization": "yes"}, {"groups": ["finance"]}, {"mode": "replace"}):
+        with pytest.raises(ValidationError):
+            SchemaValidator().validate(manifest(grants), "blueprint.schema.json")
+
+
+def test_dive_grants_reject_unknown_fields() -> None:
+    def manifest(grants: object) -> dict[str, object]:
+        dive = {"title": "Finance", "source": "dive.tsx", "requiredResources": [], "grants": grants}
+        return {"schemaVersion": 1, "name": "finance", "title": "Finance", "resources": {"dives": {"finance": dive}}}
 
     SchemaValidator().validate(manifest({"organization": True}), "blueprint.schema.json")
     for grants in ({"organization": "yes"}, {"groups": ["finance"]}, {"mode": "replace"}):
