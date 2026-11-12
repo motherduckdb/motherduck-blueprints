@@ -1,48 +1,48 @@
 ## Highlights
 
-- `md-blueprints --help` and the generated `make help` list their commands by task and show a typical workflow. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- Newly generated repositories provide `make plan` and `make verify`, which read MotherDuck without changing it. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- `md-blueprints new` prints the files it wrote and the next steps, and each scaffolded package has a README that describes its files and its preview behavior. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
+- Dives accept `grants`, which decide who can open a deployed Dive. Roles, users, and the organization receive `read` in additive or authoritative mode, as Flight `grants` do for `run`. [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-382`, the MotherDuck release of 2026-11-11. [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+- Three optional examples cover a SQL transformation, a data freshness monitor, and a Guide. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
 
-## Upgrading from v0.10.3
+## Upgrading from v0.10.4
 
-v0.10.4 is a patch release that changes command output and messages only. Validation, planning, deployment, and cleanup behavior are unchanged. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically. The local Dive preview is unchanged, so `make sync-preview` is not required.
+v0.10.5 is a patch release that adds an optional field and updates the pinned MotherDuck CLI. Existing manifests deploy as before, and a Dive without `grants` keeps its current access. Generated repositories pin exact versions, so the upgrade must name this version explicitly. Workflows that reference the floating `@v0` tag receive the release automatically. The local Dive preview is unchanged, so `make sync-preview` is not required.
 
-1. Run `make upgrade VERSION=0.10.4`.
-2. Run `make validate`. Then open a pull request and review the preview plan before merging.
-3. Optionally adopt the new Makefile targets as described under [Compatibility](#compatibility).
+1. Run `make upgrade VERSION=0.10.5`.
+2. Run `make install-deploy` to install the pinned MotherDuck CLI.
+3. Run `make validate`. Then open a pull request and review the preview plan before merging.
+4. Optionally declare `grants` on Dives as described under [Features](#features).
 
 Changes to review:
 
-- [Existing repositories keep their Makefile](#compatibility)
-- [Additional messages on standard error](#compatibility)
+- [The pinned MotherDuck CLI changes](#compatibility)
+- [Existing repositories do not receive the new examples](#compatibility)
 
 ## Features
 
-- `md-blueprints --help` groups the commands under four tasks: creating packages, checking locally, reading or changing MotherDuck, and maintaining the repository. It also shows a typical workflow. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- The Makefile of a newly generated repository has two read-only targets, `make plan` and `make verify`. Both accept `TARGET=<target>`, `BRANCH=<branch>` for a preview, and `NAME=<package>`, and both require the token of the selected target. Its `make help` lists the targets by task. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- `md-blueprints new` prints the files it wrote and the next steps for the kind of package it created. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- The README of a scaffolded Flight, Dive, Guide, or role package describes the files of the package, its behavior in previews, and the next steps. Previously it contained one generic line. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- `doctor` ends with a `result:` line that states whether anything requires attention. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-
-## Bug Fixes
-
-- Several errors named a problem without a remedy. They now state what to do. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-  - A preview target without `--branch` explains that preview resources are named after the branch and names the two ways to proceed.
-  - An unknown target lists the declared targets. For `staging`, the error refers to the staging setup section of the setup guide.
-  - `dive-source` without a package lists the packages that declare a Dive.
-  - `new` without a kind or a name shows examples.
-- `validate --target <stable target> --branch <name>` accepted `--branch` without comment, although the option applies only to previews. It now prints a warning that `--branch` is ignored. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- `changed` without `--base` or `--all` listed every package without explanation. It now prints a note on standard error that states why. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
+- `resources.dives.<key>.grants` manages `read` grants on a Dive. Deploy issues `GRANT READ ON DIVE` and `REVOKE READ ON DIVE` after it creates or updates the Dive. Refer to the [Dives reference](https://github.com/motherduckdb/motherduck-blueprints/blob/v0.10.5/docs/blueprint-yml-reference.md#dives). [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+  - `roles` and `users` name roles and MotherDuck usernames, and `organization: true` grants every member of the organization. Names are compared without regard to case.
+  - `mode: additive`, the default, keeps grantees that are not declared. `mode: authoritative` revokes them, including grants made in the MotherDuck UI or with SQL.
+  - MotherDuck gives a new Dive an organization `read` grant. With `mode: authoritative` and without `organization: true`, deploy revokes that grant, which restricts the Dive to the declared grantees. `plan` states this for a Dive that does not exist yet.
+  - `plan` lists what deploy will grant and revoke. It stops before any write when a role does not exist and is not declared in the same run, or when a username is not in the organization.
+  - Grants apply in every target, and target overrides merge into `grants`.
+- `doctor` includes authoritative Dive grants in its warning about resources that revoke undeclared access. [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+- Three optional examples ship under `examples/`. None deploys until it is copied into a package root. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
+  - `pageviews-weekly-trends` is a SQL transformation Flight that reads another package through an input, with its share and Dive.
+  - `data-freshness-monitor` is an hourly Flight that records freshness and row-count checks, fails the run on a problem, and can post to a webhook from a Flight secret.
+  - `pageviews-guide` is a Guide with catalog, Flight, and Dive references.
 
 ## Compatibility
 
-- **Existing repositories keep their Makefile.** `make upgrade` updates the version pins and does not rewrite the Makefile, so `make plan`, `make verify`, and the grouped `make help` are present only in repositories generated from this release. To adopt them, generate a template with `md-blueprints init` in an empty directory, copy its `Makefile`, and reapply any local changes. No action is required otherwise. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- **Additional messages on standard error.** `validate` and `changed` print the warning and the note described above on standard error, and `doctor` and `new` print additional lines on standard output. Standard output of `changed`, `plan`, `render`, and `verify` and all exit codes are unchanged. Automation that treats any output on standard error as a failure must pass `--all` or `--base` to `changed`. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
+- **The pinned MotherDuck CLI changes.** Blueprints installs `v1.5.6-2026-11-382` instead of `v1.5.6-2026-11-37`. The commands and flags are unchanged. The help for `dive list --all` and `flight list --all` now states what they list: Dives shared with the identity, and every Flight in the organization for an admin. Run `make install-deploy` after upgrading. [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+- **Existing repositories do not receive the new examples.** `make upgrade` updates the version pins and does not add files. To use an example, generate a template with `md-blueprints init` in an empty directory and copy the example from its `examples/` directory. No action is required otherwise. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
 
 ## Maintenance
 
-- The repository reference and the generated `README.md` and `AGENTS.md` describe `make plan`, `make verify`, and `make help`. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
-- The package and action pins are updated to 0.10.4. [#164](https://github.com/motherduckdb/motherduck-blueprints/pull/164)
+- The documentation covers Dive sharing: who can open a deployed Dive, how Dive, share, and Flight grants combine, and how `flight cancel` applies to runs started by other people. [#172](https://github.com/motherduckdb/motherduck-blueprints/pull/172)
+- A new examples index lists every example by purpose, shows how the examples connect, and states the practices they share. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
+- The documentation gains diagrams of the deployment flow, target selection, package selection, the adoption steps, the split of ownership with Terraform, and the layout of each example. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
+- The starter Flight and Dive READMEs describe what the packages deploy and which patterns to reuse. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
+- The package and action pins are updated to 0.10.5. [#166](https://github.com/motherduckdb/motherduck-blueprints/pull/166)
 
-**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.10.3...v0.10.4
+**Full diff:** https://github.com/motherduckdb/motherduck-blueprints/compare/v0.10.4...v0.10.5
