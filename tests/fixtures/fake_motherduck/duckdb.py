@@ -102,7 +102,7 @@ class MockConnection:
 
     def _load(self) -> dict[str, Any]:
         state: dict[str, Any] = json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
-        for key in ("flights", "dives", "guides", "roles", "share_grantees", "share_patterns", "runs", "flight_grantees"):
+        for key in ("flights", "dives", "guides", "roles", "share_grantees", "share_patterns", "runs", "flight_grantees", "dive_grantees"):
             state.setdefault(key, {})
         state.setdefault("databases", [])
         state.setdefault("sequence", 0)
@@ -189,20 +189,26 @@ class MockConnection:
             if verb == "REVOKE" and row in rows:
                 rows.remove(row)
             return MockResult([])
-        if "md_list_flight_grantees(" in query:
-            flight_id = _string(query, r"md_list_flight_grantees\(")
-            if flight_id not in state["flights"]:
-                raise Error(f"Catalog Error: Could not find Flight with id '{flight_id}'")
-            return MockResult([(*row, "run") for row in state["flight_grantees"].get(flight_id, [])])
-        flight_grant = re.fullmatch(r"(GRANT|REVOKE) RUN ON FLIGHT '([0-9a-f-]+)' (?:TO|FROM) (.+);", stripped)
-        if flight_grant:
-            verb, flight_id, grantee_list = flight_grant.groups()
-            if flight_id not in state["flights"]:
-                raise Error("Catalog Error: Could not find Flight")
-            rows = state["flight_grantees"].setdefault(flight_id, [])
+        listed = re.search(r"md_list_(flight|dive)_grantees\(", query)
+        if listed:
+            kind = listed.group(1)
+            object_id = _string(query, rf"md_list_{kind}_grantees\(")
+            if object_id not in state[f"{kind}s"]:
+                raise Error(f"Catalog Error: Could not find {kind.title()} with id '{object_id}'")
+            privilege = "run" if kind == "flight" else "read"
+            return MockResult([(*row, privilege) for row in state[f"{kind}_grantees"].get(object_id, [])])
+        object_grant = re.fullmatch(
+            r"(GRANT|REVOKE) (RUN ON FLIGHT|READ ON DIVE) '([0-9a-f-]+)' (?:TO|FROM) (.+);", stripped,
+        )
+        if object_grant:
+            verb, target, object_id, grantee_list = object_grant.groups()
+            kind = target.rsplit(" ", 1)[1].lower()
+            if object_id not in state[f"{kind}s"]:
+                raise Error(f"Catalog Error: Could not find {kind.title()}")
+            rows = state[f"{kind}_grantees"].setdefault(object_id, [])
             for grantee in re.findall(r'ORGANIZATION|(?:ROLE|USER) "(?:[^"]|"")*"', grantee_list):
-                kind, _, name = grantee.partition(" ")
-                row = [name[1:-1].replace('""', '"') if name else "fake org", kind.lower()]
+                grantee_type, _, name = grantee.partition(" ")
+                row = [name[1:-1].replace('""', '"') if name else "fake org", grantee_type.lower()]
                 if verb == "GRANT" and row not in rows:
                     rows.append(row)
                 if verb == "REVOKE" and row in rows:
@@ -313,6 +319,8 @@ class MockConnection:
                 "status": "draft",
                 "owner": self._user(state),
             }
+            # Production gives a new Dive an organization read grant unless the organization starts Dives private.
+            state["dive_grantees"][dive_id] = [["fake org", "organization"]]
             return MockResult([(dive_id,)])
         if "MD_UPDATE_DIVE" in query:
             dive_id = _string(query, r"\(id = ")

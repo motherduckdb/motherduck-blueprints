@@ -130,11 +130,17 @@ def test_doctor_warns_about_authoritative_roles_and_share_grants(
         "      waitForRun: success\n",
         "      waitForRun: success\n      grants:\n        organization: true\n        mode: authoritative\n", 1,
     ))
+    consumer = tmp_path / "dives/wikipedia-pageviews/blueprint.yml"
+    consumer.write_text(consumer.read_text().replace(
+        "      status: ready\n",
+        "      status: ready\n      grants:\n        roles: [analysts]\n        mode: authoritative\n", 1,
+    ))
 
     run_doctor(tmp_path)
 
     output = capsys.readouterr().out
     assert "motherduck_role_grant or motherduck_share_grant" in output
+    assert "wikipedia-pageviews dives.pageviews.grants" in output
     assert "wikipedia-pageviews-ingest shares." in output
     assert "wikipedia-pageviews-ingest flights.pageviews_loader.grants" in output
     # The scaffolded role is disabled, so it cannot revoke anything yet.

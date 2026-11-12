@@ -159,8 +159,8 @@ def run_doctor(
     authoritative = authoritative_resources(project)
     if authoritative:
         lines.append(
-            "warning: mode: authoritative revokes role members, included roles, share grants, or Flight run "
-            "grants that are not "
+            "warning: mode: authoritative revokes role members, included roles, share grants, Flight run "
+            "grants, or Dive read grants that are not "
             "declared in Blueprints, including grants managed elsewhere such as the MotherDuck Terraform "
             "provider's motherduck_role_grant or motherduck_share_grant. Use mode: additive unless Blueprints "
             "is the only owner: " + ", ".join(authoritative)
@@ -274,7 +274,7 @@ def run_doctor(
 
 
 def authoritative_resources(project: Project) -> list[str]:
-    """Roles, share grants, and Flight run grants rendered with mode: authoritative for any target."""
+    """Roles and share, Flight, and Dive grants rendered with mode: authoritative for any target."""
     found: set[str] = set()
     for target in project.target_names():
         branch = "feature/doctor" if target == "preview" else None
@@ -290,6 +290,10 @@ def authoritative_resources(project: Project) -> list[str]:
                 grants = flight.get("grants")
                 if isinstance(grants, dict) and grants.get("mode") == "authoritative":
                     found.add(f"{blueprint.name} flights.{key}.grants")
+            for key, dive in blueprint.dives.items():
+                grants = dive.get("grants")
+                if isinstance(grants, dict) and grants.get("mode") == "authoritative":
+                    found.add(f"{blueprint.name} dives.{key}.grants")
     return sorted(found)
 
 

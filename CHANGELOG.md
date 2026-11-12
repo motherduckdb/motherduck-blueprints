@@ -11,6 +11,9 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - The documentation gains diagrams: how a repository deploys to MotherDuck (README), which event deploys to which target with and without staging, how package selection follows the dependency graph, the adoption steps, the split of ownership with Terraform, and the layout of each example.
 - The starter Flight and Dive READMEs describe what the packages deploy, how to change what is loaded, and the patterns to reuse.
 - The adoption, Terraform, retirement, and NCS pages use `make plan` and `make verify`, and keep the full CLI command where JSON output is needed.
+- Dives accept `grants`, which decide who can open a Dive: `roles`, `users`, and `organization: true` receive `read` through `GRANT READ ON DIVE`, in additive or authoritative mode, as Flight `grants` do for `run`. `plan` lists what deploy will grant and revoke and stops before any write on an unknown role or username. With `mode: authoritative` and without `organization: true`, deploy revokes the organization grant that MotherDuck gives a new Dive, which restricts the Dive to the declared grantees. A Dive without `grants` is unchanged. `doctor` includes authoritative Dive grants in its warning.
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-382`, the MotherDuck release of 2026-11-11. Its commands and flags are unchanged. The help for `dive list --all` and `flight list --all` now states what they list: Dives shared with the identity, and every Flight in the organization for an admin. Run `make install-deploy` after upgrading.
+- The documentation covers Dive sharing: who can open a deployed Dive, how Dive, share, and Flight grants combine, and how `flight cancel` applies to other people's runs.
 - The package and action pins are updated to 0.10.5.
 
 ## v0.10.4 - 2026-11-10

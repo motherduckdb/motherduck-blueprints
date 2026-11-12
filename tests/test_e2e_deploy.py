@@ -530,6 +530,74 @@ def test_flight_run_grants_reconcile_case_insensitively_and_revoke_only_when_aut
     assert "current grants could not be read at plan time" in flight["notes"]
 
 
+def test_dive_read_grants_reconcile_and_revoke_the_default_organization_grant_only_when_authoritative(
+    starter: Path, md_cli: Cli,
+) -> None:
+    fake = md_cli.fake
+    dive_key = ("wikipedia-pageviews", "dive", "pageviews")
+
+    def grant(**grants: object) -> None:
+        edit_yaml(starter / DASHBOARD, lambda data: data["resources"]["dives"]["pageviews"].update(grants=grants))
+
+    grant(roles=["analysts"])
+    fake.seed(roles={"analysts": {}})
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
+    assert dive["action"] == "create" and "will grant read to: role analysts" in dive["notes"]
+
+    md_cli.ok("deploy", "--root", str(starter))
+    dive_id = fake.ids("dives")["Wikipedia Pageviews"]
+    assert f"GRANT READ ON DIVE '{dive_id}' TO ROLE \"analysts\";" in fake.queries()
+    # Additive mode keeps the organization grant MotherDuck gives a new Dive.
+    assert sorted(fake.state()["dive_grantees"][dive_id]) == [["analysts", "role"], ["fake org", "organization"]]
+
+    # Names match without regard to case, so a second deploy changes nothing.
+    fake.seed(dive_grantees={dive_id: [["Analysts", "role"], ["fake org", "organization"], ["ops", "user"]]})
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
+    assert "read grants already match" in dive["notes"]
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    assert not any(" ON DIVE " in query for query in fake.mutations())
+
+    grant(roles=["analysts"], mode="authoritative")
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
+    assert "will revoke read from: user ops, organization" in dive["notes"]
+    assert "including grants created outside Blueprints" in dive["notes"]
+    fake.clear_log()
+    md_cli.ok("deploy", "--root", str(starter))
+    assert f"REVOKE READ ON DIVE '{dive_id}' FROM USER \"ops\", ORGANIZATION;" in fake.queries()
+    assert fake.state()["dive_grantees"][dive_id] == [["Analysts", "role"]]
+
+    # An unknown role stops the plan before any write.
+    grant(roles=["analysts", "finance"])
+    fake.clear_log()
+    failed = md_cli.fails("deploy", "--root", str(starter))
+    assert "read grant role(s) do not exist and are not selected for deployment: finance" in failed.stdout + failed.stderr
+    assert fake.mutations() == []
+
+    # A grant that cannot be read at plan time is still reconciled at deploy time.
+    grant(roles=["analysts"])
+    fake.seed(failures={"md_list_dive_grantees": "permission denied"})
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
+    assert "current grants could not be read at plan time" in dive["notes"]
+
+
+def test_new_dive_with_authoritative_grants_starts_without_the_organization_grant(
+    starter: Path, md_cli: Cli,
+) -> None:
+    fake = md_cli.fake
+    edit_yaml(starter / DASHBOARD, lambda data: data["resources"]["dives"]["pageviews"].update(
+        grants={"roles": ["analysts"], "mode": "authoritative"},
+    ))
+    fake.seed(roles={"analysts": {}})
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[("wikipedia-pageviews", "dive", "pageviews")]
+    assert "will revoke the organization read grant if MotherDuck gives the new Dive one" in dive["notes"]
+
+    md_cli.ok("deploy", "--root", str(starter))
+    dive_id = fake.ids("dives")["Wikipedia Pageviews"]
+    assert f"REVOKE READ ON DIVE '{dive_id}' FROM ORGANIZATION;" in fake.queries()
+    assert fake.state()["dive_grantees"][dive_id] == [["analysts", "role"]]
+
+
 def test_guides_publish_once_and_append_versions_only_for_changes(starter: Path, md_cli: Cli) -> None:
     fake = md_cli.fake
     package = write_guide(starter, "runbook", {

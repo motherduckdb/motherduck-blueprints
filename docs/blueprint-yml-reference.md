@@ -244,9 +244,30 @@ Each item requires `alias` and exactly one of:
 - `input`: a declared top-level input.
 - `url`: a literal MotherDuck share URL, normally owned outside this repository.
 
-A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives must be `draft`, so a Dive with another base `status` needs `targets.preview.status: draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
+A Dive requires `title`, `source`, and a `requiredResources` array, which may be empty for a Dive without data mounts. `id`, `owner`, `deploy`, `description`, `status`, `grants`, and target overrides are optional. `status` accepts `draft`, `ready`, `endorsed`, or `archived`; preview Dives must be `draft`, so a Dive with another base `status` needs `targets.preview.status: draft`. Endorsing a Dive requires an organization admin. Preview titles must include the branch or branch slug.
 
 The deployer strips the `export const REQUIRED_DATABASES = ...` declaration (single-line or multi-line) from local-preview source and passes the rendered mounts to MotherDuck. Only that exact name is removed; an export such as `REQUIRED_DATABASES_BY_ENV` stays in the deployed source.
+
+`grants` decides who can open the Dive. Its owner, the deployment identity, can always open it; everyone else needs a `read` grant. Deploy issues `GRANT READ ON DIVE` after it creates or updates the Dive.
+
+```yaml
+resources:
+  dives:
+    revenue:
+      title: Revenue
+      source: src/dive.tsx
+      requiredResources: []
+      grants:
+        roles: [finance]
+        mode: authoritative
+```
+
+- `roles` and `users` name roles and MotherDuck usernames. `organization: true` grants every member of the organization, including its service accounts. MotherDuck matches names without regard to case.
+- `mode: additive` (the default) keeps grantees that are not declared. `mode: authoritative` revokes them, including grants made in the MotherDuck UI or with SQL.
+- Depending on the organization, MotherDuck makes a new Dive readable by everyone in the organization or only by its owner. Without `grants`, Blueprints leaves that default in place. To restrict a Dive to the declared grantees, use `mode: authoritative` without `organization: true`: deploy then revokes the organization grant, and `plan` says so. In additive mode an organization grant stays.
+- `plan` reads the live grants and lists what deploy will grant and revoke. It stops before any write when a role does not exist and is not declared in the same run, or when a username is not in the organization.
+- A `read` grant on a Dive does not share its data or its Flights. Viewers also need `READ` on each share the Dive mounts (see share [`grants`](#shares)) and `run` on each Flight it starts (see Flight [`grants`](#flights)).
+- Grants apply in every target. Target overrides merge into `grants`, so set `roles: []`, `users: []`, and `organization: false` under `targets.preview` when a preview should not be granted to the production audience.
 
 ## Guides
 
