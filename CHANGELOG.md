@@ -6,6 +6,8 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- [Use with Terraform](docs/use-with-terraform.md) covers the `motherduck_dive_grant` and `motherduck_flight_grant` resources added in provider v0.4.1. Before, it said the provider had no grant resources for Dives or Flights. A new section says which tool should own Dive `read` and Flight `run` grants. Flight grants stay in Blueprints because only the Flight's owner can add them. Dive grants can be managed by either tool, but by only one per Dive. The section also covers the organization grant and embedding service accounts.
+
 ## v0.10.5 - 2026-11-12
 
 Patch release that adds `grants` for Dives, installs MotherDuck CLI `v1.5.6-2026-11-382`, and ships three optional examples. Existing manifests deploy as before. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.5`, followed by `make install-deploy`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.10.5 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.5).
