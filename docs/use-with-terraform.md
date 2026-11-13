@@ -21,7 +21,8 @@ flowchart LR
 | Shared platform databases, secrets, and custom roles | Terraform | `motherduck_database`, `motherduck_secret`, `motherduck_role`, `motherduck_role_grant` |
 | Platform shares and their grants | Terraform | `motherduck_share`, `motherduck_share_grant` |
 | Flight code, Dive content, Guide content | Blueprints | Do not also use `motherduck_flight`, `motherduck_dive`, or `motherduck_guide` for the same object |
-| `run` grants on Flights and `read` grants on Dives that Blueprints deploys | Blueprints | The provider has no Flight or Dive grant resource; declare them in the Flight's or Dive's `grants` |
+| `run` grants on Flights that Blueprints deploys | Blueprints | Declare them in the Flight's `grants`. `motherduck_flight_grant` needs the Flight owner's token. See [grants on Dives and Flights](#grants-on-dives-and-flights) |
+| `read` grants on Dives that Blueprints deploys | Either tool, but only one per Dive | The Dive's `grants`, or `motherduck_dive_grant` |
 | Databases and shares created by a package's Flight | Blueprints | Do not also declare them in Terraform |
 | Branch-scoped preview resources | Blueprints only | Never manage previews with Terraform |
 
@@ -126,9 +127,21 @@ Share URLs are committed to Git in this form. The provider marks `motherduck_sha
 
 **Terraform-owned roles, secrets, and tokens.** Reference them by name. Share `grants.roles` can name a role that only Terraform declares. A Flight's `secrets` can list `motherduck_secret` names, and `accessTokenName` can name a `motherduck_access_token`. Put Terraform database names in a Flight's `config`.
 
+## Grants on Dives and Flights
+
+Provider v0.4.1 adds `motherduck_dive_grant` and `motherduck_flight_grant`. They manage the same `read` and `run` grants as `grants` on a Blueprints Dive or Flight. Use one tool for the grants of each Dive or Flight.
+
+- **Flight `run` grants: Blueprints.** Only a Flight's owner can grant `run` on it. Organization admins can revoke grants but not add them. A Flight that Blueprints deploys is owned by the deployment service account, so Terraform could add grants only with that account's token. Declare them in the Flight's `grants`.
+- **Dive `read` grants: either tool.** The Dive's owner or an organization admin can grant `read`. Keep the grants in Blueprints when the package's reviewers decide who opens the Dive. Use `motherduck_dive_grant` when a platform team manages access centrally. Leave `grants` out of that Dive in `blueprint.yml`. In Terraform, get the Dive ID from the `motherduck_dives` data source, or bind the package to a fixed ID with `id`, as described in [adopt existing resources](adopt-existing-resources.md).
+- **Preview Dives: Blueprints only.** Each branch preview is a separate Dive with its own ID, and preview cleanup deletes it.
+- **The organization grant.** MotherDuck can give a new Dive an organization `read` grant. To restrict the Dive, Blueprints uses `mode: authoritative` without `organization: true`. Terraform imports the grant as `<dive_id>/organization` and then removes the resource. Use whichever tool owns the Dive's grants.
+- **Embedding.** The service account that creates embed sessions, for example with `motherduck_dive_embed_session`, needs `read` on the Dive. Grant it explicitly with `grants.users` or a `motherduck_dive_grant` instead of relying on the organization grant. The embedded Dive still needs access to the databases and shares it queries.
+
+Both tools read the current grants back, through `md_list_dive_grantees` and `md_list_flight_grantees` or the `motherduck_dive_grantees` and `motherduck_flight_grantees` data sources. Use them to check that only the owning tool grants access.
+
 ## Avoid fights between the tools
 
-- Do not use `mode: authoritative` on a Blueprints role or share `grants` when Terraform also grants it. Flight and Dive `grants` in authoritative mode likewise revoke `run` and `read` grants made in the UI or with SQL. Authoritative mode revokes every undeclared grant, including grants from `motherduck_role_grant` and `motherduck_share_grant`. Terraform then re-adds them on its next apply. The default `additive` mode leaves them alone. `md-blueprints doctor` warns about authoritative mode.
+- Do not use `mode: authoritative` on a Blueprints role or share `grants` when Terraform also grants it. Flight and Dive `grants` in authoritative mode likewise revoke `run` and `read` grants made in the UI, with SQL, or by `motherduck_flight_grant` and `motherduck_dive_grant`. Authoritative mode revokes every undeclared grant, including grants from `motherduck_role_grant`, `motherduck_share_grant`, `motherduck_dive_grant`, and `motherduck_flight_grant`. Terraform then re-adds them on its next apply. The default `additive` mode leaves them alone. `md-blueprints doctor` warns about authoritative mode.
 - Do not set `includePattern` on a share that `motherduck_share.include_pattern` manages.
 - Do not declare the same role in both tools. Blueprints runs `CREATE ROLE IF NOT EXISTS`, so it would recreate a role Terraform destroyed.
 - Use `dropDatabase: true` only for preview databases the package's Flight creates. Never point it at a Terraform database.
