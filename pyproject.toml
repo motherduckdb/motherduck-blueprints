@@ -23,6 +23,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "certifi>=2024.7.4",
   "json5>=0.11",
   "packaging>=24.0",
   "PyYAML>=6.0",

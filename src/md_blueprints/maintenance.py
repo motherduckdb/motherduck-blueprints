@@ -17,6 +17,7 @@ from .diagnostics import validation_warnings
 from .init import PREVIEW_ROOT, preview_drift
 from .project import CommandError, Project
 from .schema import LATEST_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, ValidationError
+from .tls import ssl_context
 
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/motherduckdb/motherduck-blueprints/releases/latest"
 # Reusable workflows that read MOTHERDUCK_TOKEN, which the calling job must pass.
@@ -95,7 +96,7 @@ def fetch_latest_version(*, offline: bool, offline_hint: str = "Use --offline to
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(GITHUB_LATEST_RELEASE_URL, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=10, context=ssl_context()) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise ValidationError(f"Could not check latest md-blueprints release: {exc}. {offline_hint}") from exc

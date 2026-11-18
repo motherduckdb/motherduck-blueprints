@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from .project import CommandError
+from .tls import ssl_context
 
 
 SUPPORTED_VERSION = "v1.5.6-2026-11-382"
@@ -55,7 +56,7 @@ def install_cli() -> None:
         raise CommandError("Install the MotherDuck CLI with the official PowerShell installer on Windows.")
     with tempfile.TemporaryDirectory(prefix="md-blueprints-install-") as directory:
         script = Path(directory) / "install.sh"
-        with urlopen("https://install.motherduck.com", timeout=30) as response:
+        with urlopen("https://install.motherduck.com", timeout=30, context=ssl_context()) as response:
             script.write_bytes(response.read())
         env = {
             **os.environ,
