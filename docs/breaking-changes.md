@@ -10,6 +10,19 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.10.6
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.10.6`. Run `make validate` after the upgrade.
+
+### https-uses-certifi-bundle
+
+- **Changed in:** v0.10.6
+- **What changed:** the HTTPS requests that Blueprints makes itself (the MotherDuck CLI installer download, the GitHub latest-release check, and the MotherDuck users API) check certificates against the `certifi` bundle, or against the file named by `SSL_CERT_FILE` when that file exists. Before, they used the Python installation's default certificate store, which on most systems includes certificate authorities added to the operating system and the directory named by `SSL_CERT_DIR`. Requests made by the MotherDuck CLI and by `pip` are not affected.
+- **Symptom:** on a network that inspects TLS with its own certificate authority, where that authority is trusted only through the operating system store or `SSL_CERT_DIR`, `make install-deploy` fails with `CERTIFICATE_VERIFY_FAILED`, `doctor --check-updates` and `upgrade` without a version report `Could not check latest md-blueprints release`, and `plan` warns `could not list organization users` and skips the username check.
+- **Find:** run `make install-deploy` on each machine and runner that deploys. A failure that names `CERTIFICATE_VERIFY_FAILED` identifies the affected environments.
+- **Fix:** set `SSL_CERT_FILE` to a PEM bundle that contains the inspecting certificate authority. A path that does not exist is ignored.
+- **Implemented in:** `md_blueprints.tls.ssl_context`.
+
 ## v0.10.2
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.10.2`. Run `make validate` after the upgrade.

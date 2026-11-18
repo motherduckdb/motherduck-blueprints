@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.10.6 - 2026-11-18
+
+Patch release that fixes the MotherDuck CLI installation on macOS with Python from python.org and documents the Terraform provider's Dive and Flight grant resources. HTTPS requests made by Blueprints now check certificates against the `certifi` bundle or `SSL_CERT_FILE` instead of the system certificate store. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.6`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0106) and the [v0.10.6 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.6).
+
 - [Use with Terraform](docs/use-with-terraform.md) covers the `motherduck_dive_grant` and `motherduck_flight_grant` resources added in provider v0.4.1. Before, it said the provider had no grant resources for Dives or Flights. A new section says which tool should own Dive `read` and Flight `run` grants. Flight grants stay in Blueprints because only the Flight's owner can add them. Dive grants can be managed by either tool, but by only one per Dive. The section also covers the organization grant and embedding service accounts.
 - `make install-deploy` no longer fails with `CERTIFICATE_VERIFY_FAILED` on macOS when Python came from python.org. Those builds have no certificate store until `Install Certificates.command` runs. Blueprints' HTTPS requests (the CLI installer download, the GitHub release check, and the MotherDuck users API) now check certificates against `certifi`, a new runtime dependency. `SSL_CERT_FILE` overrides the bundle when it names an existing file, for networks that inspect TLS. Certificate checks stay on. The [MotherDuck CLI page](docs/motherduck-cli.md#ci-and-compatibility) describes the override.
 - The package and action pins are updated to 0.10.6.
