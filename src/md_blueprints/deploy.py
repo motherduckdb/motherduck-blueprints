@@ -30,6 +30,7 @@ from .project import (
 )
 from .schema import ValidationError, breaking_change
 from .motherduck_cli import query_rows as cli_query_rows, sql_backend
+from .tls import ssl_context
 
 # MD_CREATE_FLIGHT and MD_UPDATE_FLIGHT accept instance_type from this client release.
 FLIGHT_INSTANCE_TYPE_MIN_DUCKDB = (1, 5, 6)
@@ -57,7 +58,7 @@ def list_org_users(token: str) -> dict[str, bool]:
                 "User-Agent": f"md-blueprints/{__version__}",
             },
         )
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30, context=ssl_context()) as response:
             payload = json.loads(response.read().decode("utf-8"))
         for user in payload["users"]:
             users[str(user["username"])] = bool(user["is_deprovisioned"])

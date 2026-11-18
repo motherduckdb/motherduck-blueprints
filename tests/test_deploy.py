@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -278,13 +279,15 @@ def test_list_org_users_follows_page_tokens(monkeypatch: pytest.MonkeyPatch) -> 
         "p2": {"users": [{"username": "bob", "is_deprovisioned": True}], "next_page_token": None},
     }
     requests: list[urllib.request.Request] = []
+    contexts: list[object] = []
 
     class Response(io.BytesIO):
         def __enter__(self) -> "Response":
             return self
 
-    def fake_urlopen(request: urllib.request.Request, timeout: float) -> Response:
+    def fake_urlopen(request: urllib.request.Request, timeout: float, context: object = None) -> Response:
         requests.append(request)
+        contexts.append(context)
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
         return Response(json.dumps(pages[query.get("page_token", [None])[0]]).encode())
 
@@ -298,6 +301,8 @@ def test_list_org_users_follows_page_tokens(monkeypatch: pytest.MonkeyPatch) -> 
         "https://api.example-region.motherduck.com/v1/users?limit=1000&page_token=p2",
     ]
     assert requests[0].get_header("Authorization") == "Bearer secret"
+    # Verification must not depend on the Python installation's CA setup.
+    assert contexts and all(isinstance(context, ssl.SSLContext) for context in contexts)
 
 
 def test_authoritative_role_keeps_members_that_differ_only_in_case(monkeypatch: pytest.MonkeyPatch) -> None:

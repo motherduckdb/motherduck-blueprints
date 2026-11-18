@@ -570,6 +570,7 @@ name = "md-blueprints"
 version = "0.10.6"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "json5" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -593,6 +594,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2024.7.4" },
     { name = "duckdb", marker = "extra == 'deploy'", specifier = ">=1.1,<1.5.7" },
     { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.1,<1.5.7" },
     { name = "json5", specifier = ">=0.11" },

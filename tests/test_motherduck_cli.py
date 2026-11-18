@@ -115,12 +115,20 @@ def test_target_token_is_forwarded_to_native_cli(tmp_path: Path, monkeypatch: py
 
 
 def test_installer_pins_runtime_without_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ssl
     from io import BytesIO
 
     installed = tmp_path / '.motherduck/bin/motherduck'
     monkeypatch.setattr(Path, 'home', lambda: tmp_path)
     monkeypatch.setattr(motherduck_cli, 'executable', lambda: str(installed) if installed.exists() else None)
-    monkeypatch.setattr(motherduck_cli, 'urlopen', lambda *a, **kw: BytesIO(b'# official installer fixture\n'))
+    contexts: list[object] = []
+
+    def fake_urlopen(url: str, timeout: float, context: object = None) -> BytesIO:
+        assert url == 'https://install.motherduck.com'
+        contexts.append(context)
+        return BytesIO(b'# official installer fixture\n')
+
+    monkeypatch.setattr(motherduck_cli, 'urlopen', fake_urlopen)
     monkeypatch.setenv('MOTHERDUCK_TOKEN', 'do-not-pass-to-installer')
     monkeypatch.setenv('motherduck_token', 'also-private')
     monkeypatch.setenv('MD_API_HOST', 'not-the-public-release-server')
@@ -144,6 +152,8 @@ def test_installer_pins_runtime_without_credentials(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(subprocess, 'run', run)
     motherduck_cli.install_cli()
     assert len(downloads) == 1 and not downloads[0].exists()
+    # The installer download verifies against certifi, not the Python installation's CA setup.
+    assert len(contexts) == 1 and isinstance(contexts[0], ssl.SSLContext)
     motherduck_cli.install_cli()
     assert len(downloads) == 1
 

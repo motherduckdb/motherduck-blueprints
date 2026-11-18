@@ -212,10 +212,14 @@ def test_latest_release_lookup_sends_the_github_token_when_set(monkeypatch: pyte
 
     from md_blueprints.maintenance import fetch_latest_version
 
-    seen: list[str | None] = []
+    import ssl
 
-    def fake_urlopen(request: urllib.request.Request, timeout: int) -> io.BytesIO:
+    seen: list[str | None] = []
+    contexts: list[object] = []
+
+    def fake_urlopen(request: urllib.request.Request, timeout: int, context: object = None) -> io.BytesIO:
         seen.append(request.get_header("Authorization"))
+        contexts.append(context)
         return io.BytesIO(b'{"tag_name": "v9.9.9"}')
 
     monkeypatch.delenv("MD_BLUEPRINTS_LATEST_VERSION", raising=False)
@@ -225,6 +229,7 @@ def test_latest_release_lookup_sends_the_github_token_when_set(monkeypatch: pyte
     monkeypatch.setenv("MD_BLUEPRINTS_GITHUB_TOKEN", "test-token")
     assert fetch_latest_version(offline=False) == "9.9.9"
     assert seen == [None, "Bearer test-token"]
+    assert contexts and all(isinstance(context, ssl.SSLContext) for context in contexts)
 
 
 def test_tooling_pins_are_aligned_without_blueprints_workflows(tmp_path: Path) -> None:
