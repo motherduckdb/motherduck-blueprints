@@ -69,7 +69,11 @@ resources:
       requiredResources:
         - share: data
           alias: ncs_field_recovery
+      grants:
+        organization: true
       targets:
         preview:
           title: NCS Field Recovery Explorer:${target.branch} (Preview)
           status: draft
+          grants:
+            organization: false

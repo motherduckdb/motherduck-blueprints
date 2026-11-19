@@ -184,6 +184,10 @@ def test_new_dive_accepts_non_slug_output_keys_and_uses_schema_neutral_source(tm
     loaded = load_yaml(destination / "blueprint.yml")
     assert isinstance(loaded, dict)
     assert loaded["inputs"] == {"data": {"blueprint": "producer", "output": "daily_metrics"}}
+    # MotherDuck starts new Dives private, so the scaffold shares the production Dive with the organization.
+    dive = loaded["resources"]["dives"]["dashboard"]
+    assert dive["grants"] == {"organization": True}
+    assert dive["targets"]["preview"]["grants"] == {"organization": False}
     assert "information_schema.tables" in source
     assert "starter_metric_summary" not in source
     assert '"shareName": "producer"' in source

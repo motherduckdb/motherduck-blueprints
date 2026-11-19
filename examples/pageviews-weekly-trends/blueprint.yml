@@ -73,7 +73,11 @@ resources:
       requiredResources:
         - share: trends
           alias: pageviews_trends
+      grants:
+        organization: true
       targets:
         preview:
           title: Pageviews Weekly Trends:${target.branch} (Preview)
           status: draft
+          grants:
+            organization: false

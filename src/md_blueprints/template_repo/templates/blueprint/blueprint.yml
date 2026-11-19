@@ -63,7 +63,11 @@ resources:
       requiredResources:
         - share: data
           alias: "__DATABASE_NAME__"
+      grants:
+        organization: true
       targets:
         preview:
           title: "__BLUEPRINT_TITLE__:${target.branch} (Preview)"
           status: draft
+          grants:
+            organization: false

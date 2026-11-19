@@ -20,7 +20,7 @@ The default setup uses this account for both previews and production. Never comm
 
 In GitHub, edit the `description` in `flights/wikipedia-pageviews-ingest/blueprint.yml`. Choose **Create a new branch for this commit** and open a pull request. Start with the Flight package so the first production deployment creates the data before the dashboard.
 
-Wait for **Deploy Blueprints** to finish. It loads public Wikipedia data and posts a comment with preview links. The full plan is in the workflow run summary. Open the Dive link to see the dashboard.
+Wait for **Deploy Blueprints** to finish. It loads public Wikipedia data and posts a comment with preview links. The full plan is in the workflow run summary. The preview Dive and its preview share are readable only by the deployment service account, so to see the dashboard before merging, run it locally as described in [work locally](#work-locally-optional). The production Dive is shared with your organization when you deploy production.
 
 Change an example file for this first PR: an empty commit or a top-level README-only change does not trigger deployment. Fork PRs validate without deployment credentials.
 

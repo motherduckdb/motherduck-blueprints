@@ -380,9 +380,13 @@ description: {description}
       requiredResources:
         - {required}
           alias: {_yaml_string(alias)}
+      grants:
+        organization: true
       targets:
         preview:
           title: {_yaml_string(f"{_title(name)}:${{target.branch}} (Preview)")}
+          grants:
+            organization: false
 """
 
 
