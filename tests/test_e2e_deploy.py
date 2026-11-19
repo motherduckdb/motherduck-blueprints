@@ -340,7 +340,7 @@ def test_dive_status_is_managed_only_when_declared(tmp_path: Path, md_cli: Cli) 
 
     edit_yaml(root / "blueprints/simple-dive/blueprint.yml", endorse)
     plan = records(md_cli.ok("plan", "--root", str(root), "--json"))
-    assert plan[("simple-dive", "dive", "example")]["notes"] == "endorsing requires an organization admin"
+    assert plan[("simple-dive", "dive", "example")]["notes"].startswith("endorsing requires an organization admin")
     md_cli.ok("deploy", "--root", str(root))
     created = fake.ids("dives")["Simple Dive v2"]
     assert fake.state()["dives"][created]["status"] == "endorsed"
@@ -540,14 +540,15 @@ def test_dive_read_grants_reconcile_and_revoke_the_default_organization_grant_on
         edit_yaml(starter / DASHBOARD, lambda data: data["resources"]["dives"]["pageviews"].update(grants=grants))
 
     grant(roles=["analysts"])
-    fake.seed(roles={"analysts": {}})
+    # An organization exempt from private-by-default still gets an organization grant on a new Dive.
+    fake.seed(roles={"analysts": {}}, dive_organization_grant_by_default=True)
     dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
     assert dive["action"] == "create" and "will grant read to: role analysts" in dive["notes"]
 
     md_cli.ok("deploy", "--root", str(starter))
     dive_id = fake.ids("dives")["Wikipedia Pageviews"]
     assert f"GRANT READ ON DIVE '{dive_id}' TO ROLE \"analysts\";" in fake.queries()
-    # Additive mode keeps the organization grant MotherDuck gives a new Dive.
+    # Additive mode keeps the organization grant MotherDuck gives a new Dive in an exempt organization.
     assert sorted(fake.state()["dive_grantees"][dive_id]) == [["analysts", "role"], ["fake org", "organization"]]
 
     # Names match without regard to case, so a second deploy changes nothing.
@@ -581,6 +582,41 @@ def test_dive_read_grants_reconcile_and_revoke_the_default_organization_grant_on
     assert "current grants could not be read at plan time" in dive["notes"]
 
 
+def test_new_dive_is_private_until_its_grants_are_applied(starter: Path, md_cli: Cli) -> None:
+    fake = md_cli.fake
+    dive_key = ("wikipedia-pageviews", "dive", "pageviews")
+
+    # The starter grants the organization in production and nobody in preview.
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[dive_key]
+    assert dive["action"] == "create" and "will grant read to: organization" in dive["notes"]
+    md_cli.ok("deploy", "--root", str(starter))
+    dive_id = fake.ids("dives")["Wikipedia Pageviews"]
+    assert f"GRANT READ ON DIVE '{dive_id}' TO ORGANIZATION;" in fake.queries()
+    assert fake.state()["dive_grantees"][dive_id] == [["fake org", "organization"]]
+
+    preview = records(md_cli.ok("plan", "--root", str(starter), "--target", "preview", "--branch", "feature/x", "--json"))
+    assert "will grant" not in preview[dive_key]["notes"]
+
+
+def test_new_dive_without_grants_is_flagged_and_left_private(starter: Path, md_cli: Cli) -> None:
+    fake = md_cli.fake
+    edit_yaml(starter / DASHBOARD, lambda data: (
+        data["resources"]["dives"]["pageviews"].pop("grants"),
+        data["resources"]["dives"]["pageviews"]["targets"]["preview"].pop("grants"),
+    ))
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[("wikipedia-pageviews", "dive", "pageviews")]
+    assert "no grants declared: MotherDuck makes a new Dive readable only by its owner" in dive["notes"]
+
+    md_cli.ok("deploy", "--root", str(starter))
+    dive_id = fake.ids("dives")["Wikipedia Pageviews"]
+    assert not any(" ON DIVE " in query for query in fake.mutations())
+    assert fake.state()["dive_grantees"][dive_id] == []
+
+    # An existing Dive keeps whatever grants it has, so the note is only for new Dives.
+    dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[("wikipedia-pageviews", "dive", "pageviews")]
+    assert dive["action"] == "update" and "no grants declared" not in dive["notes"]
+
+
 def test_new_dive_with_authoritative_grants_starts_without_the_organization_grant(
     starter: Path, md_cli: Cli,
 ) -> None:
@@ -588,7 +624,7 @@ def test_new_dive_with_authoritative_grants_starts_without_the_organization_gran
     edit_yaml(starter / DASHBOARD, lambda data: data["resources"]["dives"]["pageviews"].update(
         grants={"roles": ["analysts"], "mode": "authoritative"},
     ))
-    fake.seed(roles={"analysts": {}})
+    fake.seed(roles={"analysts": {}}, dive_organization_grant_by_default=True)
     dive = records(md_cli.ok("plan", "--root", str(starter), "--json"))[("wikipedia-pageviews", "dive", "pageviews")]
     assert "will revoke the organization read grant if MotherDuck gives the new Dive one" in dive["notes"]
 

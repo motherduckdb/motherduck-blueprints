@@ -6,6 +6,13 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- MotherDuck now makes a new Dive readable only by its owner. A Dive that Blueprints creates is owned by the deployment identity, so nobody else can open it unless it declares `grants`. Before, MotherDuck gave most new Dives an organization `read` grant. Existing Dives keep their grants.
+  - `plan` notes a new Dive without `grants` and suggests declaring them.
+  - The starter Dive, the Dive in `make new-project` and `make new-dive` packages, and the `pageviews-weekly-trends` and `ncs-field-recovery` examples declare `grants: {organization: true}` with `organization: false` under `targets.preview`, which matches their `ORGANIZATION` production and `RESTRICTED` preview shares. Existing repositories keep their manifests.
+  - The [Dives reference](docs/blueprint-yml-reference.md#dives), the repository reference, the setup guide, the Terraform guide, and the agent instructions describe the new default.
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-451`, the current published CLI release. Its commands and flags are unchanged. `dive --help` now shows how to share a Dive with SQL, and `dive push --help` states that pushing does not change who can open a Dive. Run `make install-deploy` after upgrading.
+- The package and action pins are updated to 0.11.0.
+
 ## v0.10.6 - 2026-11-18
 
 Patch release that fixes the MotherDuck CLI installation on macOS with Python from python.org and documents the Terraform provider's Dive and Flight grant resources. HTTPS requests made by Blueprints now check certificates against the `certifi` bundle or `SSL_CERT_FILE` instead of the system certificate store. Existing repositories pin exact versions and require `make upgrade VERSION=0.10.6`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0106) and the [v0.10.6 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.10.6).

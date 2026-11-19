@@ -172,6 +172,11 @@ REJECTED_TOKEN = re.compile(
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 # The privilege that `grants` manages on each kind: GRANT RUN ON FLIGHT, GRANT READ ON DIVE.
 OBJECT_GRANT_PRIVILEGES = {"flight": "run", "dive": "read"}
+NEW_DIVE_WITHOUT_GRANTS_NOTE = (
+    "no grants declared: MotherDuck makes a new Dive readable only by its owner, the deployment identity, "
+    "unless the organization still gives new Dives an organization grant. "
+    "Next: declare grants (for example organization: true) so other people can open it"
+)
 AUTHORITATIVE_NOTE = (
     "mode: authoritative revokes every grant not declared here, including grants created outside "
     "Blueprints (for example by Terraform or the UI)"
@@ -1991,7 +1996,11 @@ class Deployer:
         org_users: dict[str, bool] | None,
     ) -> None:
         """Check a Flight's or Dive's ``grants`` and add what deploy will change to the plan record."""
-        if not isinstance(grants, dict) or record.action not in {"create", "update"}:
+        if not isinstance(grants, dict):
+            if kind == "dive" and record.action == "create":
+                record.notes = "; ".join(note for note in (record.notes, NEW_DIVE_WITHOUT_GRANTS_NOTE) if note)
+            return
+        if record.action not in {"create", "update"}:
             return
         privilege = OBJECT_GRANT_PRIVILEGES[kind]
         missing_roles = sorted(users_missing_from({str(value) for value in grants.get("roles", [])}, known_roles))
@@ -2079,7 +2088,7 @@ class Deployer:
         if revocations:
             notes.append(f"will revoke {privilege} from: {readable(revocations)}")
         if kind == "dive" and object_id is None and authoritative and grants.get("organization") is not True:
-            # MotherDuck gives a new Dive an organization grant unless the organization starts Dives private.
+            # MotherDuck starts new Dives private, but an organization exempt from that still gets an organization grant.
             notes.append("will revoke the organization read grant if MotherDuck gives the new Dive one")
         if not notes and object_id is None:
             return "; ".join(tail)

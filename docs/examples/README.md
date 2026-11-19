@@ -51,5 +51,6 @@ Create a root that does not exist yet with `mkdir -p`. Each example's README lis
 - **Config holds no secrets.** Credentials are Flight secrets, listed by name under `secrets`. Config is validated in the Flight because whoever starts a run can override it.
 - **Flights attach only what they use.** They connect with `attach_mode=single` and attach other databases explicitly, which shortens startup.
 - **The work stays in SQL.** Flights send statements to MotherDuck and stage files under `/tmp`, without row-by-row inserts.
-- **Previews are private and temporary.** Preview shares are `RESTRICTED` and `HIDDEN`, schedules are off, and cleanup drops the preview database.
+- **Previews are private and temporary.** Preview shares are `RESTRICTED` and `HIDDEN`, preview Dives grant nobody, schedules are off, and cleanup drops the preview database.
+- **Production Dives are shared on purpose.** MotherDuck makes a new Dive readable only by its owner, so each production Dive declares `grants: {organization: true}`, matching its `ORGANIZATION` share.
 - **Pinned dependencies.** Every `requirements.txt` pins `duckdb` to the version Blueprints deploys with.

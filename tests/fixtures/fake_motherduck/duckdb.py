@@ -319,8 +319,10 @@ class MockConnection:
                 "status": "draft",
                 "owner": self._user(state),
             }
-            # Production gives a new Dive an organization read grant unless the organization starts Dives private.
-            state["dive_grantees"][dive_id] = [["fake org", "organization"]]
+            # Production starts new Dives private. An organization exempt from that gets an organization read grant.
+            state["dive_grantees"][dive_id] = (
+                [["fake org", "organization"]] if state.get("dive_organization_grant_by_default") else []
+            )
             return MockResult([(dive_id,)])
         if "MD_UPDATE_DIVE" in query:
             dive_id = _string(query, r"\(id = ")

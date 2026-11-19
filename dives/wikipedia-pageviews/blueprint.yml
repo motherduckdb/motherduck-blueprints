@@ -18,7 +18,11 @@ resources:
       requiredResources:
         - input: pageviews
           alias: wikipedia_pageviews
+      grants:
+        organization: true
       targets:
         preview:
           title: Wikipedia Pageviews:${target.branch} (Preview)
           status: draft
+          grants:
+            organization: false

@@ -132,8 +132,8 @@ def test_doctor_warns_about_authoritative_roles_and_share_grants(
     ))
     consumer = tmp_path / "dives/wikipedia-pageviews/blueprint.yml"
     consumer.write_text(consumer.read_text().replace(
-        "      status: ready\n",
-        "      status: ready\n      grants:\n        roles: [analysts]\n        mode: authoritative\n", 1,
+        "      grants:\n        organization: true\n",
+        "      grants:\n        roles: [analysts]\n        mode: authoritative\n", 1,
     ))
 
     run_doctor(tmp_path)
