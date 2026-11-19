@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.11.0 - 2026-11-19
+
+Minor release that adapts Blueprints to MotherDuck making new Dives private to their owner, and installs MotherDuck CLI `v1.5.6-2026-11-451`. New Dives that Blueprints creates without `grants` are readable only by the deployment identity, and new starters and scaffolds share production Dives with the organization. Existing repositories pin exact versions and require `make upgrade VERSION=0.11.0`, followed by `make install-deploy`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.11.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.11.0).
+
 - MotherDuck now makes a new Dive readable only by its owner. A Dive that Blueprints creates is owned by the deployment identity, so nobody else can open it unless it declares `grants`. Before, MotherDuck gave most new Dives an organization `read` grant. Existing Dives keep their grants.
   - `plan` notes a new Dive without `grants` and suggests declaring them.
   - The starter Dive, the Dive in `make new-project` and `make new-dive` packages, and the `pageviews-weekly-trends` and `ncs-field-recovery` examples declare `grants: {organization: true}` with `organization: false` under `targets.preview`, which matches their `ORGANIZATION` production and `RESTRICTED` preview shares. Existing repositories keep their manifests.
