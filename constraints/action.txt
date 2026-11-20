@@ -1,5 +1,5 @@
 # Runtime and build dependencies used by the composite action.
-pip==26.2.2
+pip==26.3
 setuptools==84.2.1
 wheel==0.48.0
 build==1.6.1
