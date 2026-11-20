@@ -362,11 +362,32 @@ const DIVE_STATE_MAX_BYTES = 64 * 1024;
 
 type DiveStateBag = Record<string, unknown>;
 
+// DuckDB-Wasm returns BIGINT and HUGEINT values as bigint, which JSON cannot hold.
+// Like production, the stored bag writes each bigint as { "$bigint": "<digits>" } and
+// reads it back as a bigint, so a reloaded Dive gets the same value and type.
+const BIGINT_TAG_KEY = "$bigint";
+const BIGINT_DIGITS = /^-?\d+$/;
+
+function diveStateJsonReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? { [BIGINT_TAG_KEY]: value.toString() } : value;
+}
+
+function diveStateJsonReviver(_key: string, value: unknown): unknown {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const digits = obj[BIGINT_TAG_KEY];
+    if (Object.keys(obj).length === 1 && typeof digits === "string" && BIGINT_DIGITS.test(digits)) {
+      return BigInt(digits);
+    }
+  }
+  return value;
+}
+
 function readDiveStateBag(): DiveStateBag {
   const raw = new URLSearchParams(window.location.search).get(DIVE_STATE_PARAM);
   if (!raw) return {};
   try {
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw, diveStateJsonReviver);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as DiveStateBag;
     }
@@ -399,6 +420,7 @@ function assertJsonValue(value: unknown, path: string): void {
   switch (typeof value) {
     case "string":
     case "boolean":
+    case "bigint":
       return;
     case "number":
       if (Number.isFinite(value)) return;
@@ -427,7 +449,7 @@ function writeDiveStateBag(next: DiveStateBag) {
   if (Object.keys(next).length === 0) {
     params.delete(DIVE_STATE_PARAM);
   } else {
-    const encoded = JSON.stringify(next);
+    const encoded = JSON.stringify(next, diveStateJsonReplacer);
     if (new TextEncoder().encode(encoded).length > DIVE_STATE_MAX_BYTES) {
       throw new Error("Dive state exceeds the 64 KB limit");
     }

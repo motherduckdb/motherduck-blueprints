@@ -13,7 +13,7 @@ from .project import CommandError
 from .tls import ssl_context
 
 
-SUPPORTED_VERSION = "v1.5.6-2026-11-451"
+SUPPORTED_VERSION = "v1.5.6-2026-11-503"
 # A statement that waits on a lost connection would otherwise hold a CI job until GitHub's six-hour limit.
 QUERY_TIMEOUT_ENV = "MD_BLUEPRINTS_QUERY_TIMEOUT_SECONDS"
 QUERY_TIMEOUT_DEFAULT_SECONDS = 900
