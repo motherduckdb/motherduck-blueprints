@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- The local Dive preview accepts BIGINT and HUGEINT values in `useDiveState`, as production Dives now do. DuckDB-Wasm returns those columns as JavaScript `bigint`. Before, the preview threw an error when a Dive stored one. Now it stores each value in the page URL and reads it back as a `bigint` after a reload. Run `make sync-preview` after upgrading to refresh `.dive-preview/`.
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-503`, the current published CLI release. Its commands, flags and help text are unchanged. Run `make install-deploy` after upgrading.
+- The package and action pins are updated to 0.11.1.
+
 ## v0.11.0 - 2026-11-19
 
 Minor release that adapts Blueprints to MotherDuck making new Dives private to their owner, and installs MotherDuck CLI `v1.5.6-2026-11-451`. New Dives that Blueprints creates without `grants` are readable only by the deployment identity, and new starters and scaffolds share production Dives with the organization. Existing repositories pin exact versions and require `make upgrade VERSION=0.11.0`, followed by `make install-deploy`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.11.0 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.11.0).
