@@ -6,8 +6,14 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.11.1 - 2026-11-20
+
+Patch release that brings the local Dive preview in line with production for BIGINT and HUGEINT values in `useDiveState`, installs MotherDuck CLI `v1.5.6-2026-11-503`, and updates dependencies. Existing repositories pin exact versions and require `make upgrade VERSION=0.11.1`, followed by `make install-deploy` and `make sync-preview`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.11.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.11.1).
+
 - The local Dive preview accepts BIGINT and HUGEINT values in `useDiveState`, as production Dives now do. DuckDB-Wasm returns those columns as JavaScript `bigint`. Before, the preview threw an error when a Dive stored one. Now it stores each value in the page URL and reads it back as a `bigint` after a reload. Run `make sync-preview` after upgrading to refresh `.dive-preview/`.
 - Blueprints installs MotherDuck CLI `v1.5.6-2026-11-503`, the current published CLI release. Its commands, flags and help text are unchanged. Run `make install-deploy` after upgrading.
+- The local Dive preview builds with Vite 8.3.8 and `@vitejs/plugin-react` 6.3.0. React, d3, lucide-react, and recharts are unchanged.
+- `certifi` is updated to 2026.10.23, and the action's `pip` constraint to 26.3. The development dependencies `ruff` and `types-pyyaml` are updated.
 - The package and action pins are updated to 0.11.1.
 
 ## v0.11.0 - 2026-11-19
