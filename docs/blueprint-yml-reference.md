@@ -268,7 +268,7 @@ resources:
 - A Dive that already exists keeps its grants. Blueprints changes them only when the Dive declares `grants`.
 - `plan` reads the live grants and lists what deploy will grant and revoke. It stops before any write when a role does not exist and is not declared in the same run, or when a username is not in the organization.
 - A `read` grant on a Dive does not share its data or its Flights. Viewers also need `READ` on each share the Dive mounts (see share [`grants`](#shares)) and `run` on each Flight it starts (see Flight [`grants`](#flights)). Share them as widely as the Dive and no wider, as MotherDuck's Dive guide recommends:
-  - A Dive with `organization: true` needs shares with `access: ORGANIZATION`. A `RESTRICTED` share cannot be granted to the organization, and changing a share's access in the UI deletes its grants.
+  - A Dive with `organization: true` needs shares with `access: ORGANIZATION`, because a `RESTRICTED` share cannot be granted to the organization.
   - A Dive granted to roles or users needs the same roles or users in each `RESTRICTED` share's `grants`, and in the `grants` of each Flight it runs.
   - Data or Flights that are already shared more widely than the Dive can stay that way.
 - In the MotherDuck web app, the Share Dive dialog shows whether the Dive's viewers can read its data. On Save, it can grant viewers `READ` on restricted shares that the person saving owns. Share `grants` with `mode: authoritative` revoke those grants on the next deploy, so declare the audience in `blueprint.yml` instead. The dialog does not offer to point a Dive that Blueprints deployed at a new share, because deploy removes `REQUIRED_DATABASES` from the source and passes the mounts separately.

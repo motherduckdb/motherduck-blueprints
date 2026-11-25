@@ -18,6 +18,7 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 - The `deploy` extra requires `duckdb` 1.4 or newer, because MotherDuck no longer accepts DuckDB 1.3 clients. The GitHub Action and the MotherDuck CLI backend are not affected. Refer to [deploy-extra-needs-duckdb-1-4](docs/breaking-changes.md#deploy-extra-needs-duckdb-1-4).
 - Blueprints installs MotherDuck CLI `v1.5.6-2026-11-616`, the current published CLI release. Its commands and flags are unchanged. `dive --help` now states that sharing a Dive does not share the data it reads or the Flights it runs. Run `make install-deploy` after upgrading.
 - Dependabot keeps `@tanstack/query-core` in `.dive-preview/` at the version that production Dives use, as it does for React, d3, lucide-react, and recharts.
+- `make preview` and `make preview-smoke` fail with `Dives cannot import "@tanstack/query-core"` when Dive source imports that package. The preview installs it only for `useSQLQuery`, and production Dives cannot import it.
 - The package and action pins are updated to 0.11.2.
 
 ## v0.11.1 - 2026-11-20

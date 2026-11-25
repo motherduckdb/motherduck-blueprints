@@ -24,7 +24,7 @@ Generated repositories pick up these changes with `make upgrade VERSION=0.11.2`,
   - `initialData` and `placeholderData` take raw rows, which `select` then transforms. Before, they took transformed data.
   - `refetch()` cancels a run in flight and does nothing while the query is disabled.
 - **Symptom:** in the local preview, a comparison of `status` with `"idle"` or `"loading"` is never true, a section that emptied when a filter changed keeps the previous rows until the new ones arrive, and transformed rows passed as `initialData` or `placeholderData` together with `select` are transformed a second time.
-- **Find:** search the Dive sources, for example with `grep -rnE "status ?===? ?['\"](idle|loading)|initialData|placeholderData" dives/ projects/ blueprints/`.
+- **Find:** search the Dive sources, for example with `grep -rnsE "status ?===? ?['\"](idle|loading)|initialData|placeholderData" dives/ projects/ blueprints/`.
 - **Fix:** compare `status` with `"pending"`, show placeholders while `isPending` is true and an updating cue while `isFetching` is true, and pass raw rows as `initialData` and `placeholderData`. To clear the rows while new SQL loads, pass `placeholderData: () => undefined`. The [repository reference](repository-reference.md#dives) describes the hook.
 - **Implemented in:** `useSQLQuery` in `.dive-preview/src/md-sdk-runtime.tsx`, which `make sync-preview` refreshes.
 
