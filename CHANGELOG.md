@@ -6,6 +6,20 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+- The local Dive preview's `useSQLQuery` matches the production hook, which MotherDuck rebuilt on TanStack Query v5 in release `v1.5.6-2026-11-616`. The preview uses the same `@tanstack/query-core` version, 5.101.4, with the same settings. Run `make sync-preview` after upgrading. Refer to [preview-usesqlquery-tanstack](docs/breaking-changes.md#preview-usesqlquery-tanstack).
+  - The result adds `isPending`, which is true until a query has data, and `isFetching`, which is true while a query runs. `status` is `pending`, `error`, or `success`.
+  - When the SQL changes, the previous rows stay on screen until the new rows arrive. Before, the preview cleared them.
+  - `initialData` and `placeholderData` take raw rows, which `select` transforms. `refetch()` does nothing while the query is disabled.
+  - `isLoading` remains for existing Dives. It is true while connecting and during every fetch.
+- The starter Dive, the `make new-dive` and `make new-project` scaffolds, and the `ncs-field-recovery` and `pageviews-weekly-trends` examples show placeholders while `isPending` is true, as MotherDuck recommends. The `ncs-field-recovery` example dims a section while `isFetching` is true after a filter changes. Existing repositories keep their Dives.
+- The [repository reference](docs/repository-reference.md#dives) describes how `useSQLQuery` reports loading, and the agent instructions for generated repositories say to use `isPending` and `isFetching` instead of `isLoading`.
+- The [Dives reference](docs/blueprint-yml-reference.md#dives) recommends sharing a Dive's data and Flights as widely as the Dive and no wider, as MotherDuck's Dive guide now does. A Dive with `organization: true` needs shares with `ORGANIZATION` access, because a restricted share cannot be granted to the organization. The reference also describes the web app's Share Dive dialog, which can grant a Dive's viewers access to shares on Save. Share `grants` with `mode: authoritative` revoke such grants on the next deploy.
+- When MotherDuck rejects a revoked or expired access token with "Invalid personal access token", Blueprints reports which secret to replace, as it does for other rejected tokens. Since release `v1.5.6-2026-11-616`, MotherDuck returns this error immediately instead of retrying.
+- The `deploy` extra requires `duckdb` 1.4 or newer, because MotherDuck no longer accepts DuckDB 1.3 clients. The GitHub Action and the MotherDuck CLI backend are not affected. Refer to [deploy-extra-needs-duckdb-1-4](docs/breaking-changes.md#deploy-extra-needs-duckdb-1-4).
+- Blueprints installs MotherDuck CLI `v1.5.6-2026-11-616`, the current published CLI release. Its commands and flags are unchanged. `dive --help` now states that sharing a Dive does not share the data it reads or the Flights it runs. Run `make install-deploy` after upgrading.
+- Dependabot keeps `@tanstack/query-core` in `.dive-preview/` at the version that production Dives use, as it does for React, d3, lucide-react, and recharts.
+- The package and action pins are updated to 0.11.2.
+
 ## v0.11.1 - 2026-11-20
 
 Patch release that brings the local Dive preview in line with production for BIGINT and HUGEINT values in `useDiveState`, installs MotherDuck CLI `v1.5.6-2026-11-503`, and updates dependencies. Existing repositories pin exact versions and require `make upgrade VERSION=0.11.1`, followed by `make install-deploy` and `make sync-preview`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [v0.11.1 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.11.1).

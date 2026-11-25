@@ -567,7 +567,7 @@ wheels = [
 
 [[package]]
 name = "md-blueprints"
-version = "0.11.1"
+version = "0.11.2"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -595,8 +595,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "certifi", specifier = ">=2024.7.4" },
-    { name = "duckdb", marker = "extra == 'deploy'", specifier = ">=1.1,<1.5.7" },
-    { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.1,<1.5.7" },
+    { name = "duckdb", marker = "extra == 'deploy'", specifier = ">=1.4,<1.5.7" },
+    { name = "duckdb", marker = "extra == 'dev'", specifier = ">=1.4,<1.5.7" },
     { name = "json5", specifier = ">=0.11" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "packaging", specifier = ">=24.0" },

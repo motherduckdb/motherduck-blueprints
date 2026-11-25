@@ -78,8 +78,8 @@ export default function PageviewsWeeklyTrends() {
           <span>{trendsQuery.error.message}</span>
         </div>
       ) : null}
-      {trendsQuery.isLoading ? <p style={styles.muted}>Loading trends...</p> : null}
-      {!trendsQuery.isLoading && !trendsQuery.error && rows.length === 0 ? (
+      {trendsQuery.isPending ? <p style={styles.muted}>Loading trends...</p> : null}
+      {!trendsQuery.isPending && !trendsQuery.error && rows.length === 0 ? (
         <p style={styles.muted}>No complete week is available yet. The transformation needs seven loaded days.</p>
       ) : null}
 

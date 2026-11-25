@@ -5,6 +5,10 @@
  */
 import { MDConnection } from "@motherduck/wasm-client";
 import type { DuckDBRow } from "@motherduck/wasm-client";
+import { keepPreviousData, notifyManager, QueryClient, QueryObserver } from "@tanstack/query-core";
+import type {
+  QueryFunctionContext, QueryKey, QueryObserverOptions, QueryObserverResult,
+} from "@tanstack/query-core";
 import {
   createContext, useContext, useEffect, useMemo, useRef, useState,
   useCallback, useSyncExternalStore,
@@ -13,7 +17,8 @@ import type { ReactNode } from "react";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type QueryStatus = "idle" | "loading" | "success" | "error";
+// Production's useSQLQuery is backed by @tanstack/query-core (TanStack Query v5), and so is this one.
+type QueryStatus = "pending" | "error" | "success";
 
 type ConnectionState =
   | { status: "idle" }
@@ -39,11 +44,21 @@ export type ExportQueryOptions = {
 
 export type UseSQLQueryResult<TData = readonly DuckDBRow[]> = {
   data: TData | undefined;
+  /**
+   * Kept for older Dives: true while connecting and during every fetch, including background
+   * refetches. Unlike TanStack's isLoading, it is not limited to the first load; use isPending for that.
+   */
   isLoading: boolean;
+  /** True until the query has data: first load, connecting, or disabled before it has data. */
+  isPending: boolean;
   isSuccess: boolean;
   isError: boolean;
+  /** True while data holds the previous SQL's rows (or placeholderData) as the new SQL loads. */
   isPlaceholderData: boolean;
+  /** True while a fetch is in flight, including a re-run after the SQL changes or refetch(). */
+  isFetching: boolean;
   error: Error | null;
+  /** Re-runs the query, cancelling a run in flight. Does nothing while the query is disabled. */
   refetch: () => void;
   exportAs: (options: ExportQueryOptions) => Promise<void>;
   status: QueryStatus;
@@ -58,76 +73,83 @@ async function simulateLocalExport(sql: string, options: ExportQueryOptions): Pr
 type UseSQLQueryOptions<TData = readonly DuckDBRow[]> = {
   enabled?: boolean;
   select?: (data: readonly DuckDBRow[]) => TData;
-  initialData?: TData;
-  placeholderData?: TData | ((prev: TData | undefined) => TData | undefined);
+  /** Raw rows to use before the query has run (considered fresh). They are passed through select. */
+  initialData?: readonly DuckDBRow[];
+  /**
+   * Raw rows to show while loading, or a function of the previous rows. They are passed through select.
+   * Defaults to keeping the previous rows; pass () => undefined to show no data while new SQL loads.
+   */
+  placeholderData?:
+    | readonly DuckDBRow[]
+    | ((previousData: readonly DuckDBRow[] | undefined) => readonly DuckDBRow[] | undefined);
 };
 
-// ── QueryObserver (external store for useSyncExternalStore) ────────
+// ── Query client (the same @tanstack/query-core setup as production) ──
 
-interface QueryObserverState {
-  status: QueryStatus;
-  data: readonly DuckDBRow[] | undefined;
-  error: Error | undefined;
-  hasHadData: boolean;
-  lastData: readonly DuckDBRow[] | undefined;
+type SQLQueryKey = readonly ["sql-query", sql: string];
+
+// No retries, no refetch on focus or reconnect, and a result is dropped once no hook uses its SQL.
+function createSQLQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 0,
+        staleTime: 0,
+        gcTime: 0,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        networkMode: "always",
+      },
+    },
+  });
 }
 
-class QueryObserver {
-  private state: QueryObserverState = {
-    status: "idle", data: undefined, error: undefined,
-    hasHadData: false, lastData: undefined,
+function createSQLQueryFn(getConnection: () => MDConnection | null) {
+  return async (ctx: QueryFunctionContext<SQLQueryKey>): Promise<readonly DuckDBRow[]> => {
+    const [, sql] = ctx.queryKey;
+    const connection = getConnection();
+    if (!connection) throw new Error("No active MotherDuck connection.");
+    if (ctx.signal.aborted) throw new DOMException("Aborted", "AbortError");
+    // A cancelled query still runs to completion in DuckDB; its result is ignored.
+    const result = await connection.safeEvaluateQuery(sql);
+    if (ctx.signal.aborted) throw new DOMException("Aborted", "AbortError");
+    if (result.status === "error") throw result.err;
+    return result.result.data.toRows();
   };
-  private listeners = new Set<() => void>();
-  private abortController: AbortController | null = null;
+}
 
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-  getSnapshot = () => this.state;
-  getStatus() { return this.state.status; }
+// A thin React binding over QueryObserver, as in production: useSyncExternalStore makes every state
+// transition visible, and getOptimisticResult gives the result for this render's options.
+function useQueryCoreObserver<TQueryFnData, TError, TData, TQueryKey extends QueryKey = QueryKey>(
+  client: QueryClient,
+  options: QueryObserverOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
+): QueryObserverResult<TData, TError> {
+  const defaultedOptions = useMemo(() => {
+    const defaulted = client.defaultQueryOptions(options);
+    defaulted._optimisticResults = "optimistic";
+    return defaulted;
+  }, [client, options]);
 
-  private setState(updates: Partial<QueryObserverState>) {
-    this.state = { ...this.state, ...updates };
-    this.listeners.forEach((l) => l());
-  }
+  const observerRef = useRef<QueryObserver<TQueryFnData, TError, TData, TQueryFnData, TQueryKey> | null>(null);
+  if (!observerRef.current) observerRef.current = new QueryObserver(client, defaultedOptions);
+  const observer = observerRef.current;
 
-  async execute(connection: MDConnection, sql: string) {
-    this.abortController?.abort();
-    this.abortController = new AbortController();
-    const { signal } = this.abortController;
-    this.setState({ status: "loading", data: undefined, error: undefined });
-    try {
-      const result = await connection.safeEvaluateQuery(sql);
-      if (signal.aborted) return;
-      if (result.status === "error") {
-        this.setState({ status: "error", error: result.err, data: undefined });
-        return;
-      }
-      const data = result.result.data.toRows();
-      this.setState({
-        status: "success", data, error: undefined,
-        hasHadData: true, lastData: data,
-      });
-    } catch (err) {
-      if (signal.aborted) return;
-      this.setState({
-        status: "error",
-        error: err instanceof Error ? err : new Error(String(err)),
-        data: undefined,
-      });
-    }
-  }
+  const result = observer.getOptimisticResult(defaultedOptions);
 
-  reset() {
-    this.abortController?.abort();
-    this.abortController = null;
-    this.setState({ status: "idle", data: undefined, error: undefined });
-  }
-  cancel() {
-    this.abortController?.abort();
-    this.abortController = null;
-  }
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    const unsubscribe = observer.subscribe(notifyManager.batchCalls(onStoreChange));
+    // The observer may have changed between rendering and subscribing.
+    observer.updateResult();
+    return unsubscribe;
+  }, [observer]);
+  const getSnapshot = useCallback(() => observer.getCurrentResult(), [observer]);
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  useEffect(() => {
+    observer.setOptions(defaultedOptions);
+  }, [observer, defaultedOptions]);
+
+  return result;
 }
 
 // ── Provider ───────────────────────────────────────────────────────
@@ -138,7 +160,7 @@ class QueryObserver {
  */
 export type AllowedFlights = "none" | "any" | readonly string[];
 
-type ContextValue = { state: ConnectionState; allowedFlights: AllowedFlights };
+type ContextValue = { state: ConnectionState; allowedFlights: AllowedFlights; queryClient: QueryClient };
 const SDKContext = createContext<ContextValue | null>(null);
 
 /** Single-quotes a SQL string literal, escaping contained single quotes. */
@@ -219,6 +241,12 @@ export function MotherDuckSDKProvider(
 ) {
   const [state, setState] = useState<ConnectionState>({ status: "idle" });
 
+  // One query cache per provider, as in production. Hooks that run the same SQL share a result.
+  const queryClientRef = useRef<QueryClient | null>(null);
+  if (queryClientRef.current === null) queryClientRef.current = createSQLQueryClient();
+  const queryClient = queryClientRef.current;
+  useEffect(() => () => queryClient.clear(), [queryClient]);
+
   useEffect(() => {
     if (!token) { setState({ status: "idle" }); return; }
     let cancelled = false;
@@ -264,7 +292,7 @@ export function MotherDuckSDKProvider(
     return () => { cancelled = true; conn?.close(); };
   }, [token, requiredDatabases]);
 
-  const value = useMemo(() => ({ state, allowedFlights }), [state, allowedFlights]);
+  const value = useMemo(() => ({ state, allowedFlights, queryClient }), [state, allowedFlights, queryClient]);
   return <SDKContext.Provider value={value}>{children}</SDKContext.Provider>;
 }
 
@@ -274,30 +302,32 @@ export function useSQLQuery<TData = readonly DuckDBRow[]>(
   sql: string,
   options?: UseSQLQueryOptions<TData>,
 ): UseSQLQueryResult<TData> {
-  const { state: connState } = useSDKContext();
-  const observerRef = useRef<QueryObserver | null>(null);
-  if (!observerRef.current) observerRef.current = new QueryObserver();
-  const observer = observerRef.current;
+  const { state: connState, queryClient } = useSDKContext();
+  const enabled = (options?.enabled ?? true) && connState.status === "connected";
+  const queryKey = useMemo<SQLQueryKey>(() => ["sql-query", sql], [sql]);
 
-  const snap = useSyncExternalStore(
-    observer.subscribe, observer.getSnapshot, observer.getSnapshot,
-  );
-  const enabled = options?.enabled !== false;
+  // Like production, the previous rows stay visible while new SQL loads unless the Dive sets
+  // placeholderData. select keeps the caller's identity, so an inline select re-runs on each render.
+  const { select, initialData, placeholderData = keepPreviousData } = options ?? {};
+  const observerOptions = useMemo(() => ({
+    queryKey,
+    queryFn: createSQLQueryFn(() => (connState.status === "connected" ? connState.connection : null)),
+    enabled,
+    select,
+    initialData,
+    placeholderData,
+  }), [queryKey, enabled, select, initialData, placeholderData, connState]);
 
-  useEffect(() => {
-    if (!enabled || connState.status !== "connected") {
-      if (observer.getStatus() !== "idle") observer.reset();
-      return;
-    }
-    observer.execute(connState.connection, sql);
-    return () => observer.cancel();
-  }, [sql, enabled, connState, observer]);
+  const result = useQueryCoreObserver<readonly DuckDBRow[], Error, TData, SQLQueryKey>(queryClient, observerOptions);
 
+  // Production keeps isLoading for older Dives: true while connecting and during every fetch.
+  const isLoading = connState.status === "connecting" || result.isLoading || result.isFetching;
+
+  // The observer lives as long as the hook, so its refetch, and this callback, are stable.
+  const observerRefetch = result.refetch;
   const refetch = useCallback(() => {
-    if (connState.status === "connected" && enabled) {
-      observer.execute(connState.connection, sql);
-    }
-  }, [observer, connState, enabled, sql]);
+    if (enabled) observerRefetch();
+  }, [enabled, observerRefetch]);
 
   const exportAs = useCallback(async (exportOptions: ExportQueryOptions) => {
     if (connState.status !== "connected") {
@@ -306,37 +336,18 @@ export function useSQLQuery<TData = readonly DuckDBRow[]>(
     await simulateLocalExport(sql, exportOptions);
   }, [connState.status, sql]);
 
-  const isLoading = snap.status === "loading" || connState.status === "connecting";
-  const rawData = snap.data ?? snap.lastData;
-
-  const transformed = useMemo(() => {
-    if (rawData === undefined) return undefined;
-    return options?.select
-      ? options.select(rawData)
-      : (rawData as unknown as TData);
-  }, [rawData, options?.select]);
-
-  const { data, isPlaceholderData } = useMemo(() => {
-    if (transformed !== undefined)
-      return { data: transformed, isPlaceholderData: false };
-    if (!snap.hasHadData && options?.initialData !== undefined)
-      return { data: options.initialData, isPlaceholderData: false };
-    if (isLoading && options?.placeholderData !== undefined) {
-      const ph = typeof options.placeholderData === "function"
-        ? (options.placeholderData as (p: TData | undefined) => TData | undefined)(transformed)
-        : options.placeholderData;
-      if (ph !== undefined) return { data: ph, isPlaceholderData: true };
-    }
-    return { data: undefined, isPlaceholderData: false };
-  }, [transformed, snap.hasHadData, options?.initialData, options?.placeholderData, isLoading]);
-
   return {
-    data, isLoading,
-    isSuccess: snap.status === "success",
-    isError: snap.status === "error",
-    isPlaceholderData,
-    error: snap.error ?? null,
-    refetch, exportAs, status: snap.status,
+    data: result.data,
+    isLoading,
+    isPending: result.isPending,
+    isSuccess: result.isSuccess,
+    isError: result.isError,
+    isPlaceholderData: result.isPlaceholderData,
+    isFetching: result.isFetching,
+    error: result.error,
+    refetch,
+    exportAs,
+    status: result.status,
   };
 }
 

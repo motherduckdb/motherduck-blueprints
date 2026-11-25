@@ -165,9 +165,12 @@ FLIGHT_RUN_DEFAULT_POLL_ATTEMPTS = 60
 ACCESS_TOKEN_WARNING_DAYS = 14
 LIST_PAGE_SIZE = 1000
 LIST_SCAN_ATTEMPTS = 3
-# MotherDuck's wording when it refuses the token itself, not a resource the token cannot reach.
+# MotherDuck's wording when it refuses the token itself, not a resource the token cannot reach. A revoked or
+# expired access token fails at once with "Invalid personal access token" since release v1.5.6-2026-11-616.
 REJECTED_TOKEN = re.compile(
-    r"invalid or expired motherduck_token|request is not authenticated|jwt is not in the form", re.IGNORECASE,
+    r"invalid or expired motherduck_token|request is not authenticated|jwt is not in the form"
+    r"|invalid personal access token",
+    re.IGNORECASE,
 )
 FLIGHT_RUN_START_GRACE_SECONDS = 120
 # The privilege that `grants` manages on each kind: GRANT RUN ON FLIGHT, GRANT READ ON DIVE.

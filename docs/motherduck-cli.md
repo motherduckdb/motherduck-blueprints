@@ -42,7 +42,7 @@ Pull overwrites local files. Use `--version` to select a version. The native met
 
 ## Command map
 
-Checked against the installed `v1.5.6-2026-11-503` help on 2026-11-20. Run `motherduck <group> <command> --help` for current flags and examples.
+Checked against the installed `v1.5.6-2026-11-616` help on 2026-11-25. Run `motherduck <group> <command> --help` for current flags and examples.
 
 | Area | Commands | Use |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ Checked against the installed `v1.5.6-2026-11-503` help on 2026-11-20. Run `moth
 | SQL | `query` | SQL text or `--file`, with table, JSON, or CSV output and a query timeout. |
 | Installation | `upgrade` | Update the local native CLI. |
 | Dive authoring | `dive guide`, `dive init`, `dive watch` | Read the runtime guide, scaffold locally, and preview with reload. |
-| Dive operations | `dive list`, `dive list-versions`, `dive pull`, `dive push`, `dive delete` | Inspect, fetch, publish a new version, or delete a Dive. The CLI has no sharing command; a package's [`grants`](blueprint-yml-reference.md#dives) or `GRANT READ ON DIVE` through `query` decides who can open a Dive. `dive --help` shows the SQL, and `dive push` does not change who can open a Dive. |
+| Dive operations | `dive list`, `dive list-versions`, `dive pull`, `dive push`, `dive delete` | Inspect, fetch, publish a new version, or delete a Dive. The CLI has no sharing command; a package's [`grants`](blueprint-yml-reference.md#dives) or `GRANT READ ON DIVE` through `query` decides who can open a Dive. `dive --help` shows the SQL and states that a Dive's grants do not share the data it reads or the Flights it runs. `dive push` does not change who can open a Dive. |
 | Flight authoring | `flight guide`, `flight init` | Read the runtime guide and scaffold locally. `guide --explainer` describes the run chart and its log lines, and `init --chart` also writes a starter `chart.mmd`. |
 | Flight operations | `flight list`, `flight list-versions`, `flight pull`, `flight push`, `flight delete` | Inspect, fetch, publish, or delete a Flight. `push --instance-type` sets the runner size. `push` sends `chart.mmd` when it exists, and `pull` writes it. |
 | Flight runs | `flight run`, `flight cancel`, `flight get-run`, `flight list-runs`, `flight logs`, `flight explain` | Start, cancel, inspect, and diagnose runs. `cancel` works on the identity's own Flights and, for holders of `flights.cancel_others` (admins by default), on any run in the organization. `get-run --run <n>` shows one run's status, version, and config. `logs` prints the last 100 lines; use `--tail`, `--head`, and `--offset` for more. `explain` shows each step of a run for a Flight with a chart. `list-runs`, `logs`, and `explain` are for the Flight's owner and organization admins; someone with only a `run` grant can `get-run` the runs they started. |

@@ -28,7 +28,7 @@ resources:
 
 - **Query the alias, never a database name.** The same source works in a preview, in staging, and in production.
 - **Aggregate in SQL.** Each `useSQLQuery` returns the rows the chart needs, already grouped.
-- **Handle loading, errors, and empty results.** The first preview may render before the first load finishes.
+- **Handle loading, errors, and empty results.** The first preview may render before the first load finishes. Show a placeholder while a query `isPending`. When the SQL changes, the previous rows stay on screen and `isFetching` is true until the new rows arrive.
 - **Import only what production provides.** `@motherduck/react-sql-query`, React, d3, lucide-react, and recharts. `make preview-smoke` fails on anything else.
 
 ## Work on it
