@@ -6,6 +6,10 @@ Update this file in every pull request. Add entries under `Unreleased` until the
 
 ## Unreleased
 
+## v0.11.2 - 2026-11-26
+
+Patch release that brings the local Dive preview's `useSQLQuery` in line with the production hook, which MotherDuck rebuilt on TanStack Query v5, installs MotherDuck CLI `v1.5.6-2026-11-616`, and requires DuckDB 1.4 or newer for the Python backend. Existing repositories pin exact versions and require `make upgrade VERSION=0.11.2`, followed by `make install-deploy` and `make sync-preview`. Workflows that reference the floating `@v0` tag receive the release automatically. Refer to the [breaking changes](docs/breaking-changes.md#v0112) and the [v0.11.2 release notes](https://github.com/motherduckdb/motherduck-blueprints/releases/tag/v0.11.2).
+
 - The local Dive preview's `useSQLQuery` matches the production hook, which MotherDuck rebuilt on TanStack Query v5 in release `v1.5.6-2026-11-616`. The preview uses the same `@tanstack/query-core` version, 5.101.4, with the same settings. Run `make sync-preview` after upgrading. Refer to [preview-usesqlquery-tanstack](docs/breaking-changes.md#preview-usesqlquery-tanstack).
   - The result adds `isPending`, which is true until a query has data, and `isFetching`, which is true while a query runs. `status` is `pending`, `error`, or `success`.
   - When the SQL changes, the previous rows stay on screen until the new rows arrive. Before, the preview cleared them.
