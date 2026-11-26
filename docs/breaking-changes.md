@@ -10,6 +10,33 @@ This page lists every backward-incompatible change in MotherDuck Blueprints, new
 
 Each entry has the same fields: **Changed in**, **What changed**, **Symptom**, **Find**, **Fix**, and **Implemented in**.
 
+## v0.11.2
+
+Generated repositories pick up these changes with `make upgrade VERSION=0.11.2`, followed by `make sync-preview`. Run `make validate` after the upgrade.
+
+### preview-usesqlquery-tanstack
+
+- **Changed in:** v0.11.2
+- **What changed:** the local Dive preview's `useSQLQuery` behaves like the production hook, which MotherDuck rebuilt on TanStack Query v5 (`@tanstack/query-core`) in release `v1.5.6-2026-11-616`. Production Dives already behave this way.
+  - `status` is `pending`, `error`, or `success`. Before, it was `idle`, `loading`, `success`, or `error`.
+  - The result adds `isPending` and `isFetching`. `isLoading` is true while connecting and during every fetch.
+  - When the SQL changes, the previous rows stay on screen, with `isPlaceholderData` true, until the new rows arrive. Before, `data` became `undefined`.
+  - `initialData` and `placeholderData` take raw rows, which `select` then transforms. Before, they took transformed data.
+  - `refetch()` cancels a run in flight and does nothing while the query is disabled.
+- **Symptom:** in the local preview, a comparison of `status` with `"idle"` or `"loading"` is never true, a section that emptied when a filter changed keeps the previous rows until the new ones arrive, and transformed rows passed as `initialData` or `placeholderData` together with `select` are transformed a second time.
+- **Find:** search the Dive sources, for example with `grep -rnsE "status ?===? ?['\"](idle|loading)|initialData|placeholderData" dives/ projects/ blueprints/`.
+- **Fix:** compare `status` with `"pending"`, show placeholders while `isPending` is true and an updating cue while `isFetching` is true, and pass raw rows as `initialData` and `placeholderData`. To clear the rows while new SQL loads, pass `placeholderData: () => undefined`. The [repository reference](repository-reference.md#dives) describes the hook.
+- **Implemented in:** `useSQLQuery` in `.dive-preview/src/md-sdk-runtime.tsx`, which `make sync-preview` refreshes.
+
+### deploy-extra-needs-duckdb-1-4
+
+- **Changed in:** v0.11.2
+- **What changed:** the `deploy` extra of `md-blueprints`, which installs the Python SQL backend, requires `duckdb` 1.4 or newer. Before, it accepted 1.1 or newer. MotherDuck no longer accepts DuckDB clients older than 1.4.
+- **Symptom:** installing `md-blueprints[deploy]` into an environment that pins `duckdb` below 1.4 fails to resolve. Before, the installation succeeded, but every command that connects to MotherDuck failed.
+- **Find:** run `pip show duckdb` in each environment that installs `md-blueprints[deploy]`. The GitHub Action installs DuckDB 1.5.6 and is not affected, and neither is the MotherDuck CLI that `make install-deploy` installs.
+- **Fix:** install `duckdb` 1.4 or newer, preferably 1.5.6, the version Blueprints tests.
+- **Implemented in:** the `deploy` extra in `pyproject.toml`.
+
 ## v0.10.6
 
 Generated repositories pick up these changes with `make upgrade VERSION=0.10.6`. Run `make validate` after the upgrade.

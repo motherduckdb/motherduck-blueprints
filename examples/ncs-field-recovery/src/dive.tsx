@@ -303,10 +303,13 @@ export default function NcsFieldRecoveryExplorer() {
           ["Remaining oil equivalent", formatVolume(summary.remaining_oe_mill_sm3)],
         ].map(([label, value]) => (
           <div key={label}>
-            {summaryQuery.isLoading ? (
+            {summaryQuery.isPending ? (
               <Skeleton />
             ) : (
-              <p className="text-3xl sm:text-4xl lg:text-5xl font-bold break-words" style={{ lineHeight: 1 }}>
+              <p
+                className="text-3xl sm:text-4xl lg:text-5xl font-bold break-words"
+                style={{ lineHeight: 1, opacity: summaryQuery.isFetching ? 0.6 : 1 }}
+              >
                 {value}
               </p>
             )}
@@ -331,7 +334,7 @@ export default function NcsFieldRecoveryExplorer() {
             Reserve version {S(summary.reserve_version) || "—"}
           </span>
         </div>
-        {rankingQuery.isLoading ? (
+        {rankingQuery.isPending ? (
           <div
             className="flex items-center justify-center"
             style={{ height: 280 }}
@@ -353,6 +356,8 @@ export default function NcsFieldRecoveryExplorer() {
           <div
             role="img"
             aria-label={`${ranking} oil recovery ratios for ${rankingRows.length} fields`}
+            aria-busy={rankingQuery.isFetching}
+            style={{ opacity: rankingQuery.isFetching ? 0.6 : 1 }}
           >
             <ResponsiveContainer width="100%" height={280}>
               <BarChart
@@ -410,12 +415,16 @@ export default function NcsFieldRecoveryExplorer() {
             Loaded {S(summary.loaded_at) || "—"}
           </span>
         </div>
-        {opportunityQuery.isLoading ? (
+        {opportunityQuery.isPending ? (
           <div className="space-y-3 py-3">
             {[0, 1, 2, 3, 4].map((value) => <Skeleton key={value} height={34} />)}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            className="overflow-x-auto"
+            aria-busy={opportunityQuery.isFetching}
+            style={{ opacity: opportunityQuery.isFetching ? 0.6 : 1 }}
+          >
             <table className="w-full text-sm">
               <caption className="sr-only">
                 Fields with the largest remaining official oil-equivalent resource estimates

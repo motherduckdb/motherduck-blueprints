@@ -124,7 +124,7 @@ export default function BlueprintDive() {
       {summaryQuery.error ? <ErrorBlock message={summaryQuery.error.message} /> : null}
       {dailyQuery.error ? <ErrorBlock message={dailyQuery.error.message} /> : null}
 
-      {summaryQuery.isLoading ? (
+      {summaryQuery.isPending ? (
         <LoadingBlock label="Loading metric summary" />
       ) : (
         <section style={styles.kpiGrid}>
@@ -142,7 +142,7 @@ export default function BlueprintDive() {
         <div style={styles.panelHeader}>
           <h2 style={styles.panelTitle}>Daily metric trend</h2>
         </div>
-        {dailyQuery.isLoading ? (
+        {dailyQuery.isPending ? (
           <LoadingBlock label="Loading daily trend" />
         ) : (
           <div style={styles.chart}>
@@ -173,7 +173,7 @@ export default function BlueprintDive() {
         <div style={styles.panelHeader}>
           <h2 style={styles.panelTitle}>Metric summary</h2>
         </div>
-        {summaryQuery.isLoading ? (
+        {summaryQuery.isPending ? (
           <LoadingBlock label="Loading summary table" />
         ) : (
           <div style={styles.tableWrap}>

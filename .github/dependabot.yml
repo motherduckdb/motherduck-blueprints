@@ -19,3 +19,5 @@ updates:
       - dependency-name: d3
       - dependency-name: lucide-react
       - dependency-name: recharts
+      # Matches the @tanstack/query-core version behind production's useSQLQuery.
+      - dependency-name: "@tanstack/query-core"

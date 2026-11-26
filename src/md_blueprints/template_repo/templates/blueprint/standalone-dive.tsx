@@ -80,10 +80,10 @@ export default function StandaloneDive() {
             <p style={styles.panelEyebrow}>Connected data</p>
             <h2 style={styles.panelTitle}>Available tables</h2>
           </div>
-          {tablesQuery.isLoading ? <span style={styles.loading}>Loading catalog...</span> : null}
+          {tablesQuery.isPending ? <span style={styles.loading}>Loading catalog...</span> : null}
         </div>
 
-        {!tablesQuery.isLoading && tables.length === 0 && !tablesQuery.error ? (
+        {!tablesQuery.isPending && tables.length === 0 && !tablesQuery.error ? (
           <p style={styles.empty}>The connected share does not expose any tables yet.</p>
         ) : null}
 

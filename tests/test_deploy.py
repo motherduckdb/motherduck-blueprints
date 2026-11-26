@@ -1162,13 +1162,23 @@ def test_python_backend_reuses_one_connection_and_reconnects_after_an_error(
     assert getattr(connects[1], "closed")
 
 
+@pytest.mark.parametrize(
+    "rejected",
+    [
+        "Invalid or expired MOTHERDUCK_TOKEN. Please create a new token or unset it to login in manually.",
+        # Since MotherDuck release v1.5.6-2026-11-616, a revoked or expired access token fails at once.
+        "Permission Error: Invalid personal access token, please create a new one "
+        "(the token may have been revoked or expired)",
+    ],
+)
 @pytest.mark.parametrize("backend", ["motherduck", "duckdb"])
-def test_rejected_token_says_which_secret_to_replace(backend: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rejected_token_says_which_secret_to_replace(
+    backend: str, rejected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     deployer = Deployer(Project(FIXTURES / "complex"))
     monkeypatch.setenv("MOTHERDUCK_TOKEN", "expired")
     monkeypatch.setenv("MD_BLUEPRINTS_SQL_BACKEND", backend)
     deployer._prepare_live_command("prod", "plan")
-    rejected = "Invalid or expired MOTHERDUCK_TOKEN. Please create a new token or unset it to login in manually."
     if backend == "motherduck":
         def fail(statement: str, *, token: str | None) -> list[tuple[object, ...]]:
             raise CommandError(f"MotherDuck SQL failed: {rejected}")

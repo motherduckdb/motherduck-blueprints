@@ -155,7 +155,7 @@ export default function WikipediaPageviewsDive() {
           <div style={styles.panelHeader}>
             <h2 style={styles.panelTitle}>Daily trend</h2>
           </div>
-          {dailyQuery.isLoading ? (
+          {dailyQuery.isPending ? (
             <LoadingBlock label="Loading daily trend" />
           ) : (
             <div style={styles.chart}>
@@ -187,7 +187,7 @@ export default function WikipediaPageviewsDive() {
           <div style={styles.panelHeader}>
             <h2 style={styles.panelTitle}>Article totals</h2>
           </div>
-          {summaryQuery.isLoading ? (
+          {summaryQuery.isPending ? (
             <LoadingBlock label="Loading article totals" />
           ) : (
             <div style={styles.chart}>
@@ -209,7 +209,7 @@ export default function WikipediaPageviewsDive() {
         <div style={styles.panelHeader}>
           <h2 style={styles.panelTitle}>Summary table</h2>
         </div>
-        {summaryQuery.isLoading ? (
+        {summaryQuery.isPending ? (
           <LoadingBlock label="Loading summary table" />
         ) : (
           <div style={styles.tableWrap}>
